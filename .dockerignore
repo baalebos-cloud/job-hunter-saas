@@ -1,0 +1,57 @@
+# --- VERSION CONTROL ---
+.git
+.gitignore
+.gitattributes
+
+# --- PYTHON BLOAT ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.inventory
+.pytest_cache/
+.coverage
+htmlcov/
+nosetests.xml
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- DEVOPS & INFRA ---
+terraform/
+.terraform/
+*.tfstate*
+.aws/
+.kube/
+*.log
+docker-compose.override.yml
+
+# --- OS & IDE SPECIFIC ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# --- SENSITIVE DATA ---
+.env
+*.pem
+*.key
+*.pub
+secrets.yaml
+
+# --- FRONTEND (IF APPLICABLE) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+build/
+dist/

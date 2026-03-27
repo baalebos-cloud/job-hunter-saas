@@ -1,0 +1,62 @@
+version: "3.8"
+
+services:
+  # 🌐 THE API SERVER (FastAPI)
+  web:
+    # Use the image built by GitHub Actions instead of building locally
+    image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
+    container_name: job-hunter-saas_web_1
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - PYTHONPATH=/app
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s 
+    depends_on:
+      - redis
+    networks:
+      - job-hunter-network
+
+  # 🧠 THE AI WORKER (Celery)
+  worker:
+    # Use the SAME image as web (the command at the bottom changes the behavior)
+    image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
+    container_name: job-hunter-saas_worker_1
+    restart: always
+    command: ["celery", "-A", "backend.app.celery_app", "worker", "--loglevel=info", "-E", "--autoscale=4,1"]
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+    networks:
+      - job-hunter-network
+
+  # 📥 LOCAL REDIS
+  redis:
+    image: redis:7-alpine
+    container_name: job-hunter-saas_redis_1
+    restart: always
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    networks:
+      - job-hunter-network
+    volumes:
+      - redis_data:/data
+
+networks:
+  job-hunter-network:
+    driver: bridge
+
+volumes:
+  app_logs:
+  redis_data:
