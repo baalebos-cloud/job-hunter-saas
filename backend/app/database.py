@@ -2,6 +2,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import make_url
 from dotenv import load_dotenv
 
 # 1. ROBUST PATH LOADING: Find .env in the project root
@@ -12,17 +13,20 @@ load_dotenv(os.path.join(BASE_DIR, "../../.env"))
 # 2. Get the AWS RDS URL
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
+#Backward-compatible alia for older ref
+SQLALCHEMY_DATABASE = SQLALCHEMY_DATABASE_URL
+
 # Safety check for the developer
 if not SQLALCHEMY_DATABASE_URL:
     raise ValueError("❌ DATABASE_URL not found. Check your .env file at the project root.")
 
-# 3. Create the Engine
-# Note: PostgreSQL handles threading natively, so no extra args needed.
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    pool_pre_ping=True  # Recommended for RDS to handle dropped idle connections
-)
+# Note: PostgreSQL handles threading
+db_scheme = make_url(SQLALCHEMY_DATABASE).get_backend_name()
+engine_kwargs = {"pool_pre_ping": True}
+if db_scheme =="sqlite":
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
 
+engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_kwargs)
 # 4. Create the Session Factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

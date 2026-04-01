@@ -1,0 +1,76 @@
+version: "3.9"
+
+services:
+  backend:
+    image: baalebos/job-hunter-backend:latest
+    container_name: backend
+    restart: always
+    env_file:
+      - .env.prod
+    ports:
+      - "8000:8000"  # This is internal, ALB will map 80/443 externally
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 4
+      --proxy-headers
+
+  frontend:
+    image: baalebos/job-hunter-frontend:latest
+    container_name: frontend
+    restart: always
+    env_file:
+      - .env.prod
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: >
+      sh -c "next start -p 3000"
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+volumes:
+  pgdata:
+
+networks:
+  app-network:
+    driver: bridge

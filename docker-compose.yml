@@ -3,8 +3,12 @@ version: "3.8"
 services:
   # 🌐 THE API SERVER (FastAPI)
   web:
-    # Use the image built by GitHub Actions instead of building locally
-    image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
+    # 1. ADD BUILD CONTEXT: This lets you run 'docker-compose build' locally
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # 2. UPDATED IMAGE: Using your provided Account ID
+    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
     container_name: job-hunter-saas_web_1
     restart: always
     ports:
@@ -14,13 +18,15 @@ services:
     environment:
       - ENV=production
       - PYTHONPATH=/app
-    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    # Added --forwarded-allow-ips='*' to help FastAPI trust the AWS Load Balancer
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips='*'"]
     healthcheck:
+      # Changed to use --fail so it reflects exactly what the ALB sees
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s 
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       - redis
     networks:
@@ -28,8 +34,10 @@ services:
 
   # 🧠 THE AI WORKER (Celery)
   worker:
-    # Use the SAME image as web (the command at the bottom changes the behavior)
-    image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
     container_name: job-hunter-saas_worker_1
     restart: always
     command: ["celery", "-A", "backend.app.celery_app", "worker", "--loglevel=info", "-E", "--autoscale=4,1"]

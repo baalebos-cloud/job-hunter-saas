@@ -20,9 +20,9 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://baalebos.xyz",
-    "https://www.baalebos.xyz",
-    "http://jobhunter-alb-643561500.us-east-1.elb.amazonaws.com" 
+    "https://baalebo.xyz",
+    "https://www.baalebo.xyz",
+    "https://jobhunter-alb-v3-1494536959.us-east-1.elb.amazonaws.com"
 ]
 
 app.add_middleware(
@@ -71,9 +71,11 @@ async def download_improved_resume(resume_id: int, db: Session = Depends(get_db)
 async def startup_event():
     print("🚀 Baalebos Cloud API is starting...")
     # 1. Automatically create tables on AWS RDS if they don't exist
-    Base.metadata.create_all(bind=engine)
-    print("✅ RDS Tables: Verified/Created")
-
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ RDS Tables: Verified/Created")
+    except Exception as exc:
+        print(f"⚠️ RDS check skipped: {exc}")
     # 2. Check Celery/Redis connectivity
     try:
         celery_app.control.ping(timeout=1)
@@ -81,6 +83,6 @@ async def startup_event():
     except Exception:
         print("⚠️ Celery Worker: Offline (Ensure Redis SG allows Port 6379)")
 
-@app.get("/health", tags=["System"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["System"])
 def health_check():
     return {"status": "online", "version": "1.5.0", "cloud": "AWS/EC2"}

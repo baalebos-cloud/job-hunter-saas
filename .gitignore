@@ -25,5 +25,6 @@ job-hunter-dashboard/.eslintcache
 # --- Docker & Infrastructure ---
 .terraform/
 *.tfstate
+*.tfvars
 *.tfstate.backup
 docker-compose.override.yml
