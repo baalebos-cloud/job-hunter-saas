@@ -122,10 +122,12 @@ resource "aws_security_group" "rds_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    # Allow the entire VPC internal range (10.0.0.0/16) 
+    # to talk to the database
+    cidr_blocks = ["10.0.1.0/24", "10.0.2.0/24"] 
   }
 
   egress {
@@ -166,7 +168,7 @@ resource "aws_launch_template" "api" {
 
   network_interfaces {
     associate_public_ip_address = true
-    security_groups             = [aws_security_group.alb_sg.id]
+    security_groups             = [aws_security_group.web_sg.id]
   }
 
   user_data = base64encode(<<-EOF
@@ -185,7 +187,7 @@ resource "aws_launch_template" "api" {
               MAIL_PASSWORD=$(aws ssm get-parameter --name "/jobhunter/mail_password" --with-decryption --query "Parameter.Value" --output text)
               OPENAI_API_KEY=$(aws ssm get-parameter --name "/jobhunter/openai_api_key" --with-decryption --query "Parameter.Value" --output text)
 
-              docker run -d --name jobhunter-api -p 5000:3000 \
+              docker run -d --name jobhunter-api -p 5000:8000 \
                 --restart always \
                 --link redis:redis \
                 -e DATABASE_URL="postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.postgres.address}:5432/${var.db_name}" \
@@ -208,7 +210,10 @@ resource "aws_autoscaling_group" "api" {
   max_size            = 4
   min_size            = 2
   vpc_zone_identifier = [aws_subnet.public1.id, aws_subnet.public2.id]
+
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
+  health_check_type   = "ELB"
+  health_check_grace_period = 300
 
   launch_template {
     id      = aws_launch_template.api.id
@@ -218,7 +223,7 @@ resource "aws_autoscaling_group" "api" {
   tag {
     key                 = "Name"
     value               = "jobhunter-asg-instance"
-    propagate_at_launch = true
+  propagate_at_launch = true
   }
 }
 

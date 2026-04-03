@@ -8,7 +8,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     # 2. UPDATED IMAGE: Using your provided Account ID
-    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
+    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo
     container_name: job-hunter-saas_web_1
     restart: always
     ports:
@@ -18,15 +18,15 @@ services:
     environment:
       - ENV=production
       - PYTHONPATH=/app
-    # Added --forwarded-allow-ips='*' to help FastAPI trust the AWS Load Balancer
-    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips='*'"]
+    # Added --forwarded-allow-ips=* to help FastAPI trust the AWS Load Balancer
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
     healthcheck:
       # Changed to use --fail so it reflects exactly what the ALB sees
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
     depends_on:
       - redis
     networks:

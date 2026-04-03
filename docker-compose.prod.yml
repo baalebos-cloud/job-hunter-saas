@@ -2,7 +2,10 @@ version: "3.9"
 
 services:
   backend:
-    image: baalebos/job-hunter-backend:latest
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
     container_name: backend
     restart: always
     env_file:
@@ -10,24 +13,34 @@ services:
     ports:
       - "8000:8000"  # This is internal, ALB will map 80/443 externally
     depends_on:
-      - postgres
       - redis
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
     command: >
-      uvicorn app.main:app
+      uvicorn backend.app.main:app
       --host 0.0.0.0
       --port 8000
-      --workers 4
+      --workers ${UVICORN_WORKER:-2}
       --proxy-headers
+      --forwarded-allow-ips=*
+      --timeout-keep-alive 30
 
   frontend:
-    image: baalebos/job-hunter-frontend:latest
+    build:
+      context: .
+      dockerfile: ./job-hunter-dashboard/Dockerfile
+    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:frontend-latest
     container_name: frontend
     restart: always
     env_file:
@@ -44,23 +57,8 @@ services:
     command: >
       sh -c "next start -p 3000"
 
-  postgres:
-    image: postgres:15
-    container_name: postgres
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks:
-      - app-network
-
   redis:
-    image: redis:7
+    image: redis:7-alpine
     container_name: redis
     restart: always
     ports:
