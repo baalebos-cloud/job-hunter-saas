@@ -32,8 +32,6 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f ./backend/Dockerfile .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:frontend-latest -f ./job-hunter-dashboard/Dockerfile ./job-hunter-dashboard
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:frontend-latest
 
   deploy:
     needs: build-and-push
@@ -45,24 +43,22 @@ jobs:
           host: ${{ secrets.EC2_HOSTS }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Combined secrets for the remote shell
-          envs: OPENROUTER_API_KEY, DATABASE_URL
           script: |
             cd /home/ec2-user/job-hunter-saas/
-            
-            # 1. Export variables for Docker Compose
-            export OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
-            export DATABASE_URL="${{ secrets.DATABASE_URL }}"
-            export ECR_REGISTRY=${{ env.ECR_REGISTRY_URL }}
-            export ECR_REPOSITORY=job-hunter-repo
 
-            # 2. Authenticate Docker with AWS ECR
+            # 1. Force Export of Real Secrets
+            export OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}"
+            export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+            export ECR_REGISTRY="${{ env.ECR_REGISTRY_URL }}"
+            export ECR_REPOSITORY="job-hunter-repo"
+
+            # 2. Authenticate Docker
             aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
-            # 3. Pull and Restart Services
-            # sudo -E preserves the variables we just exported
+            # 3. The "Clean Swap" - Stops old version to clear env cache
+            sudo -E docker-compose -f docker-compose.prod.yml down
             sudo -E docker-compose -f docker-compose.prod.yml pull
             sudo -E docker-compose -f docker-compose.prod.yml up -d --remove-orphans
-            
-            # 4. Clean up old images
-            sudo docker image prune -a -f
+
+            # 4. Clean up
+            sudo docker image prune -f
