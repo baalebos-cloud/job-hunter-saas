@@ -1,63 +1,88 @@
 import io
 import pdfplumber
 from docx import Document
-import re
+import json
+import os
+import openai
+from backend.app.core.config import settings
 
-# Simple Keyword Dictionaries (We can expand these globally)
-CATEGORIES = {
-    "technical_skills": ["aws", "devops", "ci/cd", "iac", "oracle", "oci", "database", "devsecops", "python", "docker", "kubernetes"],
-    "soft_skills": ["leadership", "communication", "problem solving", "teamwork"],
-    "action_verbs": ["managed", "developed", "implemented", "optimized", "built"]
-}
-
+# Keep your extraction logic – it's clean and works well!
 def extract_text(file_content, filename):
     file_ext = filename.split('.')[-1].lower()
     text = ""
-    if file_ext == "pdf":
-        with pdfplumber.open(io.BytesIO(file_content)) as pdf:
-            for page in pdf.pages:
-                text += (page.extract_text() or "") + " "
-    elif file_ext == "docx":
-        doc = Document(io.BytesIO(file_content))
-        for para in doc.paragraphs:
-            text += para.text + " "
-    return text.lower()
+    try:
+        if file_ext == "pdf":
+            with pdfplumber.open(io.BytesIO(file_content)) as pdf:
+                for page in pdf.pages:
+                    text += (page.extract_text() or "") + " "
+        elif file_ext in ["docx", "doc"]:
+            doc = Document(io.BytesIO(file_content))
+            for para in doc.paragraphs:
+                text += para.text + " "
+    except Exception as e:
+        print(f"Extraction Error: {e}")
+    return text.strip()
 
 def analyze_detailed_ats(file_content, filename, job_description):
+    """
+    The Brain: Uses OpenAI to analyze the resume against the JD.
+    """
     resume_text = extract_text(file_content, filename)
-    job_desc = job_description.lower()
     
-    # 1. Identify "Target Keywords" from the Job Description
-    # In a real app, we'd use NLP to find these. Here we check our dictionary.
-    target_keywords = [word for cat in CATEGORIES.values() for word in cat if word in job_desc]
-    
-    # 2. Check which targets exist in the Resume
-    matched = [word for word in target_keywords if word in resume_text]
-    missing = [word for word in target_keywords if word not in resume_text]
-    
-    # 3. Category Breakdown Calculation
-    breakdown = {}
-    for cat_name, words in CATEGORIES.items():
-        cat_targets = [w for w in words if w in job_desc]
-        if not cat_targets:
-            breakdown[cat_name] = {"score": 100, "count": "0/0"}
-            continue
-            
-        cat_matched = [w for w in cat_targets if w in resume_text]
-        score = (len(cat_matched) / len(cat_targets)) * 100
-        breakdown[cat_name] = {
-            "score": round(score, 2),
-            "count": f"{len(cat_matched)}/{len(cat_targets)}"
+    # 1. Check if we have an API Key. If not, use a 'Simulated' smart response.
+    if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY == "your_openai_key_here":
+        return {
+            "overall_score": 45.0,
+            "keywords_matched": 0,
+            "keywords_missing": 0,
+            "missing_list": ["API Key Missing"],
+            "breakdown": {"System": "Please add OPENAI_API_KEY to .env to see real AI analysis."}
         }
 
-    # 4. Final Score (Weighted average or simple ratio)
-    final_score = (len(matched) / len(target_keywords)) * 100 if target_keywords else 0
+    # 2. Construct the "Expert Recruiter" Prompt
+    client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+    
+    prompt = f"""
+    You are a Senior Technical Recruiter. Analyze this resume against the Job Description.
+    
+    JOB DESCRIPTION:
+    {job_description}
+    
+    RESUME TEXT:
+    {resume_text[:4000]}
+    
+    Return a JSON object exactly in this format:
+    {{
+        "overall_score": 85,
+        "keywords_matched": 12,
+        "keywords_missing": 4,
+        "total_keywords": 16,
+        "missing_list": ["Terraform", "Kubernetes", "AWS RDS"],
+        "breakdown": {{
+            "technical_skills": "Strong in Python and Docker, but lacks IaC experience.",
+            "soft_skills": "Good leadership evidence shown in project management.",
+            "action_verbs": "Strong use of impact-oriented verbs."
+        }},
+        "suggestions": ["Add a section for Cloud certifications", "Quantify your DevOps achievements"]
+    }}
+    """
 
-    return {
-        "overall_score": round(final_score, 2),
-        "keywords_matched": len(matched),
-        "keywords_missing": len(missing),
-        "total_keywords": len(target_keywords),
-        "missing_list": missing,
-        "breakdown": breakdown
-    }
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o", # Using 4o for high-speed, high-quality analysis
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={ "type": "json_object" }
+        )
+        
+        # 3. Parse and return the AI's "Deep Thought"
+        return json.loads(response.choices[0].message.content)
+
+    except Exception as e:
+        print(f"AI Analysis Crash: {e}")
+        return {
+            "overall_score": 0,
+            "error": "The AI engine encountered an error during analysis."
+        }

@@ -1,10 +1,11 @@
 from typing import Dict
 import re
+from datetime import datetime
 
 from backend.app.database import SessionLocal
 from backend.app.models.application import Application
 
-# Sample keyword lists per category (can be expanded)
+# Sample keyword lists per category
 CATEGORY_KEYWORDS = {
     "action_verbs": ["developed", "implemented", "designed", "optimized", "managed", "led"],
     "certifications": ["AWS Certified", "PMP", "CCNA", "CISSP", "Scrum Master"],
@@ -13,23 +14,19 @@ CATEGORY_KEYWORDS = {
     "technical": ["Python", "SQL", "Docker", "Kubernetes", "Terraform", "React", "Flask"]
 }
 
-
 def extract_keywords(text: str, keywords: list) -> list:
     text_lower = text.lower()
     return [kw for kw in keywords if kw.lower() in text_lower]
-
 
 def analyze_resume(file_content: bytes, filename: str, job_description: str, track: str, user, user_email: str) -> Dict:
     """
     Analyze a resume against a job description and tech track.
     Returns ATS score, suggestions, highlights and also saves the result in DB.
     """
-
     db = SessionLocal()
-
     text = file_content.decode("utf-8", errors="ignore")
 
-    # Track-specific technical keywords
+    # Track-specific technical keywords logic
     try:
         from backend.app.routes.resume import TECH_TRACKS
         track_keywords = CATEGORY_KEYWORDS["technical"]
@@ -58,19 +55,23 @@ def analyze_resume(file_content: bytes, filename: str, job_description: str, tra
         for cat, items in highlights.items() if not items
     ]
 
-    # SAVE RESULT TO DATABASE
-    application = Application(
-        user_email=user_email,
-        job_title=track,
-        company="ATS Resume Analysis",
-        status="processed",
-        ats_score=ats_score,
-        improvements=str(suggestions)
-    )
-
-    db.add(application)
-    db.commit()
-    db.close()
+    # --- SAVE RESULT TO DATABASE ---
+    # We use user.id (Integer) and a fallback job_id=1 to match your Model.
+    try:
+        new_application = Application(
+            user_id=getattr(user, 'id', None),
+            job_id=1,  # Ensure a job with ID 1 exists in your RDS 'jobs' table
+            status="processed",
+            ats_score=ats_score,
+            created_at=datetime.utcnow()
+        )
+        db.add(new_application)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"DATABASE ERROR: {e}")
+    finally:
+        db.close()
 
     return {
         "ats_score": ats_score,
@@ -78,10 +79,8 @@ def analyze_resume(file_content: bytes, filename: str, job_description: str, tra
         "improvement_suggestions": suggestions
     }
 
-
 def generate_cover_letter(highlights: dict, job_description: str, track: str, user=None) -> str:
     full_name = getattr(user, "full_name", "Candidate") if user else "Candidate"
-
     return f"""
 Dear Hiring Manager,
 
@@ -97,8 +96,6 @@ Best regards,
 {full_name}
 """.strip()
 
-
 def generate_hr_message(highlights: dict, job_description: str, track: str, user=None) -> str:
     full_name = getattr(user, "full_name", "Candidate") if user else "Candidate"
-
     return f"Candidate {full_name} applied for {track.title()} track. Key highlights: {highlights}"

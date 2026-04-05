@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz";
 
 export default function Login() {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  // Momentum check: did they have a resume waiting for download?
-  const pendingId = localStorage.getItem("pending_download_id");
+
+  // SAFETY: If they are already logged in, send them to the dashboard immediately
+  useEffect(() => {
+    if (localStorage.getItem("token")) {
+      window.location.href = "/";
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -15,100 +21,71 @@ export default function Login() {
     setError('');
 
     try {
-      const res = await axios.post('http://127.0.0.1:8000/auth/login', formData);
-      
-      // 1. Save the token
-      localStorage.setItem("token", res.data.access_token);
-      
-      // 2. MOMENTUM REDIRECT: If they had a pending resume, download it now
-      if (pendingId) {
-        window.location.href = `http://127.0.0.1:8000/resume/download/${pendingId}`;
-        localStorage.removeItem("pending_download_id"); // Clear after use
-      } else {
+      // NOTE: FastAPI standard OAuth2 expects 'username' (not 'email') in the JSON body
+      const res = await axios.post(`${API_BASE_URL}/auth/login`, {
+        username: formData.email, 
+        password: formData.password
+      });
+
+      const token = res.data.access_token || res.data.token;
+      if (token) {
+        localStorage.setItem("token", token);
         window.location.href = '/';
+      } else {
+        setError("Login successful but no token received.");
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Invalid email or password. Please try again.");
+      console.error("Login detail:", err.response?.data);
+      setError(err.response?.data?.detail || "Invalid email or password.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col md:flex-row">
-      {/* 🟦 Left Side: Branding (Consistent with Signup) */}
-      <div className="hidden md:flex md:w-1/2 bg-slate-900 p-12 flex-col justify-between text-white">
-        <div>
-          <div className="text-2xl font-bold tracking-tighter mb-2">Baalebos Cloud</div>
-          <div className="h-1 w-12 bg-emerald-500 rounded-full"></div>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+      <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-2xl border border-slate-100">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Welcome Back</h1>
+          <p className="text-slate-500 mt-2 font-medium">Access your AI Career Engine</p>
         </div>
         
-        <div className="space-y-4">
-          <h2 className="text-3xl font-bold">Welcome Back.</h2>
-          <p className="text-slate-400 text-lg">
-            Ready to track your next global tech move? Log in to access your dashboard.
-          </p>
-        </div>
-
-        <div className="text-sm text-slate-500 italic">
-          "The best way to predict the future is to create it."
-        </div>
-      </div>
-
-      {/* ⬜ Right Side: Login Form */}
-      <div className="flex-1 flex items-center justify-center p-8 md:p-16">
-        <div className="w-full max-w-md space-y-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Sign In</h1>
-            <p className="text-slate-500 mt-2">Enter your credentials to continue.</p>
+        {error && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-xs font-bold flex items-center gap-2">
+            <span>⚠️</span> {error}
           </div>
+        )}
 
-          {error && (
-            <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-3 rounded-xl text-sm font-medium">
-              ⚠️ {error}
-            </div>
-          )}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">Email Address</label>
+            <input 
+              type="email" required
+              className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all"
+              placeholder="name@company.com"
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">Password</label>
+            <input 
+              type="password" required
+              className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all"
+              placeholder="••••••••"
+              onChange={(e) => setFormData({...formData, password: e.target.value})}
+            />
+          </div>
+          <button 
+            type="submit" disabled={loading}
+            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 active:scale-[0.98] transition-all shadow-xl shadow-slate-900/20"
+          >
+            {loading ? "Verifying..." : "Access Dashboard →"}
+          </button>
+        </form>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Email Address</label>
-              <input 
-                type="email" required
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all"
-                placeholder="name@company.com"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-              />
-            </div>
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm font-bold text-slate-700">Password</label>
-                <a href="#" className="text-xs text-emerald-600 font-bold hover:underline">Forgot?</a>
-              </div>
-              <input 
-                type="password" required
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-              />
-            </div>
-
-            <button 
-              type="submit"
-              disabled={loading}
-              className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transform active:scale-[0.98] transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-              ) : "Sign In to Dashboard"}
-            </button>
-          </form>
-
-          <p className="text-center text-sm text-slate-500">
-            New to Baalebos? <a href="/signup" className="text-emerald-600 font-bold hover:underline">Create an account</a>
-          </p>
-        </div>
+        <p className="mt-8 text-center text-sm text-slate-500 font-medium">
+          Need an engine account? <a href="/signup" className="text-emerald-600 font-black hover:underline underline-offset-4">Sign Up</a>
+        </p>
       </div>
     </div>
   );

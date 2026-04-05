@@ -1,17 +1,15 @@
-version: "3.9"
-
 services:
   backend:
-    build:
-      context: .
-      dockerfile: ./backend/Dockerfile
+    # Use the ECR image pulled by the pipeline
     image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
     container_name: backend
     restart: always
-    env_file:
-      - .env.prod
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
     ports:
-      - "8000:8000"  # This is internal, ALB will map 80/443 externally
+      - "8000:8000"
     depends_on:
       - redis
     networks:
@@ -27,24 +25,33 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: >
-      uvicorn backend.app.main:app
-      --host 0.0.0.0
-      --port 8000
-      --workers ${UVICORN_WORKER:-2}
-      --proxy-headers
-      --forwarded-allow-ips=*
-      --timeout-keep-alive 30
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:latest
+    container_name: worker
+    restart: always
+    environment:
+      # The worker needs the API key to perform the AI resume analysis
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - backend
+    networks:
+      - app-network
+    command: ["celery", "-A", "backend.app.tasks.celery_app", "worker", "--loglevel=info"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
-    build:
-      context: .
-      dockerfile: ./job-hunter-dashboard/Dockerfile
     image: 251561352331.dkr.ecr.us-east-1.amazonaws.com/job-hunter-repo:frontend-latest
     container_name: frontend
     restart: always
-    env_file:
-      - .env.prod
     ports:
       - "3000:3000"
     networks:
@@ -54,8 +61,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: >
-      sh -c "next start -p 3000"
+    command: ["serve", "-s", "dist", "-l", "3000"]
 
   redis:
     image: redis:7-alpine
@@ -65,9 +71,6 @@ services:
       - "6379:6379"
     networks:
       - app-network
-
-volumes:
-  pgdata:
 
 networks:
   app-network:

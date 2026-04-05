@@ -6,7 +6,7 @@ from ..database import SessionLocal
 from ..models.application import Application
 from ..schemas.application import ApplicationResponse
 from ..dependencies.auth import get_current_user
-from ..tasks.application_tasks import process_resume
+from ..tasks.application_tasks import process_application_task
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
