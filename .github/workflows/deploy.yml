@@ -1,4 +1,41 @@
-deploy:
+name: 🚀 Baalebos AI Production Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  ECR_REGISTRY_URL: 251561352331.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: 📦 Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🏗️ Build and Push Images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: job-hunter-repo
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f ./backend/Dockerfile .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:frontend-latest -f ./job-hunter-dashboard/Dockerfile ./job-hunter-dashboard
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:frontend-latest
+
+  deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
@@ -8,25 +45,24 @@ deploy:
           host: ${{ secrets.EC2_HOSTS }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Combine envs and script under ONE 'with' block
-          envs: OPENROUTER_API_KEY, DATABASE_URL, AWS_REGION, ECR_REPOSITORY
+          # Combined secrets for the remote shell
+          envs: OPENROUTER_API_KEY, DATABASE_URL
           script: |
-            cd /home/${{ secrets.EC2_USER }}/job-hunter-saas/
+            cd /home/ec2-user/job-hunter-saas/
             
-            # 1. Map GitHub Secrets to Shell Environment Variables
+            # 1. Export variables for Docker Compose
             export OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
             export DATABASE_URL="${{ secrets.DATABASE_URL }}"
             export ECR_REGISTRY=${{ env.ECR_REGISTRY_URL }}
-            export ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY }}
-            export AWS_REGION=${{ secrets.AWS_REGION }}
+            export ECR_REPOSITORY=job-hunter-repo
 
             # 2. Authenticate Docker with AWS ECR
-            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+            aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
             # 3. Pull and Restart Services
-            # -E is vital: it tells sudo to keep the environment variables we just exported
+            # sudo -E preserves the variables we just exported
             sudo -E docker-compose -f docker-compose.prod.yml pull
             sudo -E docker-compose -f docker-compose.prod.yml up -d --remove-orphans
             
-            # 4. Clean up old images to save space on your 8GB volume
+            # 4. Clean up old images
             sudo docker image prune -a -f
