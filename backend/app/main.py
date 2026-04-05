@@ -1,28 +1,34 @@
-from fastapi import FastAPI, Response, Depends, HTTPException
+import io
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-import io
+from docling.document_converter import DocumentConverter
 
+# --- IMPORT YOUR EXISTING LOGIC ---
 from backend.app.database import Base, engine, get_db
-from backend.app.routes import jobs, resume, auth, application, dashboard
+from backend.app.routes import jobs, resume, auth, application, dashboard, outreach
 from backend.app.models.resume import Resume
 from backend.app.utils.pdf_generator import generate_optimized_resume
 from backend.app.celery_app import celery_app
 
+# --- INITIALIZE APP & AI ---
 app = FastAPI(
     title="Baalebos Cloud AI",
     description="Global Talent Engine: AI Resume Analysis & Job Tracking",
     version="1.5.0"
 )
 
+# Initialize Docling once (at the top level for efficiency)
+converter = DocumentConverter()
+
 # --- PRODUCTION CORS ---
-# Added your AWS Load Balancer URL to the whitelist
 origins = [
     "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://baalebo.xyz",
     "https://baalebo.xyz",
+    "http://www.baalebo.xyz",
     "https://www.baalebo.xyz",
-    "https://jobhunter-alb-v3-1494536959.us-east-1.elb.amazonaws.com"
 ]
 
 app.add_middleware(
@@ -33,56 +39,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- ROUTER REGISTRATION ---
-app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-app.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
-app.include_router(resume.router, prefix="/resume", tags=["Resume"])
-app.include_router(application.router, prefix="/application", tags=["Application"])
-app.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+# --- INCLUDE YOUR EXISTING ROUTES ---
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
+app.include_router(resume.router, prefix="/api/v1/resume", tags=["Resumes"])
+app.include_router(application.router, prefix="/api/v1/applications", tags=["Applications"])
+app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
+# app.include_router(outreach.router, prefix="/api/v1/outreach", tags=["Outreach"])
 
-# --- DOWNLOAD LOGIC ---
-@app.get("/resume/download/{resume_id}", tags=["Resume"])
-async def download_improved_resume(resume_id: int, db: Session = Depends(get_db)):
-    resume_record = db.query(Resume).filter(Resume.id == resume_id).first()
+# --- NEW AI PARSER ENDPOINT ---
+@app.post("/api/v1/ai/parse-test", tags=["AI Engine"])
+async def test_ai_parsing(file: UploadFile = File(...)):
+    """
+    Directly tests the Docling parser without saving to DB.
+    """
+    if not file.filename.lower().endswith(('.pdf', '.docx')):
+        raise HTTPException(status_code=400, detail="Unsupported file format.")
 
-    if not resume_record or not resume_record.analysis_data:
-        raise HTTPException(status_code=404, detail="Resume analysis not yet completed or found.")
-
-    # Momentum Strategy: Fetch the missing skills/improvements from the worker's JSON output
-    improvements = resume_record.analysis_data.get("missing_list", [])
-
-    # Generate the professional PDF
-    pdf_buffer = generate_optimized_resume(
-        filename=resume_record.filename,
-        score=resume_record.ats_score,
-        improvements=improvements
-    )
-
-    return Response(
-        content=pdf_buffer.getvalue(),
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f"attachment; filename=Baalebos_Optimized_{resume_id}.pdf"
+    try:
+        content = await file.read()
+        file_stream = io.BytesIO(content)
+        result = converter.convert(file_stream)
+        markdown_text = result.document.export_to_markdown()
+        
+        return {
+            "filename": file.filename,
+            "parsed_content": markdown_text[:1000], # Preview
+            "length": len(markdown_text)
         }
-    )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Parsing Error: {str(e)}")
 
-# --- SYSTEM LIFECYCLE ---
-@app.on_event("startup")
-async def startup_event():
-    print("🚀 Baalebos Cloud API is starting...")
-    # 1. Automatically create tables on AWS RDS if they don't exist
-    try:
-        Base.metadata.create_all(bind=engine)
-        print("✅ RDS Tables: Verified/Created")
-    except Exception as exc:
-        print(f"⚠️ RDS check skipped: {exc}")
-    # 2. Check Celery/Redis connectivity
-    try:
-        celery_app.control.ping(timeout=1)
-        print("✅ Celery Worker: Connected")
-    except Exception:
-        print("⚠️ Celery Worker: Offline (Ensure Redis SG allows Port 6379)")
-
-@app.api_route("/health", methods=["GET", "HEAD"], tags=["System"])
-def health_check():
-    return {"status": "online", "version": "1.5.0", "cloud": "AWS/EC2"}
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "version": "1.5.0", "domain": "baalebo.xyz"}
