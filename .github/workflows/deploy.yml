@@ -1,4 +1,4 @@
-name: CI/CD Job Hunter API
+name: Baalebos AI Production Pipeline
 
 on:
   push:
@@ -7,41 +7,39 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    outputs:
-      registry: ${{ steps.login-ecr.outputs.registry }}
     steps:
-      - name: Checkout code
+      - name: 🚚 Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: 🔐 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: 📦 Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # We build the image once but we will tag it for both Web and Worker
-      - name: Build, tag, and push image to Amazon ECR
+      - name: 🏗️ Build and Push Images
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }} # Best practice: use git commit hash as tag
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f ./backend/Dockerfile .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          # Also tag as latest for convenience
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          # Build Backend/Worker
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f ./backend/Dockerfile .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Build Frontend (with Tailwind v4)
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:frontend-latest -f ./job-hunter-dashboard/Dockerfile ./job-hunter-dashboard
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:frontend-latest
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to EC2 via SSH
+      - name: 🚀 Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOSTS }}
@@ -49,8 +47,18 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /home/${{ secrets.EC2_USER }}/job-hunter-saas/
-            # Login to ECR on the server
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ needs.build-and-push.outputs.registry }}
-            # Pull latest and restart the whole stack
-            docker-compose pull
-            docker-compose up -d --remove-orphans
+            
+            # 1. Login to ECR on EC2
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            
+            # 2. Pull the fresh images
+            sudo docker-compose -f docker-compose.prod.yml pull
+            
+            # 3. Clean up old layers to save space on your 8GB volume
+            sudo docker builder prune -f
+            
+            # 4. Restart the stack
+            sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+            
+            # 5. Final prune of dangling images
+            sudo docker image prune -f
