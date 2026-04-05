@@ -5,7 +5,7 @@ python-multipart==0.0.12
 
 # --- AI & LLM (OpenRouter Compatible) ---
 openai==1.51.0
-docling==2.0.1
+docling>=2.15.0,<3.0.0
 pypdf==5.0.1
 qdrant-client==1.12.0
 
