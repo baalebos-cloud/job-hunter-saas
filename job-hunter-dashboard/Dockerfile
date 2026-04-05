@@ -1,21 +1,22 @@
 FROM node:20-alpine
 WORKDIR /app
 
-# Install dependencies
-COPY job-hunter-dashboard/package*.json ./
+# 1. Install dependencies
+# We use ./ because we are already inside the dashboard context
+COPY package*.json ./
 RUN npm install
 
-# Copy all source code
-COPY job-hunter-dashboard/ .
+# 2. Copy all source code from the current context
+COPY . .
 
-# Run the build (Vite creates the 'dist' folder)
+# 3. Run the build (Vite + Tailwind v4)
 RUN npm run build
 
-# Install a simple static server to serve the 'dist' folder
+# 4. Install 'serve' for production
 RUN npm install -g serve
 
 ENV NODE_ENV=production
 EXPOSE 3000
 
-# Start the application using 'serve' on port 3000
+# 5. Start the application
 CMD ["npx", "serve", "-s", "dist", "-l", "3000"]
