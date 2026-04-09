@@ -21,9 +21,9 @@ export default function Login() {
     setError('');
 
     try {
-      // NOTE: FastAPI standard OAuth2 expects 'username' (not 'email') in the JSON body
+      // Logic Match: Your backend auth.py uses 'UserLogin' which expects 'email'
       const res = await axios.post(`${API_BASE_URL}/auth/login`, {
-        username: formData.email, 
+        email: formData.email,
         password: formData.password
       });
 
@@ -49,7 +49,7 @@ export default function Login() {
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Welcome Back</h1>
           <p className="text-slate-500 mt-2 font-medium">Access your AI Career Engine</p>
         </div>
-        
+
         {error && (
           <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-xs font-bold flex items-center gap-2">
             <span>⚠️</span> {error}
@@ -59,25 +59,32 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">Email Address</label>
-            <input 
-              type="email" required
-              className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all"
+            <input
+              type="email" 
+              required
+              // CSS FIX: Added text-slate-900 and font-bold for high visibility while typing
+              className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all text-slate-900 font-bold placeholder:text-slate-300"
               placeholder="name@company.com"
+              value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}
             />
           </div>
           <div>
             <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">Password</label>
-            <input 
-              type="password" required
-              className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all"
+            <input
+              type="password" 
+              required
+              // CSS FIX: Added text-slate-900 and font-bold
+              className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all text-slate-900 font-bold placeholder:text-slate-300"
               placeholder="••••••••"
+              value={formData.password}
               onChange={(e) => setFormData({...formData, password: e.target.value})}
             />
           </div>
-          <button 
-            type="submit" disabled={loading}
-            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 active:scale-[0.98] transition-all shadow-xl shadow-slate-900/20"
+          <button
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-emerald-600 active:scale-[0.98] transition-all shadow-xl shadow-slate-900/20 disabled:bg-slate-300"
           >
             {loading ? "Verifying..." : "Access Dashboard →"}
           </button>
