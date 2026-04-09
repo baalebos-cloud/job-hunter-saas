@@ -5,10 +5,9 @@ services:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
     container_name: backend
     restart: always
-    environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379/0
+    # This line below is the "Magic Fix" that injects your .env variables
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     depends_on:
@@ -31,10 +30,8 @@ services:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
     container_name: worker
     restart: always
-    environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
     depends_on:
       - redis
       - backend
