@@ -1,17 +1,31 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: db
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
   backend:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
     container_name: backend
     restart: always
-    # This line below is the "Magic Fix" that injects your .env variables
     env_file:
       - .env
     ports:
       - "8000:8000"
     depends_on:
+      - db
       - redis
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output
     networks:
       - app-network
     healthcheck:
@@ -20,11 +34,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   worker:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
@@ -33,30 +42,31 @@ services:
     env_file:
       - .env
     depends_on:
+      - db
       - redis
       - backend
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output
     networks:
       - app-network
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+      - OUTPUT_DIR=/app/output
+    # Fixed the task path to match your project structure
     command: ["celery", "-A", "backend.app.tasks.celery_app", "worker", "--loglevel=info"]
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   frontend:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:frontend-latest
     container_name: frontend
     restart: always
+    env_file:
+      - .env
     ports:
       - "3000:3000"
     networks:
       - app-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
     command: ["serve", "-s", "dist", "-l", "3000"]
 
   redis:
@@ -69,3 +79,6 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  postgres_data:

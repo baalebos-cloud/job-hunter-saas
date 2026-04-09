@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz/api/v1";
 
 export default function Signup() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });

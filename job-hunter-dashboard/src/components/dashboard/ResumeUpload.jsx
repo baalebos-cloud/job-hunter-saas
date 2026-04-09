@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz/api/v1";
 
 export default function ResumeUpload({ onUploadSuccess }) {
   const [file, setFile] = useState(null);
@@ -13,7 +13,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
     e.preventDefault();
 
     const token = localStorage.getItem("token");
-    
+
     // BACKEND CHECK: The route requires a logged-in user (get_current_user)
     if (!token) {
       alert("Please login to use the AI Optimizer.");
@@ -45,6 +45,11 @@ export default function ResumeUpload({ onUploadSuccess }) {
 
       if (taskId) {
         console.log("Baalebos AI Task Started:", taskId);
+        
+        // This is where the download URL is constructed for the final output
+        const downloadUrl = `${API_BASE_URL}/output/download/${taskId}`;
+        console.log("Future Download Path:", downloadUrl);
+
         if (onUploadSuccess) onUploadSuccess(taskId);
       } else {
         alert("Server received the file but didn't start the task. Check backend logs.");
@@ -98,8 +103,8 @@ export default function ResumeUpload({ onUploadSuccess }) {
             onChange={(e) => setFile(e.target.files[0])}
             accept=".pdf,.docx,.doc"
           />
-          <label 
-            htmlFor="resume-upload" 
+          <label
+            htmlFor="resume-upload"
             className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/30 transition-all bg-slate-50/50"
           >
             <div className="text-4xl mb-2">📄</div>

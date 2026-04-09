@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://3.92.202.104:8000"
+  baseURL: import.meta.env.VITE_API_URL || "https://baalebo.xyz/api/v1"
 });
 
 // Automatic Token Injection

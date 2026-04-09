@@ -6,11 +6,11 @@ from docling.document_converter import DocumentConverter
 
 # --- EXISTING LOGIC ---
 from backend.app.database import Base, engine, get_db
-from backend.app.routes import jobs, resume, auth, application, dashboard, outreach
+from backend.app.routes import jobs, resume, auth, application, dashboard, upload, output
 from backend.app.ai_engine import get_resume_match_score # <--- YOUR NEW FILE
 
 # --- INITIALIZE APP & AI ---
-app = FastAPI(title="Baalebos Cloud AI", version="1.5.0")
+app = FastAPI(title="Baalebos Cloud AI")
 
 # Initialize Docling once for memory efficiency
 converter = DocumentConverter()
@@ -33,6 +33,11 @@ app.add_middleware(
 # --- INCLUDE EXISTING ROUTES ---
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
+app.include_router(resume.router, prefix="/api/v1/resume", tags=["Resume"])
+app.include_router(upload.router, prefix="/api/v1/upload", tags=["Upload"])
+app.include_router(output.router, prefix="/api/v1/output", tags=["Output"])
+app.include_router(application.router, prefix="/api/v1/application", tags=["Application"])
+app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 
 # --- THE "BRAIN" ENDPOINT: ANALYZE RESUME ---
 @app.post("/api/v1/ai/analyze", tags=["AI Engine"])
@@ -66,6 +71,8 @@ async def analyze_resume_against_job(
         print(f"Pipeline Error: {str(e)}")
         raise HTTPException(status_code=500, detail="AI Analysis failed. Check OpenRouter logs.")
 
+@app.get("/")
 @app.get("/health")
+@app.get("/api/v1/health")
 async def health_check():
-    return {"status": "healthy", "version": "1.5.0"}
+    return {"status": "healthy"}

@@ -11,7 +11,7 @@ import AtsResultView from './components/dashboard/AtsResultView'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://baalebo.xyz/api/v1";
 
 const Dashboard = () => {
   const [data, setData] = useState({ stats: null, apps: [], availableJobs: [] })

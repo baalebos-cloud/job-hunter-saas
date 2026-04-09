@@ -1,5 +1,6 @@
 import os
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from celery.result import AsyncResult
 
@@ -11,7 +12,7 @@ from backend.app.celery_app import celery_app
 from backend.app.models.user import User
 
 router = APIRouter(
-    prefix="/resume",
+ #   prefix="/resume",
     tags=["Resume"]
 )
 
@@ -43,21 +44,21 @@ async def upload_resume(
     # Convert task.id to string to ensure JSON compatibility
     return {
         "message": f"Baalebos AI analyzing: {job_title}",
-        "task_id": str(task.id), 
+        "task_id": str(task.id),
         "filename": file.filename
     }
 
 @router.get("/status/{task_id}")
 def get_resume_status(task_id: str):
     task_result = AsyncResult(task_id, app=celery_app)
-    
+
     status_map = {
         "PENDING": "pending",
         "STARTED": "processing",
         "SUCCESS": "completed",
         "FAILURE": "failed"
     }
-    
+
     current_status = status_map.get(task_result.state, task_result.state.lower())
 
     return {
@@ -65,3 +66,26 @@ def get_resume_status(task_id: str):
         "status": current_status,
         "result": task_result.result if current_status == "completed" else None
     }
+
+@router.get("/download/{task_id}")
+async def download_resume(task_id: str):
+    """
+    Handles the download of the optimized PDF from the shared production volume.
+    The filename convention must match the one used in the worker task.
+    """
+    # PATH MATCH: Aligned with Docker volume mapping ./output:/app/output
+    file_path = f"/app/output/optimized_{task_id}.pdf"
+    
+    if os.path.exists(file_path):
+        return FileResponse(
+            path=file_path,
+            media_type='application/pdf',
+            filename=f"Baalebos_Optimized_{task_id}.pdf"
+        )
+    
+    # Debugging log visible in 'docker logs backend'
+    print(f"Download Error: File not found at {file_path}")
+    raise HTTPException(
+        status_code=404, 
+        detail="Optimized resume not found. It may still be generating or failed."
+    )
