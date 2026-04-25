@@ -51,3 +51,18 @@ job-hunter-dashboard/yarn-error.log*
 docker-compose.override.yml
 *.log
 docker-data/
+
+# --- Root-level venv (was accidentally tracked) ---
+venv/
+.venv/
+env/
+
+# --- Python cache at root and any subfolder ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --- Output/upload folders ---
+output/
+uploads/
