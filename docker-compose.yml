@@ -1,0 +1,145 @@
+# =============================================================================
+# BAALEBOS CLOUD — LOCAL DEVELOPMENT
+# =============================================================================
+# Usage:
+#   docker-compose up --build        (first time)
+#   docker-compose up                (subsequent runs)
+#   docker-compose down -v           (reset everything including volumes)
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # DATABASE
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: job-hunter-db
+    restart: always
+    env_file:
+      - .env                          # FIX: Use .env instead of hardcoded creds
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - job-hunter-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d jobhunter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # REDIS
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: job-hunter-redis
+    restart: always
+    networks:
+      - job-hunter-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # BACKEND API
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      network: host
+    image: job-hunter-local/backend:latest
+    container_name: job-hunter-backend
+    restart: always
+    ports:
+      - "8000:8000"                   # FIX: Use 8000 locally — matches VITE_API_URL
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development       # Enables localhost CORS in main.py
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      db:
+        condition: service_healthy    # FIX: Wait for DB to be actually ready
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - .:/app                        # Live reload — mounts code into container
+    networks:
+      - job-hunter-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # CELERY WORKER
+  # ---------------------------------------------------------------------------
+  worker:
+    image: job-hunter-local/backend:latest   # FIX: Reuse the backend image
+    container_name: job-hunter-worker
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development
+      - OUTPUT_DIR=/app/output
+    # FIX: Celery app path — matches backend/app/celery_app.py
+    command: ["celery", "-A", "backend.app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output          # FIX: Shared volume so worker & backend see same PDFs
+      - .:/app
+    networks:
+      - job-hunter-network
+
+  # ---------------------------------------------------------------------------
+  # FRONTEND (optional — or just run npm run dev locally)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./job-hunter-dashboard
+      dockerfile: Dockerfile          # You'll need a simple Dockerfile here
+    image: job-hunter-local/frontend:latest
+    container_name: job-hunter-frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - backend
+    networks:
+      - job-hunter-network
+
+networks:
+  job-hunter-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+      com.docker.network.enable_ipv4: "true"
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,46 @@
+# =============================================================================
+# BAALEBOS CLOUD — PYTHON DEPENDENCIES
+# =============================================================================
+# Pin all versions for reproducible builds.
+# To update: pip install pip-tools && pip-compile requirements.txt
+# =============================================================================
+
+# --- Web Framework & Server ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# --- AI & LLM ---
+openai==1.51.0
+httpx==0.27.2
+# NOTE: docling pulls in torch/scipy/sklearn (~2GB). Only install on workers
+# that need it. Keep this commented out for the API-only container if splitting.
+docling>=2.15.0,<3.0.0
+pypdf==5.0.1
+# qdrant-client==1.12.0  # Uncomment only if using vector search
+
+# --- Database & Migrations ---
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# --- Validation & Settings ---
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# --- Task Queue & Cache ---
+celery[redis]==5.4.0
+redis==5.1.1
+
+# --- Auth & Security ---
+python-jose[cryptography]==3.3.0
+# FIX: passlib 1.7.4 breaks with bcrypt 4.x — pinned to 3.x for compatibility
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+email-validator==2.2.0
+
+# --- File Generation & Scraping ---
+reportlab==4.2.5
+beautifulsoup4==4.12.3
+requests==2.32.3
