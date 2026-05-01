@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from ..database import SessionLocal
-from ..models.application import Application
-from ..schemas.application import ApplicationResponse
-from ..dependencies.auth import get_current_user
-from ..tasks.application_tasks import process_application_task
+from backend.app.database import SessionLocal
+from backend.app.models.application import Application
+from backend.app.schemas.application import ApplicationResponse
+from backend.app.dependencies.auth import get_current_user
+from backend.app.tasks.application_tasks import process_application_task
 
-router = APIRouter(prefix="/applications", tags=["Applications"])
+router = APIRouter(tags=["Applications"])
 
 def get_db():
     db = SessionLocal()
@@ -18,22 +18,25 @@ def get_db():
         db.close()
 
 
-@router.post("/submit/{job_id}", response_model=ApplicationResponse)
-def submit_application(job_id: int, resume_text: str, job_description: str, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """
-    Submit a resume for a job.
-    Triggers async AI processing and notifications.
-    """
-    # Launch async task
-    process_resume.delay(current_user.id, job_id, resume_text, job_description)
+@router.post("/submit/{job_id}")
+def submit_application(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    application = Application(
+        user_id=current_user.id,
+        job_id=job_id,
+        status="pending"
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
 
-    return {"message": "Resume submitted successfully, processing started."}
+    process_application_task.delay(application.id)
+    return {"message": "Resume submitted successfully, processing started.", "application_id": application.id}
 
 
 @router.get("/", response_model=List[ApplicationResponse])
 def get_user_applications(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """
-    Fetch all applications for current user
-    """
-    applications = db.query(Application).filter(Application.user_id == current_user.id).all()
-    return applications
+    return db.query(Application).filter(Application.user_id == current_user.id).all()

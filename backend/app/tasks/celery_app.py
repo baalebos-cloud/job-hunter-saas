@@ -1,7 +1,2 @@
-from celery import Celery
-
-celery_app = Celery(
-    "tasks",
-    broker="redis://redis:6379/0",
-    backend="redis://redis:6379/1"
-)
+# Re-export the canonical Celery app — do not define a second instance here
+from backend.app.celery_app import celery_app

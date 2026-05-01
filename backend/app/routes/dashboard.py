@@ -10,11 +10,7 @@ from backend.app.services.dashboard_service import get_dashboard_stats
 from backend.app.services.job_service import list_jobs, get_job
 from backend.app.services.application_service import update_application_status
 
-router = APIRouter(
-    prefix="/dashboard",
-    tags=["Dashboard"],
-    dependencies=[Depends(get_current_user)]
-)
+router = APIRouter(tags=["Dashboard"], dependencies=[Depends(get_current_user)])
 
 # -----------------------------
 # Dashboard analytics

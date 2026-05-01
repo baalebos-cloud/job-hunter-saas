@@ -9,7 +9,6 @@ from backend.app.core.config import settings
 # ─── Text Extraction ──────────────────────────────────────────────────────────
 
 def extract_text(file_content: bytes, filename: str) -> str:
-    """Extract raw text from PDF or DOCX resume."""
     ext = filename.split('.')[-1].lower()
     text = ""
     try:
@@ -30,26 +29,25 @@ def extract_text(file_content: bytes, filename: str) -> str:
 
 def analyze_detailed_ats(file_content: bytes, filename: str, job_description: str) -> dict:
     """
-    Uses OpenRouter (Claude/GPT-4o) to score a resume against a job description.
-    Returns structured ATS analysis with score, keywords, breakdown, and suggestions.
+    Uses Groq (free & unlimited) to score a resume against a job description.
+    Model: llama-3.3-70b-versatile — fast, free, no credit card required.
+    Get your key at: https://console.groq.com
     """
     resume_text = extract_text(file_content, filename)
 
     if not resume_text:
         return _error_response("Could not extract text from resume. Please use a text-based PDF or DOCX.")
 
-    # No API key — return simulated response so the UI still works
-    if not getattr(settings, 'OPENROUTER_API_KEY', None):
+    if not settings.GROQ_API_KEY:
         return _simulated_response()
 
-    # ── OpenRouter client (same interface as OpenAI) ──────────────────────────
+    # Groq uses the same OpenAI SDK interface — just different base_url
     client = OpenAI(
-        api_key=settings.OPENROUTER_API_KEY,
-        base_url="https://openrouter.ai/api/v1",
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
     )
 
-    prompt = f"""
-You are a Senior Technical Recruiter and ATS expert. Analyze the resume against the job description below.
+    prompt = f"""You are a Senior Technical Recruiter and ATS expert. Analyze the resume against the job description below.
 
 JOB DESCRIPTION:
 {job_description[:2000]}
@@ -78,14 +76,13 @@ Return ONLY a valid JSON object in exactly this format, no extra text:
 
 Rules:
 - overall_score must be a number between 0 and 100
-- missing_list must be an array of strings (the actual missing keywords)
+- missing_list must be an array of strings (the actual missing keywords from the job description)
 - breakdown scores must be numbers between 0 and 100
-- Return ONLY the JSON, no markdown, no explanation
-"""
+- Return ONLY the JSON, no markdown, no explanation"""
 
     try:
         response = client.chat.completions.create(
-            model="anthropic/claude-3-haiku",  # Fast + cheap on OpenRouter
+            model="llama-3.3-70b-versatile",  # Free on Groq, very fast
             messages=[
                 {"role": "system", "content": "You are an ATS analysis expert. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt}
@@ -97,13 +94,12 @@ Rules:
         raw = response.choices[0].message.content.strip()
 
         # Strip markdown code blocks if present
-        raw = re.sub(r'^```json\s*', '', raw)
-        raw = re.sub(r'^```\s*', '', raw)
-        raw = re.sub(r'\s*```$', '', raw)
+        raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
 
         result = json.loads(raw)
 
-        # Ensure all required fields exist with fallbacks
         return {
             "overall_score": float(result.get("overall_score", 0)),
             "keywords_matched": int(result.get("keywords_matched", 0)),
@@ -122,31 +118,30 @@ Rules:
         print(f"[ATS] JSON parse error: {e} | Raw: {raw[:200]}")
         return _error_response("AI returned invalid response. Please try again.")
     except Exception as e:
-        print(f"[ATS] OpenRouter error: {e}")
+        print(f"[ATS] Groq error: {e}")
         return _error_response(str(e))
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _simulated_response() -> dict:
-    """Returned when no API key is configured."""
+    """Returned when no GROQ_API_KEY is configured."""
     return {
         "overall_score": 45.0,
         "keywords_matched": 5,
         "keywords_missing": 8,
         "total_keywords": 13,
-        "missing_list": ["Add OPENROUTER_API_KEY to .env for real analysis"],
+        "missing_list": ["Add GROQ_API_KEY to .env for real AI analysis — free at console.groq.com"],
         "breakdown": {
             "action_verbs": {"score": 50, "count": 4},
             "technical_skills": {"score": 40, "count": 3},
             "soft_skills": {"score": 45, "count": 2}
         },
-        "suggestions": ["Add your OpenRouter API key to enable real AI analysis"]
+        "suggestions": ["Sign up free at console.groq.com and add your GROQ_API_KEY to .env to enable real AI analysis"]
     }
 
 
 def _error_response(message: str) -> dict:
-    """Returned on extraction or API failure."""
     return {
         "overall_score": 0,
         "keywords_matched": 0,

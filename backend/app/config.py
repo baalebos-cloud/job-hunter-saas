@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     # Email config
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = "alldatatechsolu@gmail.com"
-    SMTP_PASSWORD: str = "fjczrdjorsyowjyo"
+    SMTP_USER: str = Field(default="", env="SMTP_USER")
+    SMTP_PASSWORD: str = Field(default="", env="SMTP_PASSWORD")
 
     @property
     def redis_url(self):

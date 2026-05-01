@@ -5,40 +5,44 @@ from typing import List
 from backend.app.database import get_db
 from backend.app.models.application import Application
 from backend.app.models.job import Job
-from backend.app.tasks import process_application_task
+from backend.app.dependencies.auth import get_current_user
+from backend.app.tasks.application_tasks import process_application_task
 
-router = APIRouter(
-    prefix="/applications",
-    tags=["Applications"]
-)
+router = APIRouter(tags=["Applications"])
 
-@router.post("/apply")
-def apply_for_job(job_title: str, company: str, user_email: str, db: Session = Depends(get_db)):
-    """
-    Submits a new job application and triggers the background processing task.
-    URL: /applications/apply
-    """
+
+@router.post("/apply/{job_id}")
+def apply_for_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    existing = db.query(Application).filter(
+        Application.user_id == current_user.id,
+        Application.job_id == job_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Already applied for this job")
+
     application = Application(
-        job_title=job_title,
-        company=company,
-        user_email=user_email,
+        user_id=current_user.id,
+        job_id=job_id,
         status="pending"
     )
-
     db.add(application)
     db.commit()
     db.refresh(application)
 
-    # Trigger Celery task for background processing (e.g., AI analysis)
     process_application_task.delay(application.id)
 
     return {"message": "Application submitted", "application_id": application.id}
 
+
 @router.get("/")
-def get_applications(user_email: str, db: Session = Depends(get_db)):
-    """
-    Retrieves all applications for a specific user.
-    URL: /applications/
-    """
-    applications = db.query(Application).filter(Application.user_email == user_email).all()
+def get_applications(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    applications = db.query(Application).filter(Application.user_id == current_user.id).all()
     return applications

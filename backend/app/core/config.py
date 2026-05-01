@@ -2,6 +2,10 @@ import os
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
+# Load .env from project root regardless of working directory
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "../../../.env"))
+
 class Settings(BaseSettings):
     # --- Database Settings ---
     # Pydantic will automatically grab DATABASE_URL from your .env
@@ -22,7 +26,9 @@ class Settings(BaseSettings):
 
     # --- AI & Mail ---
     # Giving these defaults ("") prevents the "Validation Error" on startup
+    OPENROUTER_API_KEY: str = Field(default="", env="OPENROUTER_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
+    GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")
     MAIL_PASSWORD: str = Field(default="", env="MAIL_PASSWORD")
     MAIL_FROM: str = Field(default="", env="MAIL_FROM")

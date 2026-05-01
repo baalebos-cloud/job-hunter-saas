@@ -50,9 +50,9 @@ export default function ApplicationsTable({ applications, onDelete }) {
             {safeApps.map((app) => (
               <tr key={app.id || Math.random()} className="hover:bg-slate-50/30 transition-colors group">
                 <td className="p-5">
-                  <div className="font-bold text-slate-800">{app.job_title || "Technical Role"}</div>
+                  <div className="font-bold text-slate-800">{app.job?.title || `Application #${app.job_id}`}</div>
                   <div className="text-[10px] font-medium text-slate-400 flex items-center gap-1 mt-0.5">
-                    <span className="opacity-50">📄</span> {app.filename || "analysis_result.pdf"}
+                    <span className="opacity-50">📄</span> {app.job?.company || 'Company'}
                   </div>
                 </td>
 

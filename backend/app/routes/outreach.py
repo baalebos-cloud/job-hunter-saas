@@ -1,10 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from backend.app.services.outreach_service import generate_message
 
-router = APIRouter(
-    prefix="/outreach",
-    tags=["Outreach"]
-)
+router = APIRouter(tags=["Outreach"])
 
 @router.post("/generate")
 def create_outreach(job_url: str, candidate_name: str, resume_text: str):

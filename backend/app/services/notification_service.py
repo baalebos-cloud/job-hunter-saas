@@ -1,11 +1,11 @@
 from smtplib import SMTP
 import ssl
-from backend.app.config import settings
+from backend.app.core.config import settings
 
-SMTP_HOST = settings.SMTP_HOST
-SMTP_PORT = settings.SMTP_PORT
-SMTP_USER = settings.SMTP_USER
-SMTP_PASSWORD = settings.SMTP_PASSWORD
+SMTP_HOST = settings.MAIL_SERVER
+SMTP_PORT = settings.MAIL_PORT
+SMTP_USER = settings.MAIL_USERNAME
+SMTP_PASSWORD = settings.MAIL_PASSWORD
 
 
 def send_email_notification(to_email: str, subject: str, body: str):

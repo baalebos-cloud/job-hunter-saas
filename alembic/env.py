@@ -29,7 +29,7 @@ try:
     from backend.app.models.user import User
     from backend.app.models.job import Job
     from backend.app.models.resume import Resume
-    # Add any other models here (e.g., Application, Profile)
+    from backend.app.models.application import Application
     
     # CRITICAL CHECK: This must print ['users', 'jobs', 'resumes'...]
     detected_tables = list(Base.metadata.tables.keys())
@@ -46,9 +46,10 @@ except ImportError as e:
 config = context.config
 
 # 5. RDS CONNECTION STRING
-if os.getenv("DATABASE_URL"):
-    db_url = os.getenv("DATABASE_URL", "").replace("%", "%%")
-config.set_main_option("sqlalchemy.url", db_url)
+db_url = os.getenv("DATABASE_URL", "")
+if not db_url:
+    raise ValueError("DATABASE_URL is not set. Check your .env file.")
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 # Standard Logging
 if config.config_file_name is not None:

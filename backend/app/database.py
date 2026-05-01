@@ -13,7 +13,7 @@ load_dotenv(os.path.join(BASE_DIR, "../../.env"))
 # 2. Get the AWS RDS URL
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-#Backward-compatible alia for older ref
+#Backward-compatible alias for older references
 SQLALCHEMY_DATABASE = SQLALCHEMY_DATABASE_URL
 
 # Safety check for the developer
@@ -23,7 +23,7 @@ if not SQLALCHEMY_DATABASE_URL:
 # Note: PostgreSQL handles threading
 db_scheme = make_url(SQLALCHEMY_DATABASE).get_backend_name()
 engine_kwargs = {"pool_pre_ping": True}
-if db_scheme =="sqlite":
+if db_scheme == "sqlite":
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_kwargs)

@@ -8,7 +8,7 @@ export default defineConfig({
     tailwindcss(), // 2. Add it here
   ],
   server: {
-    port: 3000,
+    port: 5173,
     host: true
   }
 });

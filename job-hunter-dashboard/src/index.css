@@ -6,7 +6,11 @@
 }
 
 body {
-  background-color: var(--color-brand-dark);
-  color: white;
   font-family: sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+input, textarea, select {
+  color: #0f172a;
 }
