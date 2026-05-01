@@ -9,6 +9,13 @@ from backend.app.database import Base, engine, get_db
 from backend.app.routes import jobs, resume, auth, application, dashboard
 from backend.app.services.ai_service import ai_engine
 
+# Auto-create all tables on startup (safe — skips existing tables)
+from backend.app.models.user import User  # noqa: F401
+from backend.app.models.job import Job  # noqa: F401
+from backend.app.models.resume import Resume  # noqa: F401
+from backend.app.models.application import Application  # noqa: F401
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="Baalebos Cloud AI")
 
 # --- SCHEMAS ---
