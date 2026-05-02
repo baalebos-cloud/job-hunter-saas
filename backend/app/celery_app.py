@@ -1,12 +1,11 @@
 from celery import Celery
 from backend.app.core.config import settings
 
-redis_url = settings.REDIS_URL
-
+# Celery 5.x handles rediss:// (Upstash SSL) natively — no extra SSL config needed
 celery_app = Celery(
     "job_hunter",
-    broker=redis_url,
-    backend=redis_url,
+    broker=settings.REDIS_URL,
+    backend=settings.REDIS_URL,
 )
 
 celery_app.conf.update(
@@ -16,18 +15,7 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     broker_connection_retry_on_startup=True,
-    broker_transport_options={
-        "visibility_timeout": 3600,
-        "socket_timeout": 30,
-        "socket_connect_timeout": 30,
-    },
-    # SSL for Upstash rediss:// — let the URL scheme handle SSL automatically
-    broker_use_ssl={
-        "ssl_cert_reqs": "none"
-    } if redis_url.startswith("rediss://") else None,
-    redis_backend_use_ssl={
-        "ssl_cert_reqs": "none"
-    } if redis_url.startswith("rediss://") else None,
+    broker_transport_options={"visibility_timeout": 3600},
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
     task_acks_late=True,
