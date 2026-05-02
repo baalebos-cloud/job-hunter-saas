@@ -28,4 +28,4 @@ RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Railway injects $PORT — fallback to 8000 for local
-CMD uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips "*"
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*'"]
