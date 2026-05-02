@@ -50,14 +50,35 @@ def list_applied_jobs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    FIX: Now filters by current_user.id so each user only sees their own applications.
-    Previously called applied_jobs(db) with no filter — returned ALL users' data.
-    """
-    applications = db.query(Application).filter(
+    from sqlalchemy.orm import joinedload
+    from backend.app.models.job import Job
+    applications = db.query(Application).options(
+        joinedload(Application.job)
+    ).filter(
         Application.user_id == current_user.id
-    ).all()
-    return applications
+    ).order_by(Application.id.desc()).all()
+
+    return [
+        {
+            "id": app.id,
+            "job_id": app.job_id,
+            "status": app.status,
+            "ats_score": app.ats_score,
+            "created_at": app.created_at,
+            "job": {
+                "id": app.job.id,
+                "title": app.job.title,
+                "company": app.job.company,
+                "location": app.job.location,
+                "salary_range": app.job.salary_range,
+                "description": app.job.description,
+                "category": app.job.category,
+                "url": app.job.url,
+                "source": app.job.source,
+            } if app.job else None
+        }
+        for app in applications
+    ]
 
 
 @router.delete("/applied/{application_id}")

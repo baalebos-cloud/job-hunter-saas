@@ -15,3 +15,4 @@ class Application(Base):
 
     user = relationship("User", back_populates="applications")
     job = relationship("Job", back_populates="applications")
+    outreach_messages = relationship("OutreachMessage", back_populates="application")

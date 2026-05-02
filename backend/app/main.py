@@ -10,7 +10,7 @@ from backend.app.routes import jobs, resume, auth, application, dashboard
 from backend.app.services.ai_service import ai_engine
 
 # Auto-create all tables on startup (safe — skips existing tables)
-from backend.app.models.user import User  # noqa: F401
+from backend.app.models.user import User, OutreachMessage  # noqa: F401
 from backend.app.models.job import Job  # noqa: F401
 from backend.app.models.resume import Resume  # noqa: F401
 from backend.app.models.application import Application  # noqa: F401
@@ -25,14 +25,17 @@ class AnalysisRequest(BaseModel):
 
 # --- CORS SETUP ---
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")  # Set in Railway: https://baalebo.xyz
 
 if ENVIRONMENT == "production":
     origins = [
         "https://baalebo.xyz",
         "https://www.baalebo.xyz",
     ]
+    # Also allow the FRONTEND_URL env var (Vercel preview URLs, custom domains)
+    if FRONTEND_URL and FRONTEND_URL not in origins:
+        origins.append(FRONTEND_URL)
 else:
-    # Local development — allow Vite dev server
     origins = [
         "http://localhost:5173",
         "http://localhost:5174",

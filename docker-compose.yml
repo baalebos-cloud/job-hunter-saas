@@ -115,6 +115,31 @@ services:
       - job-hunter-network
 
   # ---------------------------------------------------------------------------
+  # CELERY BEAT (runs scraper every 5 minutes)
+  # ---------------------------------------------------------------------------
+  beat:
+    image: job-hunter-local/backend:latest
+    container_name: job-hunter-beat
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development
+    command: ["celery", "-A", "backend.app.celery_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - job-hunter-network
+
+  # ---------------------------------------------------------------------------
   # FRONTEND (optional — or just run npm run dev locally)
   # ---------------------------------------------------------------------------
   frontend:

@@ -1,0 +1,16 @@
+# =============================================================================
+# BAALEBOS CLOUD — Railway Worker Service Config
+# =============================================================================
+# Create a SECOND service in Railway pointing to the same repo.
+# Set the start command override in Railway dashboard to this:
+#   celery -A backend.app.celery_app worker --loglevel=info --concurrency=2
+# =============================================================================
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+startCommand = "celery -A backend.app.celery_app worker --loglevel=info --concurrency=2"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

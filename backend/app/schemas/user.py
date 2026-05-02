@@ -7,6 +7,7 @@ class UserCreate(BaseModel):
     full_name: str
     password: str
     career_track: Optional[str] = None
+    country: Optional[str] = None
 
 
 class UserLogin(BaseModel):

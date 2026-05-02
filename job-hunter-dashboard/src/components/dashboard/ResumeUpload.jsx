@@ -1,183 +1,273 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
-// Must match CAREER_TRACKS in Signup.jsx
-const CAREER_TRACKS = [
-  { value: 'Frontend Developer', label: '🎨 Frontend Developer' },
-  { value: 'Backend Developer', label: '⚙️ Backend Developer' },
-  { value: 'Full Stack Developer', label: '🔥 Full Stack Developer' },
-  { value: 'DevOps Engineer', label: '🚀 DevOps Engineer' },
-  { value: 'Data Engineer', label: '📊 Data Engineer' },
-  { value: 'Data Scientist', label: '🧠 Data Scientist' },
-  { value: 'Machine Learning Engineer', label: '🤖 ML Engineer' },
-  { value: 'Cloud Engineer', label: '☁️ Cloud Engineer' },
-  { value: 'Cybersecurity Engineer', label: '🔒 Cybersecurity' },
-  { value: 'Product Manager', label: '📋 Product Manager' },
-  { value: 'UI/UX Designer', label: '✏️ UI/UX Designer' },
-  { value: 'Mobile Developer', label: '📱 Mobile Developer' },
+// Comprehensive job title list — users can also type anything custom
+const ALL_JOB_TITLES = [
+  'Software Engineer', 'Senior Software Engineer', 'Staff Software Engineer',
+  'Frontend Developer', 'Senior Frontend Developer', 'React Developer', 'Vue Developer', 'Angular Developer',
+  'Backend Developer', 'Senior Backend Developer', 'Python Developer', 'Node.js Developer',
+  'Java Developer', 'Go Developer', 'Ruby on Rails Developer', 'PHP Developer', 'Rust Developer',
+  'Full Stack Developer', 'Senior Full Stack Developer',
+  'DevOps Engineer', 'Senior DevOps Engineer', 'Lead DevOps Engineer',
+  'Cloud Engineer', 'AWS Engineer', 'GCP Engineer', 'Azure Engineer', 'Cloud Architect',
+  'Platform Engineer', 'Infrastructure Engineer', 'Site Reliability Engineer (SRE)',
+  'Data Engineer', 'Senior Data Engineer', 'Data Architect',
+  'Data Scientist', 'Senior Data Scientist', 'ML Engineer', 'Machine Learning Engineer',
+  'AI Engineer', 'AI/ML Engineer', 'LLM Engineer', 'NLP Engineer',
+  'Data Analyst', 'Business Intelligence Analyst', 'Analytics Engineer',
+  'Cybersecurity Engineer', 'Security Analyst', 'Penetration Tester', 'SOC Analyst',
+  'Mobile Developer', 'iOS Developer', 'Android Developer', 'Flutter Developer', 'React Native Developer',
+  'QA Engineer', 'SDET', 'Test Automation Engineer',
+  'Product Manager', 'Senior Product Manager', 'Technical Product Manager',
+  'UI/UX Designer', 'Product Designer', 'UX Researcher',
+  'Blockchain Developer', 'Web3 Developer', 'Solidity Developer',
+  'Embedded Systems Engineer', 'Firmware Engineer', 'C++ Developer',
+  'Database Administrator', 'PostgreSQL DBA', 'MySQL DBA',
+  'Technical Lead', 'Engineering Manager', 'VP of Engineering', 'CTO',
+  'Solutions Architect', 'Enterprise Architect', 'Technical Architect',
+  'Scrum Master', 'Agile Coach', 'Project Manager',
+  'Network Engineer', 'Systems Administrator', 'Linux Administrator',
+  'Salesforce Developer', 'SAP Consultant', 'ERP Developer',
+];
+
+const WORK_TYPES = [
+  { value: 'remote',  label: '🌍 Remote',   desc: 'Work from anywhere' },
+  { value: 'hybrid',  label: '🏢 Hybrid',   desc: 'Mix of office & remote' },
+  { value: 'onsite',  label: '📍 On-site',  desc: 'Full-time in office' },
 ];
 
 export default function ResumeUpload({ onUploadSuccess }) {
   const [file, setFile] = useState(null);
-  const [jobTitle, setJobTitle] = useState("");
-  const [jobDesc, setJobDesc] = useState("");
+  const [jobTitle, setJobTitle] = useState('');
+  const [jobDesc, setJobDesc] = useState('');
+  const [workType, setWorkType] = useState('remote');
   const [uploading, setUploading] = useState(false);
+  const [query, setQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef(null);
+  const dropRef = useRef(null);
+
+  // Filter suggestions based on query
+  const suggestions = query.length >= 1
+    ? ALL_JOB_TITLES.filter(t => t.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
+    : [];
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropRef.current && !dropRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selectTitle = (title) => {
+    setJobTitle(title);
+    setQuery(title);
+    setShowSuggestions(false);
+  };
 
   const handleUpload = async (e) => {
     e.preventDefault();
-
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-      alert("Please login to use the AI Optimizer.");
-      window.location.href = "/login";
-      return;
-    }
-
-    if (!file || !jobTitle || !jobDesc) {
-      alert("Please provide a Job Title, Job Description, and your Resume.");
-      return;
-    }
+    const token = localStorage.getItem('token');
+    if (!token) { alert('Please login to use the AI Optimizer.'); window.location.href = '/login'; return; }
+    if (!file || !jobTitle || !jobDesc) { alert('Please fill in all fields and upload your resume.'); return; }
 
     setUploading(true);
     const formData = new FormData();
-    formData.append("file", file);
-    formData.append("job_description", jobDesc);
-    formData.append("job_title", jobTitle.trim());
+    formData.append('file', file);
+    formData.append('job_description', jobDesc);
+    formData.append('job_title', jobTitle.trim());
+    formData.append('work_type', workType);
 
     try {
       const res = await axios.post(`${API_BASE_URL}/resume/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` }
       });
-
-      const taskId = res.data.task_id;
-
-      if (taskId) {
-        console.log("Baalebos AI Task Started:", taskId);
-        if (onUploadSuccess) onUploadSuccess(taskId);
+      if (res.data.task_id) {
+        if (onUploadSuccess) onUploadSuccess(res.data.task_id);
       } else {
         alert("Server received the file but didn't start the task. Check backend logs.");
       }
     } catch (err) {
-      console.error("Upload Error:", err);
-      const errorMsg = err.response?.data?.detail || "Upload failed. Verify your connection.";
-      alert(typeof errorMsg === 'string' ? errorMsg : "Check all fields and try again.");
+      const msg = err.response?.data?.detail || 'Upload failed. Please try again.';
+      alert(typeof msg === 'string' ? msg : 'Check all fields and try again.');
     } finally {
       setUploading(false);
     }
   };
 
+  const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-200 bg-white outline-none focus:border-emerald-500 transition-all text-slate-900 font-semibold text-sm placeholder:text-slate-300 placeholder:font-normal';
+
   return (
-    <div className="bg-white p-8 md:p-12 rounded-[2rem] shadow-2xl shadow-slate-200/50 border border-slate-100 max-w-3xl mx-auto my-8">
+    <div className="bg-white p-8 md:p-12 rounded-[2rem] shadow-2xl shadow-slate-200/50 border border-slate-100 max-w-3xl mx-auto my-8"
+      style={{ fontFamily: "'Inter', sans-serif" }}>
+
+      {/* Header */}
       <div className="text-center mb-10">
-        <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase">AI Engine</h2>
-        <p className="text-slate-400 font-medium mt-2">Optimization Core v1.5</p>
+        <h2 className="text-3xl font-black text-slate-900 tracking-tight"
+          style={{ fontFamily: "'Playfair Display', serif" }}>AI Resume Optimizer</h2>
+        <p className="text-slate-500 font-medium mt-2 text-sm">
+          Our AI scores your resume against the job description and generates an interview-ready PDF.
+        </p>
       </div>
 
       <form onSubmit={handleUpload} className="space-y-6">
 
-        {/* Job Title — supports free text OR career track selection */}
+        {/* Job Title — searchable autocomplete */}
         <div>
-          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
             Target Job Title
           </label>
-          <div className="space-y-2">
-            {/* Quick select from career tracks */}
+          <div className="relative" ref={dropRef}>
             <div className="relative">
-              <select
-                className="w-full p-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold appearance-none cursor-pointer pr-10"
-                style={{ color: jobTitle ? '#0f172a' : '#94a3b8' }}
-                value={CAREER_TRACKS.find(t => t.value === jobTitle) ? jobTitle : ''}
-                onChange={(e) => setJobTitle(e.target.value)}
-              >
-                <option value="" disabled>Quick select your track...</option>
-                {CAREER_TRACKS.map(track => (
-                  <option key={track.value} value={track.value} style={{ color: '#0f172a' }}>
-                    {track.label}
-                  </option>
+              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Search or type any job title... e.g. Senior DevOps Engineer"
+                className={`${inputCls} pl-11 pr-10`}
+                value={query}
+                onChange={e => { setQuery(e.target.value); setJobTitle(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)}
+                autoComplete="off"
+              />
+              {query && (
+                <button type="button" onClick={() => { setQuery(''); setJobTitle(''); inputRef.current?.focus(); }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 font-black text-lg">
+                  ×
+                </button>
+              )}
+            </div>
+
+            {/* Suggestions dropdown */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-hidden">
+                {suggestions.map(title => (
+                  <button
+                    key={title}
+                    type="button"
+                    onMouseDown={() => selectTitle(title)}
+                    className="w-full text-left px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors border-b border-slate-50 last:border-0"
+                  >
+                    {title}
+                  </button>
                 ))}
-              </select>
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">▾</span>
-            </div>
-            {/* Or type custom */}
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-px bg-slate-200" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">or type custom</span>
-              <div className="flex-1 h-px bg-slate-200" />
-            </div>
-            <input
-              type="text"
-              placeholder="e.g. Senior DevOps Engineer"
-              className="w-full p-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all !text-slate-900 font-bold placeholder:text-slate-300"
-              style={{ color: '#0f172a' }}
-              value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
-            />
+                {query && !ALL_JOB_TITLES.some(t => t.toLowerCase() === query.toLowerCase()) && (
+                  <button
+                    type="button"
+                    onMouseDown={() => selectTitle(query)}
+                    className="w-full text-left px-4 py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors bg-emerald-50/50">
+                    ✚ Use "{query}" as custom title
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-slate-400 mt-1.5 ml-1">
-            This is used to match you with relevant jobs after the analysis.
+          <p className="text-xs text-slate-400 mt-1.5 ml-1 font-medium">
+            Type to search from 60+ roles or enter any custom title.
           </p>
+        </div>
+
+        {/* Work Type */}
+        <div>
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
+            Preferred Work Type
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {WORK_TYPES.map(wt => (
+              <button
+                key={wt.value}
+                type="button"
+                onClick={() => setWorkType(wt.value)}
+                className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                  workType === wt.value
+                    ? 'border-emerald-500 bg-emerald-50'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <p className={`text-sm font-black ${workType === wt.value ? 'text-emerald-700' : 'text-slate-700'}`}>
+                  {wt.label}
+                </p>
+                <p className={`text-xs font-medium mt-0.5 ${workType === wt.value ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  {wt.desc}
+                </p>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Job Description */}
         <div>
-          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1">
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
             Job Description
           </label>
           <textarea
-            rows="5"
+            rows={5}
             required
-            placeholder="Paste the full job description here — the AI will extract keywords and score your resume against it..."
-            className="w-full p-4 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition-all !text-slate-900 font-medium text-sm placeholder:text-slate-300 resize-none"
-            style={{ color: '#0f172a' }}
+            placeholder="Paste the full job description here — the AI will extract every keyword and score your resume against it for maximum ATS match..."
+            className={`${inputCls} resize-none leading-relaxed`}
             value={jobDesc}
-            onChange={(e) => setJobDesc(e.target.value)}
+            onChange={e => setJobDesc(e.target.value)}
           />
+          <p className="text-xs text-slate-400 mt-1.5 ml-1 font-medium">
+            The more complete the JD, the higher your ATS score will be.
+          </p>
         </div>
 
         {/* File Upload */}
-        <div className="relative group">
-          <input
-            type="file"
-            id="resume-upload"
-            className="hidden"
-            onChange={(e) => setFile(e.target.files[0])}
-            accept=".pdf,.docx,.doc"
-          />
-          <label
-            htmlFor="resume-upload"
-            className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/30 transition-all bg-slate-50/50 group-hover:scale-[1.01]"
-          >
-            <div className="text-4xl mb-3">{file ? '✅' : '📄'}</div>
-            <p className="text-slate-900 font-bold text-sm">
-              {file ? file.name : "Click to Upload Your Resume"}
-            </p>
-            <p className="text-slate-400 text-xs mt-1">
-              {file ? `${(file.size / 1024).toFixed(0)} KB` : "PDF, DOCX, or DOC — max 10MB"}
-            </p>
+        <div>
+          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+            Your Resume
+          </label>
+          <input type="file" id="resume-file" className="hidden"
+            onChange={e => setFile(e.target.files[0])} accept=".pdf,.docx,.doc" />
+          <label htmlFor="resume-file"
+            className={`flex items-center gap-4 p-5 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
+              file ? 'border-emerald-400 bg-emerald-50/40' : 'border-slate-200 bg-slate-50/50 hover:border-emerald-300 hover:bg-emerald-50/20'
+            }`}>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 ${
+              file ? 'bg-emerald-100' : 'bg-slate-100'
+            }`}>
+              {file ? '✅' : '📄'}
+            </div>
+            <div>
+              <p className={`font-black text-sm ${file ? 'text-emerald-700' : 'text-slate-700'}`}>
+                {file ? file.name : 'Click to upload your resume'}
+              </p>
+              <p className="text-xs font-medium text-slate-400 mt-0.5">
+                {file ? `${(file.size / 1024).toFixed(0)} KB · PDF, DOCX or DOC` : 'PDF, DOCX, or DOC · Max 10MB'}
+              </p>
+            </div>
           </label>
         </div>
 
+        {/* Submit */}
         <button
           type="submit"
           disabled={uploading || !file || !jobTitle || !jobDesc}
-          className={`w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs text-white shadow-xl transition-all active:scale-[0.98] ${
+          className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest text-white shadow-xl transition-all active:scale-[0.98] ${
             uploading || !file || !jobTitle || !jobDesc
               ? 'bg-slate-300 cursor-not-allowed'
               : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
           }`}
         >
-          {uploading ? "🚀 Analyzing Infrastructure..." : "Run AI Analysis →"}
+          {uploading ? '🚀 AI Analyzing Your Resume...' : 'Run AI Analysis & Get Interview-Ready PDF →'}
         </button>
 
         {(!file || !jobTitle || !jobDesc) && (
-          <p className="text-center text-xs text-slate-400">
-            {!jobTitle ? 'Select or type a job title' : !jobDesc ? 'Paste a job description' : 'Upload your resume'} to enable analysis
+          <p className="text-center text-xs text-slate-400 font-medium">
+            {!jobTitle ? '① Search and select a job title above'
+              : !jobDesc ? '② Paste the job description'
+              : '③ Upload your resume to start'}
           </p>
         )}
       </form>

@@ -156,3 +156,112 @@ def _error_response(message: str) -> dict:
         "suggestions": [],
         "error": message
     }
+
+
+# ─── AI Resume Rewriter ───────────────────────────────────────────────────────────────
+
+def rewrite_resume_for_job(resume_text: str, job_description: str, job_title: str, missing_keywords: list) -> dict:
+    """
+    Uses Groq to fully rewrite the resume tailored to the specific job.
+    Returns a structured dict with all resume sections ready for PDF rendering.
+    """
+    if not settings.GROQ_API_KEY:
+        return _fallback_structured_resume(resume_text, job_title, missing_keywords)
+
+    client = OpenAI(
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+    )
+
+    missing_str = ", ".join(missing_keywords[:10]) if missing_keywords else "none"
+
+    prompt = f"""You are an expert resume writer. Rewrite the candidate's resume to be perfectly tailored for the job below.
+
+JOB TITLE: {job_title}
+
+JOB DESCRIPTION:
+{job_description[:2000]}
+
+ORIGINAL RESUME:
+{resume_text[:3000]}
+
+MISSING KEYWORDS TO INCORPORATE: {missing_str}
+
+Instructions:
+- Keep ALL real experience, education, and skills from the original resume — do NOT invent fake experience
+- Rewrite bullet points to use strong action verbs and quantified achievements
+- Naturally weave in the missing keywords where they genuinely apply
+- Mirror the job title in the professional summary
+- Make every bullet point start with a strong action verb
+- Keep it truthful — only enhance how existing experience is described
+
+Return ONLY a valid JSON object in this exact format:
+{{
+  "name": "Full Name from resume",
+  "contact": "email | phone | location | linkedin",
+  "summary": "2-3 sentence professional summary tailored to the job",
+  "experience": [
+    {{
+      "title": "Job Title",
+      "company": "Company Name",
+      "dates": "Month Year - Month Year",
+      "bullets": [
+        "Architected and deployed scalable CI/CD pipelines using Jenkins and GitHub Actions, reducing deployment time by 40%",
+        "Managed AWS infrastructure (EC2, RDS, S3) serving 500K+ daily users with 99.9% uptime"
+      ]
+    }}
+  ],
+  "skills": ["Python", "AWS", "Kubernetes", "Terraform", "Docker", "CI/CD"],
+  "education": [
+    {{
+      "degree": "B.Sc. Computer Science",
+      "school": "University Name",
+      "year": "2020"
+    }}
+  ],
+  "certifications": ["AWS Certified Solutions Architect", "CKA"]
+}}
+
+Return ONLY the JSON, no markdown, no explanation."""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are an expert resume writer. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2000,
+            temperature=0.4,
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
+        result = json.loads(raw)
+        return result
+    except Exception as e:
+        print(f"[Resume Rewrite] Error: {e}")
+        return _fallback_structured_resume(resume_text, job_title, missing_keywords)
+
+
+def _fallback_structured_resume(resume_text: str, job_title: str, missing_keywords: list) -> dict:
+    """Parse raw resume text into structured sections when AI is unavailable."""
+    lines = [l.strip() for l in resume_text.split('\n') if l.strip()]
+    name = lines[0] if lines else "Candidate"
+    contact = lines[1] if len(lines) > 1 else ""
+
+    # Extract bullets from body
+    bullets = [l.lstrip('•-* ') for l in lines[2:] if l.startswith(('•', '-', '*', '–'))]
+    non_bullets = [l for l in lines[2:] if not l.startswith(('•', '-', '*', '–'))]
+
+    return {
+        "name": name,
+        "contact": contact,
+        "summary": f"Experienced professional seeking {job_title} role. Skilled in delivering high-impact solutions.",
+        "experience": [{"title": job_title, "company": "Previous Employer", "dates": "",
+                        "bullets": bullets[:8] or ["Delivered key projects aligned with business objectives."]}],
+        "skills": missing_keywords[:12] if missing_keywords else ["See resume for full skill set"],
+        "education": [],
+        "certifications": []
+    }

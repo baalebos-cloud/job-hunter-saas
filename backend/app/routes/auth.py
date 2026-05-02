@@ -25,7 +25,8 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         email=user.email,
         full_name=user.full_name,
         hashed_password=hash_password(user.password),
-        career_track=user.career_track  # Save track for job matching
+        career_track=user.career_track,
+        country=user.country
     )
     db.add(new_user)
     db.commit()

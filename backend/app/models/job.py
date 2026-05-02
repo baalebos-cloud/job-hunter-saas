@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
+from datetime import datetime
 from backend.app.database import Base
 
 class Job(Base):
@@ -15,5 +16,7 @@ class Job(Base):
     description = Column(String, nullable=True)
     salary_range = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    scraped_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    work_type = Column(String, nullable=True)  # remote | hybrid | onsite
 
     applications = relationship("Application", back_populates="job")
