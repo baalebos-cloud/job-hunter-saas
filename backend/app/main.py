@@ -39,8 +39,8 @@ if ENVIRONMENT == "production":
     origins = [
         "https://baalebo.xyz",
         "https://www.baalebo.xyz",
+        "https://job-hunter-saas-six.vercel.app",
     ]
-    # Also allow the FRONTEND_URL env var (Vercel preview URLs, custom domains)
     if FRONTEND_URL and FRONTEND_URL not in origins:
         origins.append(FRONTEND_URL)
 else:
