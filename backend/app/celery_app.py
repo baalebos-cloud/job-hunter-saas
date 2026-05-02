@@ -3,19 +3,32 @@ from celery import Celery
 from celery.schedules import crontab
 from backend.app.core.config import settings
 
-# Upstash Redis uses rediss:// (SSL) — Celery needs ssl_cert_reqs=none
 redis_url = settings.REDIS_URL
+
+# Upstash uses rediss:// (SSL). Celery's redis transport needs the URL
+# as redis:// but with SSL options passed separately.
 broker_use_ssl = None
 redis_backend_use_ssl = None
+broker_url = redis_url
+backend_url = redis_url
 
 if redis_url.startswith("rediss://"):
-    broker_use_ssl = {"ssl_cert_reqs": "none"}
-    redis_backend_use_ssl = {"ssl_cert_reqs": "none"}
+    ssl_opts = {
+        "ssl_cert_reqs": "none",
+        "ssl_ca_certs": None,
+        "ssl_certfile": None,
+        "ssl_keyfile": None,
+    }
+    broker_use_ssl = ssl_opts
+    redis_backend_use_ssl = ssl_opts
+    # Celery needs redis:// not rediss:// — SSL passed via broker_use_ssl
+    broker_url = redis_url.replace("rediss://", "redis://", 1)
+    backend_url = redis_url.replace("rediss://", "redis://", 1)
 
 celery_app = Celery(
     "job_hunter",
-    broker=redis_url,
-    backend=redis_url
+    broker=broker_url,
+    backend=backend_url
 )
 
 celery_app.conf.update(
