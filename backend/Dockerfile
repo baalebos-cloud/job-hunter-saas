@@ -18,9 +18,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY backend/ ./backend/
 COPY start.sh ./start.sh
+COPY start-worker.sh ./start-worker.sh
+COPY start-beat.sh ./start-beat.sh
 
 RUN mkdir -p /app/output /app/uploads && \
-    chmod +x /app/start.sh
+    chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh
 
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
