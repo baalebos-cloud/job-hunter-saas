@@ -2,46 +2,47 @@ import os
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
-# Load .env from project root regardless of working directory
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "../../../.env"))
 
 class Settings(BaseSettings):
-    # --- Database Settings ---
-    # Pydantic will automatically grab DATABASE_URL from your .env
-    DATABASE_URL: str = Field(..., env="DATABASE_URL")
+    # --- Database ---
+    # Railway injects DATABASE_URL automatically when PostgreSQL plugin is added
+    DATABASE_URL: str = Field(default="", env="DATABASE_URL")
 
-    # --- Redis / ElastiCache Settings ---
-    # This fixes the 'settings object has no attribute redis_url' error
-    REDIS_URL: str = Field(..., env="REDIS_URL")
+    # --- Redis ---
+    # Railway injects REDIS_URL automatically when Redis plugin is added
+    REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
 
-    # --- Security & Auth ---
-    # We provide a default string so the app doesn't crash if the .env is missing
+    # --- Security ---
     SECRET_KEY: str = Field(
-        default="BAALEBOS_SUPER_SECRET_KEY_2026_CLOUD_TALENT", 
+        default="BAALEBOS_SUPER_SECRET_KEY_2026_CLOUD_TALENT",
         env="SECRET_KEY"
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 days
 
-    # --- AI & Mail ---
-    # Giving these defaults ("") prevents the "Validation Error" on startup
+    # --- AI ---
+    GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
     OPENROUTER_API_KEY: str = Field(default="", env="OPENROUTER_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
-    GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
+
+    # --- Mail ---
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")
     MAIL_PASSWORD: str = Field(default="", env="MAIL_PASSWORD")
     MAIL_FROM: str = Field(default="", env="MAIL_FROM")
     MAIL_PORT: int = 587
     MAIL_SERVER: str = "smtp.gmail.com"
-    # --- App State ---
-    ENVIRONMENT: str = "production"
+
+    # --- App ---
+    ENVIRONMENT: str = Field(default="production", env="ENVIRONMENT")
     DEBUG: bool = False
 
     class Config:
-        # This points Pydantic to your .env file
+        # Read from env vars directly — works on Railway, local, and Docker
+        # env_file is optional fallback for local dev
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = True
         extra = "ignore"
-# Initialize the settings object
+
+
 settings = Settings()

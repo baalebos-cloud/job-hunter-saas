@@ -1,9 +1,6 @@
 # =============================================================================
 # BAALEBOS CLOUD — Railway Deployment Configuration
 # =============================================================================
-# Railway reads this file to know how to build and run each service.
-# Docs: https://docs.railway.app/reference/config-as-code
-# =============================================================================
 
 [build]
 builder = "DOCKERFILE"
@@ -12,6 +9,6 @@ dockerfilePath = "backend/Dockerfile"
 [deploy]
 startCommand = "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips *"
 healthcheckPath = "/health"
-healthcheckTimeout = 60
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 5
