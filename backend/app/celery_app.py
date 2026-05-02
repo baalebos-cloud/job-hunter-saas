@@ -3,10 +3,19 @@ from celery import Celery
 from celery.schedules import crontab
 from backend.app.core.config import settings
 
+# Upstash Redis uses rediss:// (SSL) — Celery needs ssl_cert_reqs=none
+redis_url = settings.REDIS_URL
+broker_use_ssl = None
+redis_backend_use_ssl = None
+
+if redis_url.startswith("rediss://"):
+    broker_use_ssl = {"ssl_cert_reqs": "none"}
+    redis_backend_use_ssl = {"ssl_cert_reqs": "none"}
+
 celery_app = Celery(
     "job_hunter",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL
+    broker=redis_url,
+    backend=redis_url
 )
 
 celery_app.conf.update(
@@ -16,16 +25,17 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     broker_connection_retry_on_startup=True,
+    broker_use_ssl=broker_use_ssl,
+    redis_backend_use_ssl=redis_backend_use_ssl,
     broker_transport_options={'visibility_timeout': 3600},
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
-    # ── Beat schedule: scrape every 5 minutes ──────────────────────────────
     beat_schedule={
         "scrape-jobs-every-5-minutes": {
             "task": "backend.app.tasks.scrape_jobs",
-            "schedule": 300.0,  # 300 seconds = 5 minutes
+            "schedule": 300.0,
         },
     },
 )
