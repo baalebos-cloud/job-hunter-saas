@@ -12,20 +12,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements from project root
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy backend source
 COPY backend/ ./backend/
+COPY start.sh ./start.sh
 
-# Create output and uploads dirs
-RUN mkdir -p /app/output /app/uploads
+RUN mkdir -p /app/output /app/uploads && \
+    chmod +x /app/start.sh
 
-# Non-root user
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Railway injects $PORT — fallback to 8000 for local
-CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*'"]
+CMD ["/app/start.sh"]
