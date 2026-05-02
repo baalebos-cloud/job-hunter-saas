@@ -6,7 +6,7 @@ from backend.app.utils.ats_engine import analyze_detailed_ats, extract_text, rew
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_DIR = "/app/output"
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/app/output")
 
 
 @celery_app.task(bind=True, name="process_resume_task")
@@ -15,15 +15,13 @@ def process_resume_task(self, file_content, original_filename, job_description, 
     logger.info(f"--- STARTING TASK {task_id} for {original_filename} ---")
 
     try:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-
         file_bytes = bytes(file_content) if not isinstance(file_content, bytes) else file_content
 
         # ── Step 1: Extract raw text ──────────────────────────────────────────
         resume_text = extract_text(file_bytes, original_filename)
         logger.info(f"Extracted {len(resume_text)} chars from {original_filename}")
 
-        # ── Step 2: ATS Analysis (scoring + missing keywords) ─────────────────
+        # ── Step 2: ATS Analysis ──────────────────────────────────────────────
         logger.info(f"Running Groq ATS analysis for task {task_id}")
         analysis = analyze_detailed_ats(
             file_content=file_bytes,
@@ -41,7 +39,7 @@ def process_resume_task(self, file_content, original_filename, job_description, 
         suggestions = analysis.get("suggestions", [])
         logger.info(f"ATS Score: {ats_score}% | Missing: {len(missing_list)} keywords")
 
-        # ── Step 3: AI Resume Rewrite tailored to the job ─────────────────────
+        # ── Step 3: AI Resume Rewrite ─────────────────────────────────────────
         logger.info(f"Rewriting resume for '{job_title}' with Groq AI")
         structured = rewrite_resume_for_job(
             resume_text=resume_text,
@@ -50,7 +48,7 @@ def process_resume_task(self, file_content, original_filename, job_description, 
             missing_keywords=missing_list
         )
 
-        # ── Step 4: Build improvements list for PDF page 2 ────────────────────
+        # ── Step 4: Build improvements list ──────────────────────────────────
         improvements = []
         for s in suggestions[:5]:
             improvements.append({"skill": "AI Suggestion", "bullet_point": s})
@@ -59,7 +57,7 @@ def process_resume_task(self, file_content, original_filename, job_description, 
                 break
             improvements.append({
                 "skill": kw,
-                "bullet_point": f"Incorporate '{kw}' naturally into your experience bullets and skills section — this keyword is in the job description and boosts your ATS score."
+                "bullet_point": f"Incorporate '{kw}' naturally into your experience bullets and skills section."
             })
         if not improvements:
             improvements = [
@@ -67,7 +65,7 @@ def process_resume_task(self, file_content, original_filename, job_description, 
                 {"skill": "Quantify Impact", "bullet_point": "Add numbers to achievements: 'Reduced deployment time by 40%', 'Managed infrastructure for 500K+ users'."},
             ]
 
-        # ── Step 5: Generate full professional PDF ────────────────────────────
+        # ── Step 5: Generate PDF ──────────────────────────────────────────────
         logger.info(f"Generating professional PDF for task {task_id}")
         pdf_buffer = generate_optimized_resume(
             filename=original_filename,
@@ -75,19 +73,46 @@ def process_resume_task(self, file_content, original_filename, job_description, 
             improvements=improvements,
             resume_text=resume_text,
             task_id=task_id,
-            structured=structured,       # ← AI-rewritten structured resume
+            structured=structured,
         )
+        pdf_bytes = pdf_buffer.read()
 
-        output_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
-        with open(output_path, "wb") as f:
-            f.write(pdf_buffer.read())
+        # ── Step 6: Save PDF to PostgreSQL (Railway-safe) ─────────────────────
+        try:
+            from backend.app.database import SessionLocal
+            from backend.app.models.resume import Resume
+            db_session = SessionLocal()
+            resume_record = Resume(
+                owner_id=user_id,
+                filename=f"optimized_{task_id}.pdf",
+                content=pdf_bytes,
+                ats_score=ats_score,
+                analysis_data={
+                    "task_id": task_id,
+                    "job_title": job_title,
+                    "overall_score": ats_score,
+                    "missing_list": missing_list,
+                    "suggestions": suggestions,
+                }
+            )
+            db_session.add(resume_record)
+            db_session.commit()
+            db_session.close()
+            logger.info(f"PDF saved to database for task {task_id}")
+        except Exception as db_err:
+            logger.warning(f"Could not save PDF to DB: {db_err}")
 
-        if os.path.exists(output_path):
-            logger.info(f"SUCCESS: PDF saved at {output_path} ({os.path.getsize(output_path)} bytes)")
-        else:
-            logger.error(f"PDF missing after write: {output_path}")
+        # ── Step 7: Also save to filesystem (local dev fallback) ──────────────
+        try:
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            output_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
+            with open(output_path, "wb") as f:
+                f.write(pdf_bytes)
+            logger.info(f"PDF saved to filesystem: {output_path}")
+        except Exception as fs_err:
+            logger.warning(f"Could not save PDF to filesystem: {fs_err}")
 
-        # ── Step 6: Return result to frontend ─────────────────────────────────
+        # ── Step 8: Return result to frontend ─────────────────────────────────
         return {
             "id": task_id,
             "task_id": task_id,

@@ -27,20 +27,27 @@ async def upload_resume(
     current_user: User = Depends(get_current_user)
 ):
     allowed_extensions = [".pdf", ".docx", ".doc"]
-    file_ext = os.path.splitext(file.filename)[1].lower()  # FIX: was .lower() on the tuple
+    file_ext = os.path.splitext(file.filename)[1].lower()
 
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="Unsupported file type.")
 
     file_content = await file.read()
 
-    task = process_resume_task.delay(
-        file_content,        # raw bytes — worker now handles writing to disk
-        file.filename,
-        job_description,
-        current_user.id,
-        job_title.strip()
-    )
+    try:
+        task = process_resume_task.delay(
+            list(file_content),  # convert bytes to list for JSON serialization
+            file.filename,
+            job_description,
+            current_user.id,
+            job_title.strip()
+        )
+    except Exception as e:
+        print(f"Celery task error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to queue analysis task. Please check worker is running. Error: {str(e)}"
+        )
 
     return {
         "message": f"Baalebos AI analyzing: {job_title}",
@@ -70,16 +77,12 @@ def get_resume_status(task_id: str):
 
 
 @router.get("/download/{task_id}")
-async def download_resume(task_id: str):
-    """
-    FIX: Path now matches what the worker actually saves:
-    /app/output/optimized_{task_id}.pdf
+async def download_resume(task_id: str, db: Session = Depends(get_db)):
+    from backend.app.models.resume import Resume
+    from fastapi.responses import Response
 
-    Old code looked for /app/output/optimized_{task_id}.pdf but worker
-    was saving to /app/outputs/{task_id}.pdf — mismatched dir and filename.
-    """
+    # 1. Try filesystem first (local dev)
     file_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
-
     if os.path.exists(file_path):
         return FileResponse(
             path=file_path,
@@ -87,8 +90,19 @@ async def download_resume(task_id: str):
             filename=f"Baalebos_Optimized_{task_id}.pdf"
         )
 
-    print(f"Download Error: File not found at {file_path}")
+    # 2. Try PostgreSQL (Railway production)
+    resume = db.query(Resume).filter(
+        Resume.filename == f"optimized_{task_id}.pdf"
+    ).order_by(Resume.id.desc()).first()
+
+    if resume and resume.content:
+        return Response(
+            content=resume.content,
+            media_type='application/pdf',
+            headers={"Content-Disposition": f'attachment; filename="Baalebos_Optimized_{task_id}.pdf"'}
+        )
+
     raise HTTPException(
         status_code=404,
-        detail="Optimized resume not found. It may still be generating or the task failed."
+        detail="Optimized resume not found. It may still be generating."
     )
