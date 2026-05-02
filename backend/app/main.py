@@ -9,14 +9,22 @@ from backend.app.database import Base, engine, get_db
 from backend.app.routes import jobs, resume, auth, application, dashboard
 from backend.app.services.ai_service import ai_engine
 
-# Auto-create all tables on startup (safe — skips existing tables)
+# Import models so SQLAlchemy knows about them
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
 from backend.app.models.job import Job  # noqa: F401
 from backend.app.models.resume import Resume  # noqa: F401
 from backend.app.models.application import Application  # noqa: F401
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Baalebos Cloud AI")
+
+@app.on_event("startup")
+async def startup_event():
+    """Create tables on startup — runs after the app is ready to serve requests."""
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ Database tables created/verified")
+    except Exception as e:
+        print(f"⚠️ DB startup warning: {e}")
 
 # --- SCHEMAS ---
 class AnalysisRequest(BaseModel):
@@ -73,4 +81,4 @@ async def analyze_resume_against_job(payload: AnalysisRequest):
 @app.get("/health")
 @app.get("/api/v1/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "healthy", "service": "baalebos-cloud"}
