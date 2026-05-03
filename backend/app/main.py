@@ -83,3 +83,12 @@ async def analyze_resume_against_job(payload: AnalysisRequest):
 @app.get("/api/v1/health")
 async def health_check():
     return {"status": "healthy", "service": "baalebos-cloud"}
+
+
+@app.post("/api/v1/admin/scrape")
+async def trigger_scrape():
+    """Manually trigger the job scraper — runs in background thread."""
+    from fastapi.concurrency import run_in_threadpool
+    from backend.app.utils.global_scraper import scrape_global_jobs
+    result = await run_in_threadpool(scrape_global_jobs)
+    return result
