@@ -262,7 +262,17 @@ const Dashboard = () => {
             </div>
           ) : !analysisResult ? (
             <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
-              <ResumeUpload onUploadSuccess={(taskId) => setActiveTaskId(taskId)} />
+              <ResumeUpload onUploadSuccess={(taskId, directResult) => {
+                if (directResult) {
+                  // Railway mode: result returned directly, no polling needed
+                  setAnalysisResult(directResult);
+                  localStorage.setItem('lastTaskId', directResult.task_id || taskId);
+                  fetchData();
+                } else {
+                  // Local dev mode: poll for result
+                  setActiveTaskId(taskId);
+                }
+              }} />
             </div>
           ) : (
             <AtsResultView data={analysisResult} />

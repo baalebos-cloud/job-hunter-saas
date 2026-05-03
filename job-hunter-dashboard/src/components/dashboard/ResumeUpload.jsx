@@ -86,12 +86,17 @@ export default function ResumeUpload({ onUploadSuccess }) {
 
     try {
       const res = await axios.post(`${API_BASE_URL}/resume/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` }
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` },
+        timeout: 120000  // 2 minutes — AI analysis takes time
       });
-      if (res.data.task_id) {
-        if (onUploadSuccess) onUploadSuccess(res.data.task_id);
+      if (res.data.result) {
+        // Direct result returned (Railway mode — no Celery)
+        if (onUploadSuccess) onUploadSuccess(res.data.task_id, res.data.result);
+      } else if (res.data.task_id) {
+        // Async Celery mode (local dev)
+        if (onUploadSuccess) onUploadSuccess(res.data.task_id, null);
       } else {
-        alert("Server received the file but didn't start the task. Check backend logs.");
+        alert("Server received the file but didn't return a result.");
       }
     } catch (err) {
       const msg = err.response?.data?.detail || 'Upload failed. Please try again.';
