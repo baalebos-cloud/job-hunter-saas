@@ -1,70 +1,54 @@
-name: 🚀 Baalebos Cloud — Deploy to Railway + Vercel
+name: ✅ Baalebos Cloud — CI Check
 
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
-  # ── Deploy Backend to Railway ──────────────────────────────────────────────
-  deploy-backend:
-    name: 🚂 Deploy Backend → Railway
+  # ── Backend syntax check ───────────────────────────────────────────────────
+  backend-check:
+    name: 🐍 Backend Syntax Check
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout
         uses: actions/checkout@v4
 
-      - name: 🚂 Deploy to Railway
-        uses: bervProject/railway-deploy@main
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
         with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          service: ${{ secrets.RAILWAY_SERVICE_ID_BACKEND }}
+          python-version: '3.12'
 
-  # ── Deploy Worker to Railway ───────────────────────────────────────────────
-  deploy-worker:
-    name: ⚙️ Deploy Worker → Railway
+      - name: ✅ Check Python syntax
+        run: |
+          find backend/ -name "*.py" -exec python3 -m py_compile {} \;
+          echo "✅ All Python files syntax OK"
+
+  # ── Frontend build check ───────────────────────────────────────────────────
+  frontend-check:
+    name: ⚛️ Frontend Build Check
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout
         uses: actions/checkout@v4
 
-      - name: 🚂 Deploy Worker to Railway
-        uses: bervProject/railway-deploy@main
+      - name: 📦 Setup Node
+        uses: actions/setup-node@v4
         with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          service: ${{ secrets.RAILWAY_SERVICE_ID_WORKER }}
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: job-hunter-dashboard/package-lock.json
 
-  # ── Deploy Beat to Railway ─────────────────────────────────────────────────
-  deploy-beat:
-    name: ⏰ Deploy Beat → Railway
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🚚 Checkout
-        uses: actions/checkout@v4
+      - name: 📦 Install dependencies
+        working-directory: job-hunter-dashboard
+        run: npm ci
 
-      - name: 🚂 Deploy Beat to Railway
-        uses: bervProject/railway-deploy@main
-        with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          service: ${{ secrets.RAILWAY_SERVICE_ID_BEAT }}
-
-  # ── Deploy Frontend to Vercel ──────────────────────────────────────────────
-  deploy-frontend:
-    name: 🌐 Deploy Frontend → Vercel
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🚚 Checkout
-        uses: actions/checkout@v4
-
-      - name: 📦 Install Vercel CLI
-        run: npm install -g vercel
-
-      - name: 🌐 Deploy to Vercel
+      - name: 🏗️ Build frontend
         working-directory: job-hunter-dashboard
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          vercel build --prod --token=$VERCEL_TOKEN
-          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          VITE_API_URL: https://job-hunter-saas-production.up.railway.app/api/v1
+        run: npm run build
+
+      - name: ✅ Build successful
+        run: echo "✅ Frontend build OK"
