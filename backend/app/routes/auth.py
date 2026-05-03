@@ -61,7 +61,9 @@ def signup(user: UserCreate, request: Request, db: Session = Depends(get_db)):
         full_name=user.full_name.strip(),
         hashed_password=hash_password(user.password),
         career_track=user.career_track,
-        country=user.country
+        country=user.country,
+        is_hr=user.is_hr or False,
+        company_name=user.company_name,
     )
     db.add(new_user)
     db.commit()

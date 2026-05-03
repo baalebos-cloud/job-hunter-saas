@@ -135,7 +135,7 @@ function JobModal({ job, onClose, onApply, lastTaskId }) {
   const handleConfirmApply = async () => {
     setApplying(true);
     try {
-      await onApply(job.id);
+      await onApply(job.id, job.url);
       setStep('done');
     } catch (e) {
       alert(e?.response?.data?.detail || 'Failed to apply. Please try again.');

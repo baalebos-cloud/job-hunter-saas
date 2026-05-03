@@ -9,6 +9,8 @@ import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
+import AdminDashboard from './components/admin/AdminDashboard'
+import HRPortal from './components/hr/HRPortal'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -77,11 +79,14 @@ const Dashboard = () => {
     } catch { alert('Failed to delete. Please try again.') }
   }, [token, fetchData])
 
-  const handleApply = useCallback(async (jobId) => {
+  const handleApply = useCallback(async (jobId, jobUrl) => {
     if (!token) { alert('Please login to apply.'); window.location.href = '/login'; return }
     try {
-      await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, {}, { headers: { Authorization: `Bearer ${token}` } })
+      const res = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, {}, { headers: { Authorization: `Bearer ${token}` } })
       fetchData()
+      // Open the original job source URL in a new tab if available
+      const url = jobUrl || res.data?.job_url
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to apply. Please try again.')
     }
@@ -149,10 +154,14 @@ const Dashboard = () => {
                 </a>
               </>
             ) : (
-              <button onClick={handleLogout}
-                className="text-sm font-bold text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 px-4 py-2 rounded-xl transition-all">
-                Sign Out
-              </button>
+              <div className="flex items-center gap-2">
+                <a href="/hr" className="text-xs font-black text-blue-400 hover:text-blue-300 border border-blue-500/20 hover:border-blue-400/40 px-3 py-2 rounded-xl transition-all">HR Portal</a>
+                <a href="/admin" className="text-xs font-black text-purple-400 hover:text-purple-300 border border-purple-500/20 hover:border-purple-400/40 px-3 py-2 rounded-xl transition-all">Admin</a>
+                <button onClick={handleLogout}
+                  className="text-sm font-bold text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 px-4 py-2 rounded-xl transition-all">
+                  Sign Out
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -427,6 +436,8 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/hr" element={<HRPortal />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>

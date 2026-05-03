@@ -8,6 +8,8 @@ class UserCreate(BaseModel):
     password: str
     career_track: Optional[str] = None
     country: Optional[str] = None
+    is_hr: Optional[bool] = False
+    company_name: Optional[str] = None
 
 
 class UserLogin(BaseModel):

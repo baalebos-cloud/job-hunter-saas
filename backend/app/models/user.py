@@ -14,6 +14,9 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     career_track = Column(String, nullable=True)
     country = Column(String, nullable=True)
+    is_admin = Column(Boolean, default=False)
+    is_hr = Column(Boolean, default=False)
+    company_name = Column(String, nullable=True)  # for HR users
     created_at = Column(DateTime, default=datetime.utcnow)
 
     resumes = relationship("Resume", back_populates="owner")

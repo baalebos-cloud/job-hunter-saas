@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from backend.app.database import Base, engine, get_db
 from backend.app.routes import jobs, resume, auth, application, dashboard
+from backend.app.routes import admin as admin_router
+from backend.app.routes import hr as hr_router
 from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
@@ -133,6 +135,8 @@ app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
 app.include_router(resume.router, prefix="/api/v1/resume", tags=["Resume"])
 app.include_router(application.router, prefix="/api/v1/application", tags=["Application"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
+app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(hr_router.router, prefix="/api/v1/hr", tags=["HR"])
 
 # --- AI ANALYZE ENDPOINT ---
 @app.post("/api/v1/ai/analyze", tags=["AI Engine"])

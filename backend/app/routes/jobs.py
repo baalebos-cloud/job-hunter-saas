@@ -202,7 +202,8 @@ def apply_for_job(
 
     return {
         "message": "Application submitted successfully",
-        "application_id": application.id
+        "application_id": application.id,
+        "job_url": job.url  # frontend opens this in new tab
     }
 
 
