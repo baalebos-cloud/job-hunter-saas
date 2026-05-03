@@ -169,6 +169,7 @@ async def trigger_scrape(request: Request):
 
 
 @app.post("/api/v1/cron/scrape")
+@app.get("/api/v1/cron/scrape")
 async def cron_scrape(request: Request):
     """Cron-safe endpoint — accepts secret via query param or header for Railway cron."""
     secret = (
