@@ -26,9 +26,24 @@ async def upload_resume(
     allowed_extensions = [".pdf", ".docx", ".doc"]
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="Unsupported file type.")
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX or DOC.")
 
+    # File size limit: 10MB
     file_content = await file.read()
+    if len(file_content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
+
+    # Validate file magic bytes (prevent disguised executables)
+    PDF_MAGIC  = b"%PDF"
+    DOCX_MAGIC = b"PK\x03\x04"  # ZIP-based format
+    DOC_MAGIC  = b"\xd0\xcf\x11\xe0"  # OLE2 format
+    magic = file_content[:4]
+    if file_ext == ".pdf" and not file_content.startswith(PDF_MAGIC):
+        raise HTTPException(status_code=400, detail="Invalid PDF file.")
+    if file_ext == ".docx" and not file_content.startswith(DOCX_MAGIC):
+        raise HTTPException(status_code=400, detail="Invalid DOCX file.")
+    if file_ext == ".doc" and not file_content.startswith(DOC_MAGIC):
+        raise HTTPException(status_code=400, detail="Invalid DOC file.")
     task_id = str(uuid.uuid4())
 
     # Run analysis directly (no Celery needed — works on Railway without Redis)

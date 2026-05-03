@@ -1,25 +1,91 @@
 import io
 import os
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
+import time
+from collections import defaultdict
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel # Added for AnalysisRequest
+from pydantic import BaseModel
 
 from backend.app.database import Base, engine, get_db
 from backend.app.routes import jobs, resume, auth, application, dashboard
 from backend.app.services.ai_service import ai_engine
 
-# Import models so SQLAlchemy knows about them
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
 from backend.app.models.job import Job  # noqa: F401
 from backend.app.models.resume import Resume  # noqa: F401
 from backend.app.models.application import Application  # noqa: F401
 
-app = FastAPI(title="Baalebos Cloud AI")
+app = FastAPI(
+    title="Baalebos Cloud AI",
+    # Hide API docs in production
+    docs_url=None if os.getenv("ENVIRONMENT") == "production" else "/docs",
+    redoc_url=None if os.getenv("ENVIRONMENT") == "production" else "/redoc",
+    openapi_url=None if os.getenv("ENVIRONMENT") == "production" else "/openapi.json",
+)
+
+# ── Rate limiting (in-memory) ─────────────────────────────────────────────────
+# Tracks: {ip: [(timestamp, count)]}
+_rate_store: dict = defaultdict(list)
+
+RATE_LIMITS = {
+    "/api/v1/auth/login":  (10, 60),   # 10 requests per 60 seconds
+    "/api/v1/auth/signup": (5,  60),   # 5 requests per 60 seconds
+    "/api/v1/resume":      (20, 60),   # 20 requests per 60 seconds
+    "default":             (100, 60),  # 100 requests per 60 seconds
+}
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    ip = _get_client_ip(request)
+    path = request.url.path
+    now = time.time()
+
+    # Find matching rate limit rule
+    limit, window = RATE_LIMITS.get("default")
+    for route_prefix, (lim, win) in RATE_LIMITS.items():
+        if route_prefix != "default" and path.startswith(route_prefix):
+            limit, window = lim, win
+            break
+
+    key = f"{ip}:{path}"
+    # Clean old entries
+    _rate_store[key] = [t for t in _rate_store[key] if now - t < window]
+    if len(_rate_store[key]) >= limit:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please slow down."},
+            headers={"Retry-After": str(window)}
+        )
+    _rate_store[key].append(now)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if os.getenv("ENVIRONMENT") == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Create tables on startup — runs after the app is ready to serve requests."""
     try:
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created/verified")
@@ -86,8 +152,12 @@ async def health_check():
 
 
 @app.post("/api/v1/admin/scrape")
-async def trigger_scrape():
-    """Manually trigger the job scraper — runs in background thread."""
+async def trigger_scrape(request: Request):
+    """Admin-only scrape trigger — protected by secret key."""
+    admin_key = request.headers.get("X-Admin-Key", "")
+    expected  = os.getenv("ADMIN_SECRET_KEY", "")
+    if not expected or admin_key != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
     from fastapi.concurrency import run_in_threadpool
     from backend.app.utils.global_scraper import scrape_global_jobs
     result = await run_in_threadpool(scrape_global_jobs)

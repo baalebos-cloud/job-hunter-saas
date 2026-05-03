@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
+from collections import defaultdict
+import time
+
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.schemas.user import UserCreate, UserLogin, TokenResponse
@@ -7,13 +10,45 @@ from backend.app.services.auth_service import hash_password, verify_password, cr
 
 router = APIRouter(tags=["Authentication"])
 
+# Brute force protection — track failed login attempts per IP
+_failed_attempts: dict = defaultdict(list)
+MAX_ATTEMPTS = 5
+LOCKOUT_SECONDS = 300  # 5 minutes
+
+
+def _check_brute_force(ip: str):
+    now = time.time()
+    # Clean attempts older than lockout window
+    _failed_attempts[ip] = [t for t in _failed_attempts[ip] if now - t < LOCKOUT_SECONDS]
+    if len(_failed_attempts[ip]) >= MAX_ATTEMPTS:
+        remaining = int(LOCKOUT_SECONDS - (now - _failed_attempts[ip][0]))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed attempts. Try again in {remaining} seconds."
+        )
+
+
+def _record_failure(ip: str):
+    _failed_attempts[ip].append(time.time())
+
+
+def _clear_failures(ip: str):
+    _failed_attempts.pop(ip, None)
+
+
+def _get_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def signup(user: UserCreate, db: Session = Depends(get_db)):
-    """
-    Creates a new user and returns a token immediately.
-    career_track is saved so the AI can match jobs to the user's role.
-    """
+def signup(user: UserCreate, request: Request, db: Session = Depends(get_db)):
+    # Password strength validation
+    if len(user.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
         raise HTTPException(
@@ -22,8 +57,8 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         )
 
     new_user = User(
-        email=user.email,
-        full_name=user.full_name,
+        email=user.email.lower().strip(),
+        full_name=user.full_name.strip(),
         hashed_password=hash_password(user.password),
         career_track=user.career_track,
         country=user.country
@@ -37,13 +72,18 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(user: UserLogin, db: Session = Depends(get_db)):
-    """Standard JSON login."""
-    db_user = db.query(User).filter(User.email == user.email).first()
+def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
+    ip = _get_ip(request)
+    _check_brute_force(ip)
+
+    db_user = db.query(User).filter(User.email == user.email.lower().strip()).first()
     if not db_user or not verify_password(user.password, db_user.hashed_password):
+        _record_failure(ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
+
+    _clear_failures(ip)
     token = create_access_token({"sub": db_user.email})
     return {"access_token": token, "token_type": "bearer"}
