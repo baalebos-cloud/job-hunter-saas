@@ -20,7 +20,7 @@ COPY backend/ ./backend/
 COPY start.sh ./start.sh
 COPY start-worker.sh ./start-worker.sh
 COPY start-beat.sh ./start-beat.sh
-
+# Force rebuild: v2.1
 RUN mkdir -p /app/output /app/uploads && \
     chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh
 
