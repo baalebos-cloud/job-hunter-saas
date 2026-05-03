@@ -166,3 +166,19 @@ async def trigger_scrape(request: Request):
     from backend.app.utils.global_scraper import scrape_global_jobs
     result = await run_in_threadpool(scrape_global_jobs)
     return result
+
+
+@app.post("/api/v1/cron/scrape")
+async def cron_scrape(request: Request):
+    """Cron-safe endpoint — accepts secret via query param or header for Railway cron."""
+    secret = (
+        request.headers.get("X-Cron-Secret", "")
+        or request.query_params.get("secret", "")
+    )
+    expected = os.getenv("CRON_SECRET", os.getenv("ADMIN_SECRET_KEY", ""))
+    if not expected or secret != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from fastapi.concurrency import run_in_threadpool
+    from backend.app.utils.global_scraper import scrape_global_jobs
+    result = await run_in_threadpool(scrape_global_jobs)
+    return result
