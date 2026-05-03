@@ -21,7 +21,7 @@ from backend.app.models.resume import Resume  # noqa: F401
 from backend.app.models.application import Application  # noqa: F401
 
 app = FastAPI(
-    title="Baalebos Cloud AI",
+    title="Baalebos Cloud AI v2",
     # Hide API docs in production
     docs_url=None if os.getenv("ENVIRONMENT") == "production" else "/docs",
     redoc_url=None if os.getenv("ENVIRONMENT") == "production" else "/redoc",
