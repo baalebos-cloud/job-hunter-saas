@@ -1,9 +1,6 @@
 # =============================================================================
 # BAALEBOS CLOUD — Railway Worker Service Config
 # =============================================================================
-# In Railway dashboard → worker service → Settings → Config File Path
-# set this to: railway.worker.toml
-# =============================================================================
 
 [build]
 builder = "DOCKERFILE"
@@ -11,5 +8,7 @@ dockerfilePath = "backend/Dockerfile"
 
 [deploy]
 startCommand = "/app/start-worker.sh"
+healthcheckPath = "/"
+healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
