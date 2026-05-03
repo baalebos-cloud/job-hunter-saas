@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -10,6 +10,9 @@ const CATEGORIES = [
   'DevOps Engineer', 'Cloud Engineer', 'Data Engineer', 'Data Scientist',
   'Machine Learning Engineer', 'Mobile Developer', 'QA Engineer', 'Product Manager',
   'UI/UX Designer', 'Cybersecurity Engineer', 'Platform Engineer',
+  'Sales', 'Marketing', 'Customer Support', 'Finance', 'Operations',
+  'Human Resources', 'Legal', 'Content Writer', 'Graphic Designer',
+  'Business Analyst', 'Project Manager', 'Scrum Master',
 ];
 
 export default function HRPortal() {
@@ -21,6 +24,9 @@ export default function HRPortal() {
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [msg, setMsg] = useState('');
+  const [categoryQuery, setCategoryQuery] = useState('Software Engineer');
+  const [showCatSuggestions, setShowCatSuggestions] = useState(false);
+  const catRef = useRef(null);
   const [form, setForm] = useState({
     title: '', company: '', location: '', description: '',
     salary_range: '', work_type: 'remote', category: 'Software Engineer', url: ''
@@ -179,14 +185,37 @@ export default function HRPortal() {
                 </div>
               </div>
               <div>
-                <label className={labelCls}>Category</label>
-                <div className="relative">
-                  <select className={`${inputCls} appearance-none pr-8 cursor-pointer`}
-                    value={form.category} onChange={e => set('category', e.target.value)}>
-                    {CATEGORIES.map(c => <option key={c} value={c} style={{ background: '#1e293b' }}>{c}</option>)}
-                  </select>
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xs">▾</span>
+                <label className={labelCls}>Category / Job Type</label>
+                <div className="relative" ref={catRef}>
+                  <input
+                    className={inputCls}
+                    placeholder="Type or select a category..."
+                    value={categoryQuery}
+                    onChange={e => { setCategoryQuery(e.target.value); set('category', e.target.value); setShowCatSuggestions(true); }}
+                    onFocus={() => setShowCatSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowCatSuggestions(false), 150)}
+                    autoComplete="off"
+                  />
+                  {showCatSuggestions && (
+                    <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                      {CATEGORIES.filter(c => c.toLowerCase().includes(categoryQuery.toLowerCase())).map(c => (
+                        <button key={c} type="button"
+                          onMouseDown={() => { setCategoryQuery(c); set('category', c); setShowCatSuggestions(false); }}
+                          className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors border-b border-slate-700/50 last:border-0">
+                          {c}
+                        </button>
+                      ))}
+                      {categoryQuery && !CATEGORIES.some(c => c.toLowerCase() === categoryQuery.toLowerCase()) && (
+                        <button type="button"
+                          onMouseDown={() => { set('category', categoryQuery); setShowCatSuggestions(false); }}
+                          className="w-full text-left px-4 py-2.5 text-sm font-bold text-emerald-400 hover:bg-slate-700 transition-colors">
+                          ✚ Use "{categoryQuery}" as custom category
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
+                <p className="text-xs text-slate-500 mt-1">Type any category or pick from suggestions.</p>
               </div>
             </div>
 

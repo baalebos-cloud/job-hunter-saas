@@ -155,8 +155,6 @@ const Dashboard = () => {
               </>
             ) : (
               <div className="flex items-center gap-2">
-                <a href="/hr" className="text-xs font-black text-blue-400 hover:text-blue-300 border border-blue-500/20 hover:border-blue-400/40 px-3 py-2 rounded-xl transition-all">HR Portal</a>
-                <a href="/admin" className="text-xs font-black text-purple-400 hover:text-purple-300 border border-purple-500/20 hover:border-purple-400/40 px-3 py-2 rounded-xl transition-all">Admin</a>
                 <button onClick={handleLogout}
                   className="text-sm font-bold text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 px-4 py-2 rounded-xl transition-all">
                   Sign Out
