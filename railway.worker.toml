@@ -1,6 +1,9 @@
 # =============================================================================
 # BAALEBOS CLOUD — Railway Worker Service Config
 # =============================================================================
+# In Railway dashboard → worker service → Settings → Config File Path
+# set this to: railway.worker.toml
+# =============================================================================
 
 [build]
 builder = "DOCKERFILE"
