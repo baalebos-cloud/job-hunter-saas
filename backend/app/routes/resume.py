@@ -1,8 +1,8 @@
 import uuid
-from fastapi.concurrency import run_in_threadpool
 import os
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import FileResponse, Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
@@ -28,30 +28,26 @@ async def upload_resume(
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX or DOC.")
 
-    # File size limit: 10MB
     file_content = await file.read()
     if len(file_content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
-    # Validate file magic bytes (prevent disguised executables)
-    PDF_MAGIC  = b"%PDF"
-    DOCX_MAGIC = b"PK\x03\x04"  # ZIP-based format
-    DOC_MAGIC  = b"\xd0\xcf\x11\xe0"  # OLE2 format
-    magic = file_content[:4]
-    if file_ext == ".pdf" and not file_content.startswith(PDF_MAGIC):
+    # Validate magic bytes
+    if file_ext == ".pdf" and not file_content.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="Invalid PDF file.")
-    if file_ext == ".docx" and not file_content.startswith(DOCX_MAGIC):
+    if file_ext == ".docx" and not file_content.startswith(b"PK\x03\x04"):
         raise HTTPException(status_code=400, detail="Invalid DOCX file.")
-    if file_ext == ".doc" and not file_content.startswith(DOC_MAGIC):
-        raise HTTPException(status_code=400, detail="Invalid DOC file.")
+
     task_id = str(uuid.uuid4())
 
-    # Run analysis directly (no Celery needed — works on Railway without Redis)
     def run_analysis():
         from backend.app.utils.ats_engine import analyze_detailed_ats, extract_text, rewrite_resume_for_job
         from backend.app.utils.pdf_generator import generate_optimized_resume
 
+        # Step 1: Extract text
         resume_text = extract_text(file_content, file.filename)
+
+        # Step 2: ATS scoring
         analysis = analyze_detailed_ats(
             file_content=file_content,
             filename=file.filename,
@@ -61,25 +57,26 @@ async def upload_resume(
         missing_list = analysis.get("missing_list", [])
         suggestions  = analysis.get("suggestions", [])
 
+        # Step 3: AI rewrite — pass BOTH missing keywords AND suggestions
+        # so Groq embeds all of them into the resume
+        all_keywords_to_add = missing_list + [
+            s for s in suggestions
+            if s and not any(s.lower().startswith(p) for p in
+                ["strengthen", "quantify", "mirror", "add numbers", "use strong"])
+        ]
+
         structured = rewrite_resume_for_job(
             resume_text=resume_text,
             job_description=job_description,
             job_title=job_title,
-            missing_keywords=missing_list
+            missing_keywords=all_keywords_to_add[:15]  # pass all missing + relevant suggestions
         )
 
-        improvements = []
-        for s in suggestions[:5]:
-            improvements.append({"skill": "AI Suggestion", "bullet_point": s})
-        for kw in missing_list[:5]:
-            if len(improvements) >= 10:
-                break
-            improvements.append({"skill": kw, "bullet_point": f"Add '{kw}' to your resume to boost ATS score."})
-
+        # Step 4: Generate clean PDF
         pdf_buf = generate_optimized_resume(
             filename=file.filename,
             score=round(ats_score, 1),
-            improvements=improvements,
+            improvements=[],  # no improvements page — clean resume only
             resume_text=resume_text,
             task_id=task_id,
             structured=structured,
@@ -91,7 +88,7 @@ async def upload_resume(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
-    # Save PDF to database
+    # Save to DB
     try:
         resume_record = Resume(
             owner_id=current_user.id,
@@ -105,7 +102,7 @@ async def upload_resume(
     except Exception as e:
         print(f"DB save warning: {e}")
 
-    # Also save to filesystem for local dev
+    # Save to filesystem (local dev)
     try:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         with open(os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf"), "wb") as f:
@@ -138,122 +135,26 @@ async def upload_resume(
 
 @router.get("/status/{task_id}")
 def get_resume_status(task_id: str, db: Session = Depends(get_db)):
-    # Check if result exists in DB
     resume = db.query(Resume).filter(
         Resume.filename == f"optimized_{task_id}.pdf"
     ).first()
     if resume:
-        return {
-            "task_id": task_id,
-            "status": "completed",
-            "result": resume.analysis_data
-        }
-    # Fallback to Celery if worker is running
-    try:
-        from celery.result import AsyncResult
-        from backend.app.celery_app import celery_app
-        task_result = AsyncResult(task_id, app=celery_app)
-        status_map = {"PENDING": "pending", "STARTED": "processing", "SUCCESS": "completed", "FAILURE": "failed"}
-        current_status = status_map.get(task_result.state, "pending")
-        return {
-            "task_id": task_id,
-            "status": current_status,
-            "result": task_result.result if current_status == "completed" else None
-        }
-    except Exception:
-        return {"task_id": task_id, "status": "pending", "result": None}
+        return {"task_id": task_id, "status": "completed", "result": resume.analysis_data}
+    return {"task_id": task_id, "status": "pending", "result": None}
 
 
 @router.get("/download/{task_id}")
 async def download_resume(task_id: str, db: Session = Depends(get_db)):
-    # Try filesystem first
-    file_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
-    if os.path.exists(file_path):
-        return FileResponse(path=file_path, media_type="application/pdf",
-                            filename=f"Baalebos_Optimized_{task_id}.pdf")
-    # Try database
-    resume = db.query(Resume).filter(
-        Resume.filename == f"optimized_{task_id}.pdf"
-    ).first()
-    if resume and resume.content:
-        return Response(content=resume.content, media_type="application/pdf",
-                        headers={"Content-Disposition": f'attachment; filename="Baalebos_Optimized_{task_id}.pdf"'})
-    raise HTTPException(status_code=404, detail="Resume not found.")
-
-
-@router.post("/upload")
-async def upload_resume(
-    file: UploadFile = File(...),
-    job_description: str = Form(...),
-    job_title: str = Form(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    allowed_extensions = [".pdf", ".docx", ".doc"]
-    file_ext = os.path.splitext(file.filename)[1].lower()
-
-    if file_ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="Unsupported file type.")
-
-    file_content = await file.read()
-
-    try:
-        task = process_resume_task.delay(
-            list(file_content),  # convert bytes to list for JSON serialization
-            file.filename,
-            job_description,
-            current_user.id,
-            job_title.strip()
-        )
-    except Exception as e:
-        print(f"Celery task error: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to queue analysis task. Please check worker is running. Error: {str(e)}"
-        )
-
-    return {
-        "message": f"Baalebos AI analyzing: {job_title}",
-        "task_id": str(task.id),
-        "filename": file.filename
-    }
-
-
-@router.get("/status/{task_id}")
-def get_resume_status(task_id: str):
-    task_result = AsyncResult(task_id, app=celery_app)
-
-    status_map = {
-        "PENDING": "pending",
-        "STARTED": "processing",
-        "SUCCESS": "completed",
-        "FAILURE": "failed"
-    }
-
-    current_status = status_map.get(task_result.state, task_result.state.lower())
-
-    return {
-        "task_id": task_id,
-        "status": current_status,
-        "result": task_result.result if current_status == "completed" else None
-    }
-
-
-@router.get("/download/{task_id}")
-async def download_resume(task_id: str, db: Session = Depends(get_db)):
-    from backend.app.models.resume import Resume
-    from fastapi.responses import Response
-
-    # 1. Try filesystem first (local dev)
+    # Try filesystem first (local dev)
     file_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
     if os.path.exists(file_path):
         return FileResponse(
             path=file_path,
-            media_type='application/pdf',
-            filename=f"Baalebos_Optimized_{task_id}.pdf"
+            media_type="application/pdf",
+            filename=f"Resume_{task_id}.pdf"
         )
 
-    # 2. Try PostgreSQL (Railway production)
+    # Try database (Railway production)
     resume = db.query(Resume).filter(
         Resume.filename == f"optimized_{task_id}.pdf"
     ).order_by(Resume.id.desc()).first()
@@ -261,11 +162,8 @@ async def download_resume(task_id: str, db: Session = Depends(get_db)):
     if resume and resume.content:
         return Response(
             content=resume.content,
-            media_type='application/pdf',
-            headers={"Content-Disposition": f'attachment; filename="Baalebos_Optimized_{task_id}.pdf"'}
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="Resume_{task_id}.pdf"'}
         )
 
-    raise HTTPException(
-        status_code=404,
-        detail="Optimized resume not found. It may still be generating."
-    )
+    raise HTTPException(status_code=404, detail="Resume not found. It may still be generating.")
