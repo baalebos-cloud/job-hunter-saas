@@ -91,6 +91,23 @@ async def startup_event():
     try:
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created/verified")
+        # Add new columns if they don't exist (safe migration)
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            migrations = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_hr BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR",
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS posted_by_hr BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_user_id INTEGER",
+            ]
+            for sql in migrations:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                except Exception:
+                    pass  # column already exists
+        print("✅ DB migrations applied")
     except Exception as e:
         print(f"⚠️ DB startup warning: {e}")
 
