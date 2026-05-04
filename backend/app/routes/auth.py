@@ -89,3 +89,12 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
     _clear_failures(ip)
     token = create_access_token({"sub": db_user.email})
     return {"access_token": token, "token_type": "bearer"}
+
+
+from backend.app.dependencies.auth import get_current_user
+from backend.app.schemas.user import UserResponse
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    """Returns the current logged-in user's profile."""
+    return current_user

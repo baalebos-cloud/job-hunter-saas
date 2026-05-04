@@ -160,11 +160,17 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-slate-800 text-center">
+          <div className="mt-6 pt-6 border-t border-slate-800 text-center space-y-3">
             <p className="text-sm text-slate-500 font-medium">
               Don't have an account?{' '}
               <a href="/signup" className="text-emerald-400 font-black hover:text-emerald-300 transition-colors">
                 Create one free →
+              </a>
+            </p>
+            <p className="text-sm text-slate-600 font-medium">
+              Are you an HR / Recruiter?{' '}
+              <a href="/hr/signup" className="text-blue-400 font-black hover:text-blue-300 transition-colors">
+                HR Portal →
               </a>
             </p>
           </div>

@@ -11,6 +11,7 @@ import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
 import AdminDashboard from './components/admin/AdminDashboard'
 import HRPortal from './components/hr/HRPortal'
+import HRSignup from './components/hr/HRSignup'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -36,6 +37,7 @@ const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [workTypeFilter, setWorkTypeFilter] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [userProfile, setUserProfile] = useState(null)
 
   const token = localStorage.getItem('token')
   const isAuthenticated = !!token
@@ -118,6 +120,14 @@ const Dashboard = () => {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Fetch user profile to show name in navbar
+  useEffect(() => {
+    if (!token) return
+    axios.get(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => setUserProfile(r.data))
+      .catch(() => {})
+  }, [token])
+
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <div className="text-center">
@@ -154,7 +164,19 @@ const Dashboard = () => {
                 </a>
               </>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                {userProfile && (
+                  <div className="hidden md:flex items-center gap-2 bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl">
+                    <div className="w-7 h-7 bg-emerald-500 rounded-lg flex items-center justify-center text-white text-xs font-black">
+                      {(userProfile.full_name || userProfile.email || 'U')[0].toUpperCase()}
+                    </div>
+                    <span className="text-sm font-bold text-white">
+                      {userProfile.full_name || userProfile.email.split('@')[0]}
+                    </span>
+                    {userProfile.is_admin && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400">ADMIN</span>}
+                    {userProfile.is_hr && !userProfile.is_admin && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400">HR</span>}
+                  </div>
+                )}
                 <button onClick={handleLogout}
                   className="text-sm font-bold text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 px-4 py-2 rounded-xl transition-all">
                   Sign Out
@@ -436,6 +458,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/hr" element={<HRPortal />} />
+        <Route path="/hr/signup" element={<HRSignup />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>

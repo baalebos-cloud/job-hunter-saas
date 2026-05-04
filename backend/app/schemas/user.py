@@ -22,6 +22,9 @@ class UserResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     career_track: Optional[str] = None
+    country: Optional[str] = None
+    is_admin: Optional[bool] = False
+    is_hr: Optional[bool] = False
 
     class Config:
         from_attributes = True
