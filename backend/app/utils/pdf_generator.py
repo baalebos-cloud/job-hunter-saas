@@ -33,7 +33,7 @@ class ResumeCanvas:
 
     def check_page(self, needed=40):
         """Start a new page if not enough space, with footer on current page."""
-        if self.y < needed + 55:
+        if self.y < needed + 80:
             self._draw_footer()
             self.p.showPage()
             self._page += 1
@@ -106,7 +106,7 @@ class ResumeCanvas:
             return
         # Filter out any phrases that slipped through (longer than 30 chars)
         clean_skills = [str(s).strip() for s in skills
-                        if s and str(s).strip() and len(str(s).strip()) <= 35]
+                        if s and str(s).strip() and len(str(s).strip()) <= 40]
         row_size = 6
         for i in range(0, len(clean_skills), row_size):
             chunk = clean_skills[i:i + row_size]
