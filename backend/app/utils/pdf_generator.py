@@ -100,18 +100,19 @@ class ResumeCanvas:
             self.y -= 13
 
     def skill_pills(self, skills):
-        """Render skills as inline comma-separated text — clean and ATS-friendly."""
+        """Render ALL skills without truncation — ATS-friendly inline format."""
         if not skills:
             return
-        self.check_page(30)
-        # Group into rows of ~8 skills
-        row_size = 8
+        # Render 6 skills per row to avoid line overflow
+        row_size = 6
         for i in range(0, len(skills), row_size):
-            chunk = skills[i:i + row_size]
-            line = "  ·  ".join(str(s).strip() for s in chunk if s)
+            chunk = [str(s).strip() for s in skills[i:i + row_size] if s and str(s).strip()]
+            if not chunk:
+                continue
+            line = "  ·  ".join(chunk)
             self.p.setFont("Helvetica", 9.5)
             self.p.setFillColor(C_BODY)
-            self.check_page()
+            self.check_page(20)
             self.p.drawString(ML, self.y, line)
             self.y -= 14
 

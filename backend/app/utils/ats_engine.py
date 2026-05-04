@@ -182,57 +182,53 @@ JOB TITLE: {job_title}
 JOB DESCRIPTION:
 {job_description[:2000]}
 
-ORIGINAL RESUME:
-{resume_text[:3000]}
+ORIGINAL RESUME (complete — do not skip any section):
+{resume_text[:5000]}
 
-MISSING KEYWORDS TO INCORPORATE: {missing_str}
+MISSING KEYWORDS TO ADD: {missing_str}
 
-Instructions:
-- Keep ALL real experience, education, and skills from the original resume — do NOT invent fake experience
-- Rewrite bullet points to use strong action verbs and quantified achievements
-- Naturally weave in the missing keywords where they genuinely apply
-- Mirror the job title in the professional summary
-- Make every bullet point start with a strong action verb
-- Keep it truthful — only enhance how existing experience is described
+CRITICAL INSTRUCTIONS:
+1. Extract and preserve ALL sections from the original resume: name, contact, summary, ALL work experience, ALL skills, ALL education, ALL certifications
+2. Do NOT invent or fabricate any experience, company, or qualification
+3. Rewrite bullet points with stronger action verbs and quantified achievements
+4. Naturally weave missing keywords into existing bullet points where truthful
+5. Include EVERY skill from the original resume PLUS the missing keywords in the skills array
+6. Include ALL education entries from the original resume
+7. Include ALL certifications from the original resume
+8. The summary must mention the job title and key skills from the job description
 
-Return ONLY a valid JSON object in this exact format:
+Return ONLY a valid JSON object:
 {{
-  "name": "Full Name from resume",
+  "name": "exact name from resume",
   "contact": "email | phone | location | linkedin",
-  "summary": "2-3 sentence professional summary tailored to the job",
+  "summary": "2-3 sentence tailored summary",
   "experience": [
     {{
-      "title": "Job Title",
-      "company": "Company Name",
-      "dates": "Month Year - Month Year",
-      "bullets": [
-        "Architected and deployed scalable CI/CD pipelines using Jenkins and GitHub Actions, reducing deployment time by 40%",
-        "Managed AWS infrastructure (EC2, RDS, S3) serving 500K+ daily users with 99.9% uptime"
-      ]
+      "title": "exact job title",
+      "company": "exact company name",
+      "dates": "exact dates",
+      "location": "",
+      "bullets": ["Strong action verb + achievement + metric"]
     }}
   ],
-  "skills": ["Python", "AWS", "Kubernetes", "Terraform", "Docker", "CI/CD"],
+  "skills": ["every skill from original resume plus missing keywords"],
   "education": [
-    {{
-      "degree": "B.Sc. Computer Science",
-      "school": "University Name",
-      "year": "2020"
-    }}
+    {{"degree": "exact degree", "school": "exact school", "year": "year"}}
   ],
-  "certifications": ["AWS Certified Solutions Architect", "CKA"]
+  "certifications": ["every certification from original resume"]
 }}
 
-Return ONLY the JSON, no markdown, no explanation."""
+Return ONLY the JSON. No markdown. No explanation."""
 
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are an expert resume writer. Always respond with valid JSON only."},
+                {"role": "system", "content": "You are an expert resume writer. Extract ALL sections from the resume. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=2000,
-            temperature=0.4,
+            max_tokens=4000,
+            temperature=0.3,
         )
         raw = response.choices[0].message.content.strip()
         raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
