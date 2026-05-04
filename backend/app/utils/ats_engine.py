@@ -160,7 +160,8 @@ def _error_response(message: str) -> dict:
 
 # ─── AI Resume Rewriter ───────────────────────────────────────────────────────────────
 
-def rewrite_resume_for_job(resume_text: str, job_description: str, job_title: str, missing_keywords: list) -> dict:
+def rewrite_resume_for_job(resume_text: str, job_description: str, job_title: str,
+                           missing_keywords: list, context_phrases: list = None) -> dict:
     """
     Uses Groq to fully rewrite the resume tailored to the specific job.
     Returns a structured dict with all resume sections ready for PDF rendering.
@@ -173,7 +174,8 @@ def rewrite_resume_for_job(resume_text: str, job_description: str, job_title: st
         base_url="https://api.groq.com/openai/v1",
     )
 
-    missing_str = ", ".join(missing_keywords[:10]) if missing_keywords else "none"
+    missing_str = ", ".join(missing_keywords[:15]) if missing_keywords else "none"
+    phrases_str = "; ".join((context_phrases or [])[:5]) if context_phrases else "none"
 
     prompt = f"""You are an expert resume writer. Rewrite the candidate's resume to be perfectly tailored for the job below.
 
@@ -185,23 +187,25 @@ JOB DESCRIPTION:
 ORIGINAL RESUME (complete — do not skip any section):
 {resume_text[:5000]}
 
-MISSING KEYWORDS TO ADD: {missing_str}
+SKILL KEYWORDS TO ADD TO SKILLS SECTION: {missing_str}
+CONTEXT TO WEAVE INTO BULLET POINTS (do NOT add these as skills): {phrases_str}
 
 CRITICAL INSTRUCTIONS:
-1. Extract and preserve ALL sections from the original resume: name, contact, summary, ALL work experience, ALL skills, ALL education, ALL certifications
+1. Extract and preserve ALL sections: name, contact, summary, ALL work experience, ALL skills, ALL education, ALL certifications
 2. Do NOT invent or fabricate any experience, company, or qualification
 3. Rewrite bullet points with stronger action verbs and quantified achievements
-4. Naturally weave missing keywords into existing bullet points where truthful
-5. Include EVERY skill from the original resume PLUS the missing keywords in the skills array
-6. Include ALL education entries from the original resume
-7. Include ALL certifications from the original resume
-8. The summary must mention the job title and key skills from the job description
+4. Add SKILL KEYWORDS naturally into the skills array (short technical terms only)
+5. Weave CONTEXT PHRASES naturally into existing bullet points where truthful
+6. Include EVERY skill from the original resume PLUS the skill keywords above
+7. Include ALL education entries from the original resume
+8. Include ALL certifications from the original resume
+9. Skills array must contain ONLY short technical terms (e.g. "Helm", "Kubernetes") NOT sentences
 
 Return ONLY a valid JSON object:
 {{
   "name": "exact name from resume",
   "contact": "email | phone | location | linkedin",
-  "summary": "2-3 sentence tailored summary",
+  "summary": "2-3 sentence tailored summary mentioning {job_title}",
   "experience": [
     {{
       "title": "exact job title",
@@ -211,7 +215,7 @@ Return ONLY a valid JSON object:
       "bullets": ["Strong action verb + achievement + metric"]
     }}
   ],
-  "skills": ["every skill from original resume plus missing keywords"],
+  "skills": ["only short technical skill terms"],
   "education": [
     {{"degree": "exact degree", "school": "exact school", "year": "year"}}
   ],

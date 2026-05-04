@@ -58,8 +58,27 @@ async def upload_resume(
         suggestions  = analysis.get("suggestions", [])
 
         # Step 3: AI rewrite — pass BOTH missing keywords AND suggestions
-        # so Groq embeds all of them into the resume
-        all_keywords_to_add = missing_list + [
+        # Filter out phrases that are not actual skills (sentences/descriptions)
+        def is_real_skill(kw: str) -> bool:
+            kw = kw.strip()
+            # Skip if it's a long phrase (not a skill keyword)
+            if len(kw) > 40:
+                return False
+            # Skip if it reads like a sentence
+            if any(kw.lower().startswith(p) for p in [
+                "experience", "background", "relevant", "knowledge of",
+                "familiarity", "understanding", "ability to", "proven",
+                "strong", "excellent", "demonstrated"
+            ]):
+                return False
+            return True
+
+        real_skills_to_add = [kw for kw in missing_list if is_real_skill(kw)]
+        context_phrases = [kw for kw in missing_list if not is_real_skill(kw)]
+
+        # Build a richer context for Groq — real skills go into skills array,
+        # phrases go into bullet points as context
+        all_keywords_to_add = real_skills_to_add + [
             s for s in suggestions
             if s and not any(s.lower().startswith(p) for p in
                 ["strengthen", "quantify", "mirror", "add numbers", "use strong"])
@@ -69,7 +88,8 @@ async def upload_resume(
             resume_text=resume_text,
             job_description=job_description,
             job_title=job_title,
-            missing_keywords=all_keywords_to_add[:15]  # pass all missing + relevant suggestions
+            missing_keywords=all_keywords_to_add[:15],
+            context_phrases=context_phrases  # phrases to weave into bullets, not skills
         )
 
         # Step 4: Generate clean PDF
