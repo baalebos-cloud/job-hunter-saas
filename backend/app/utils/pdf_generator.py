@@ -1,20 +1,20 @@
 import textwrap
-from datetime import datetime
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from io import BytesIO
 
 W, H = LETTER
-ML = 55
-MR = 55
+ML = 55   # left margin
+MR = 55   # right margin
 TW = W - ML - MR
 
-C_DARK    = colors.HexColor("#0f172a")
-C_EMERALD = colors.HexColor("#059669")
-C_GRAY    = colors.HexColor("#475569")
-C_LIGHT   = colors.HexColor("#94a3b8")
-C_BG      = colors.HexColor("#f0fdf4")
+# Clean professional color palette
+C_NAME    = colors.HexColor("#0f172a")   # near-black for name
+C_HEADING = colors.HexColor("#1e3a5f")   # dark navy for section headings
+C_ACCENT  = colors.HexColor("#2563eb")   # blue accent line
+C_BODY    = colors.HexColor("#1e293b")   # dark body text
+C_SUB     = colors.HexColor("#475569")   # secondary text (company, dates)
 C_WHITE   = colors.white
 
 
@@ -22,65 +22,114 @@ def _wrap(text: str, max_chars: int) -> list:
     return textwrap.wrap(str(text).strip(), width=max(max_chars, 20)) or [""]
 
 
-class ResumeBuilder:
+class ResumeCanvas:
     def __init__(self, buf):
         self.p = canvas.Canvas(buf, pagesize=LETTER)
-        self.y = H - 125  # start below header
+        self.y = H - ML
 
-    def check_page(self, needed=50):
+    def check_page(self, needed=40):
         if self.y < needed + 36:
             self.p.showPage()
-            self.y = H - 50
+            self.y = H - ML
 
-    def section(self, title):
-        self.y -= 10
-        self.check_page(80)
-        self.p.setFillColor(C_DARK)
-        self.p.setFont("Helvetica-Bold", 10)
+    def section_heading(self, title):
+        self.y -= 12
+        self.check_page(60)
+        # Section title
+        self.p.setFont("Helvetica-Bold", 9.5)
+        self.p.setFillColor(C_HEADING)
         self.p.drawString(ML, self.y, title.upper())
-        self.y -= 5
-        self.p.setStrokeColor(C_EMERALD)
+        self.y -= 4
+        # Accent underline
+        self.p.setStrokeColor(C_ACCENT)
         self.p.setLineWidth(1.5)
         self.p.line(ML, self.y, W - MR, self.y)
         self.p.setLineWidth(0.5)
-        self.y -= 14
+        self.y -= 12
 
-    def text(self, txt, indent=0, bold=False, color=None, size=9.5):
+    def text_line(self, txt, bold=False, color=None, size=9.5, indent=0):
+        if not txt or not txt.strip():
+            return
         if color is None:
-            color = C_DARK
+            color = C_BODY
         font = "Helvetica-Bold" if bold else "Helvetica"
         self.p.setFont(font, size)
         self.p.setFillColor(color)
-        for line in _wrap(txt, int((TW - indent) / 5.3)):
+        for line in _wrap(txt, int((TW - indent) / 5.2)):
             self.check_page()
             self.p.drawString(ML + indent, self.y, line)
             self.y -= 13
 
-    def bullet(self, txt):
+    def bullet(self, txt, indent=12):
+        if not txt or not txt.strip():
+            return
         self.p.setFont("Helvetica", 9.5)
-        self.p.setFillColor(C_DARK)
-        lines = _wrap(txt, int((TW - 16) / 5.3))
+        self.p.setFillColor(C_BODY)
+        lines = _wrap(txt.lstrip("•-* "), int((TW - indent - 8) / 5.2))
         for i, line in enumerate(lines):
             self.check_page()
             if i == 0:
-                self.p.setFillColor(C_EMERALD)
-                self.p.circle(ML + 5, self.y + 3, 2, fill=1, stroke=0)
-                self.p.setFillColor(C_DARK)
-                self.p.drawString(ML + 14, self.y, line)
+                self.p.setFillColor(C_ACCENT)
+                self.p.circle(ML + indent - 4, self.y + 3.5, 2, fill=1, stroke=0)
+                self.p.setFillColor(C_BODY)
+                self.p.drawString(ML + indent + 4, self.y, line)
             else:
-                self.p.drawString(ML + 14, self.y, line)
+                self.p.drawString(ML + indent + 4, self.y, line)
             self.y -= 13
 
-    def footer(self, score):
+    def job_header(self, title, company, dates, location=""):
+        self.check_page(60)
+        # Job title
+        self.p.setFont("Helvetica-Bold", 10)
+        self.p.setFillColor(C_BODY)
+        self.p.drawString(ML, self.y, title)
+        # Dates right-aligned
+        if dates:
+            self.p.setFont("Helvetica", 8.5)
+            self.p.setFillColor(C_SUB)
+            self.p.drawRightString(W - MR, self.y, dates)
+        self.y -= 13
+        # Company + location
+        if company or location:
+            self.p.setFont("Helvetica-Bold", 9)
+            self.p.setFillColor(C_ACCENT)
+            line = company
+            if location:
+                line += f"  ·  {location}" if company else location
+            self.p.drawString(ML, self.y, line)
+            self.y -= 13
+
+    def skill_pills(self, skills):
+        """Render skills as inline comma-separated text — clean and ATS-friendly."""
+        if not skills:
+            return
+        self.check_page(30)
+        # Group into rows of ~8 skills
+        row_size = 8
+        for i in range(0, len(skills), row_size):
+            chunk = skills[i:i + row_size]
+            line = "  ·  ".join(str(s).strip() for s in chunk if s)
+            self.p.setFont("Helvetica", 9.5)
+            self.p.setFillColor(C_BODY)
+            self.check_page()
+            self.p.drawString(ML, self.y, line)
+            self.y -= 14
+
+    def footer(self, page_num=1):
         self.p.setFont("Helvetica", 7.5)
-        self.p.setFillColor(C_LIGHT)
-        self.p.drawCentredString(W / 2, 22,
-            f"Generated by Baalebos Cloud AI  ·  {datetime.now().strftime('%B %d, %Y')}  ·  ATS Score: {score}%")
+        self.p.setFillColor(colors.HexColor("#cbd5e1"))
+        self.p.drawCentredString(W / 2, 20, f"Page {page_num}")
 
 
 def generate_optimized_resume(filename: str, score: float, improvements: list,
                                resume_text: str = "", task_id: str = "",
                                structured: dict = None) -> BytesIO:
+    """
+    Generates a clean, standard professional resume PDF.
+    - No branding, no ATS score badge, no optimization report page
+    - AI improvements are embedded directly into the resume content
+    - Looks exactly like a resume a hiring manager would receive
+    """
     buf = BytesIO()
     s = structured or {}
 
@@ -92,230 +141,90 @@ def generate_optimized_resume(filename: str, score: float, improvements: list,
     education      = s.get("education") or []
     certifications = s.get("certifications") or []
 
-    rb = ResumeBuilder(buf)
-    p  = rb.p
+    rc = ResumeCanvas(buf)
+    p  = rc.p
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # PAGE 1 — RESUME
-    # ═══════════════════════════════════════════════════════════════════════
+    # ── NAME & CONTACT HEADER ─────────────────────────────────────────────────
+    # Name — large, centered
+    p.setFont("Helvetica-Bold", 20)
+    p.setFillColor(C_NAME)
+    p.drawCentredString(W / 2, rc.y, name.upper())
+    rc.y -= 22
 
-    # Header band
-    p.setFillColor(C_DARK)
-    p.rect(0, H - 110, W, 110, fill=1, stroke=0)
-
-    # ATS badge
-    badge_col = "#10b981" if score >= 80 else "#f59e0b" if score >= 60 else "#ef4444"
-    p.setFillColor(colors.HexColor(badge_col))
-    p.roundRect(W - MR - 90, H - 38, 90, 24, 6, fill=1, stroke=0)
-    p.setFillColor(C_WHITE)
-    p.setFont("Helvetica-Bold", 8)
-    p.drawCentredString(W - MR - 45, H - 22, f"ATS SCORE  {score}%")
-
-    # Name
-    p.setFillColor(C_WHITE)
-    p.setFont("Helvetica-Bold", 22)
-    p.drawString(ML, H - 42, name.upper())
-
-    # Contact
+    # Contact line — centered, smaller
     if contact:
         p.setFont("Helvetica", 9)
-        p.setFillColor(colors.HexColor("#94a3b8"))
-        p.drawString(ML, H - 60, contact[:90])
+        p.setFillColor(C_SUB)
+        # Truncate if too long
+        contact_display = contact[:100]
+        p.drawCentredString(W / 2, rc.y, contact_display)
+        rc.y -= 10
 
-    # Accent bar
-    p.setFillColor(C_EMERALD)
-    p.rect(ML, H - 72, 40, 3, fill=1, stroke=0)
+    # Thin accent line under header
+    p.setStrokeColor(C_ACCENT)
+    p.setLineWidth(1.5)
+    p.line(ML, rc.y, W - MR, rc.y)
+    p.setLineWidth(0.5)
+    rc.y -= 16
 
-    # Tagline
-    p.setFont("Helvetica-Bold", 8)
-    p.setFillColor(colors.HexColor("#6ee7b7"))
-    p.drawString(ML, H - 88, "AI-OPTIMIZED RESUME  ·  BAALEBOS CLOUD  ·  INTERVIEW-READY")
-
-    rb.y = H - 125
-
-    # ── PROFESSIONAL SUMMARY ─────────────────────────────────────────────
+    # ── PROFESSIONAL SUMMARY ──────────────────────────────────────────────────
     if summary:
-        rb.section("Professional Summary")
-        sum_lines = _wrap(summary, int(TW / 5.3))
-        box_h = len(sum_lines) * 13 + 18
-        p.setFillColor(C_BG)
-        p.roundRect(ML, rb.y - box_h + 12, TW, box_h, 6, fill=1, stroke=0)
-        p.setFont("Helvetica", 9.5)
-        p.setFillColor(C_DARK)
-        for line in sum_lines:
-            rb.check_page()
-            p.drawString(ML + 8, rb.y, line)
-            rb.y -= 13
-        rb.y -= 8
+        rc.section_heading("Professional Summary")
+        rc.text_line(summary, size=9.5)
+        rc.y -= 4
 
-    # ── EXPERIENCE ───────────────────────────────────────────────────────
+    # ── WORK EXPERIENCE ───────────────────────────────────────────────────────
     if experience:
-        rb.section("Work Experience")
+        rc.section_heading("Work Experience")
         for job in experience:
-            rb.check_page(needed=80)
-            title_str   = (job.get("title") or "").strip()
-            company_str = (job.get("company") or "").strip()
-            dates_str   = (job.get("dates") or "").strip()
-            bullets     = job.get("bullets") or []
+            title   = (job.get("title") or "").strip()
+            company = (job.get("company") or "").strip()
+            dates   = (job.get("dates") or "").strip()
+            loc     = (job.get("location") or "").strip()
+            bullets = job.get("bullets") or []
 
-            # Role title
-            p.setFont("Helvetica-Bold", 10.5)
-            p.setFillColor(C_DARK)
-            p.drawString(ML, rb.y, title_str)
-            if dates_str:
-                p.setFont("Helvetica", 8.5)
-                p.setFillColor(C_LIGHT)
-                p.drawRightString(W - MR, rb.y, dates_str)
-            rb.y -= 14
-
-            # Company
-            if company_str:
-                p.setFont("Helvetica-Bold", 9)
-                p.setFillColor(C_EMERALD)
-                p.drawString(ML, rb.y, company_str)
-                rb.y -= 14
-
-            # Bullets
+            rc.job_header(title, company, dates, loc)
             for b in bullets:
                 if b and b.strip():
-                    rb.bullet(b.strip())
-            rb.y -= 6
+                    rc.bullet(b.strip())
+            rc.y -= 6
 
-    # ── SKILLS ───────────────────────────────────────────────────────────
+    # ── TECHNICAL SKILLS ─────────────────────────────────────────────────────
     if skills:
-        rb.section("Technical Skills")
-        x = ML
-        row_y = rb.y
-        for skill in skills:
-            if not skill:
-                continue
-            sw = p.stringWidth(str(skill), "Helvetica", 9) + 18
-            if x + sw > W - MR:
-                x = ML
-                row_y -= 22
-            rb.check_page(30)
-            p.setFillColor(colors.HexColor("#ecfdf5"))
-            p.roundRect(x, row_y - 3, sw, 17, 4, fill=1, stroke=0)
-            p.setFillColor(C_EMERALD)
-            p.setFont("Helvetica-Bold", 9)
-            p.drawString(x + 8, row_y + 5, str(skill))
-            x += sw + 6
-        rb.y = row_y - 24
+        rc.section_heading("Technical Skills")
+        rc.skill_pills(skills)
+        rc.y -= 4
 
-    # ── EDUCATION ────────────────────────────────────────────────────────
+    # ── EDUCATION ────────────────────────────────────────────────────────────
     if education:
-        rb.section("Education")
+        rc.section_heading("Education")
         for edu in education:
-            rb.check_page(40)
             degree = (edu.get("degree") or "").strip()
             school = (edu.get("school") or "").strip()
             year   = (edu.get("year") or "").strip()
+            rc.check_page(40)
             p.setFont("Helvetica-Bold", 9.5)
-            p.setFillColor(C_DARK)
-            p.drawString(ML, rb.y, degree)
+            p.setFillColor(C_BODY)
+            p.drawString(ML, rc.y, degree)
             if year:
                 p.setFont("Helvetica", 8.5)
-                p.setFillColor(C_LIGHT)
-                p.drawRightString(W - MR, rb.y, year)
-            rb.y -= 13
+                p.setFillColor(C_SUB)
+                p.drawRightString(W - MR, rc.y, year)
+            rc.y -= 13
             if school:
                 p.setFont("Helvetica", 9)
-                p.setFillColor(C_GRAY)
-                p.drawString(ML, rb.y, school)
-                rb.y -= 14
+                p.setFillColor(C_SUB)
+                p.drawString(ML, rc.y, school)
+                rc.y -= 13
 
-    # ── CERTIFICATIONS ───────────────────────────────────────────────────
+    # ── CERTIFICATIONS ────────────────────────────────────────────────────────
     if certifications:
-        rb.section("Certifications")
+        rc.section_heading("Certifications")
         for cert in certifications:
             if cert and cert.strip():
-                rb.bullet(cert.strip())
+                rc.bullet(cert.strip())
 
-    rb.footer(score)
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # PAGE 2 — AI IMPROVEMENT REPORT
-    # ═══════════════════════════════════════════════════════════════════════
-    p.showPage()
-
-    # Header
-    p.setFillColor(C_DARK)
-    p.rect(0, H - 70, W, 70, fill=1, stroke=0)
-    p.setFillColor(C_WHITE)
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(ML, H - 32, "Baalebos AI — Optimization Report")
-    p.setFont("Helvetica", 9)
-    p.setFillColor(colors.HexColor("#94a3b8"))
-    p.drawString(ML, H - 52,
-        f"ATS Score: {score}%  ·  Target: 90%+  ·  {len(improvements)} suggestion(s)  ·  {datetime.now().strftime('%B %d, %Y')}")
-
-    y2 = H - 90
-
-    # Score bar
-    p.setFont("Helvetica-Bold", 10)
-    p.setFillColor(C_DARK)
-    p.drawString(ML, y2, f"Current Score: {score}%")
-    p.setFont("Helvetica", 9)
-    p.setFillColor(C_LIGHT)
-    p.drawRightString(W - MR, y2, "Target: 90%+")
-    y2 -= 16
-
-    p.setFillColor(colors.HexColor("#e2e8f0"))
-    p.rect(ML, y2, TW, 10, fill=1, stroke=0)
-    bar_col = "#10b981" if score >= 80 else "#f59e0b" if score >= 60 else "#ef4444"
-    p.setFillColor(colors.HexColor(bar_col))
-    p.rect(ML, y2, TW * min(score / 100, 1), 10, fill=1, stroke=0)
-    tx = ML + TW * 0.9
-    p.setStrokeColor(C_EMERALD)
-    p.setLineWidth(2)
-    p.line(tx, y2 - 3, tx, y2 + 14)
-    p.setFont("Helvetica-Bold", 7)
-    p.setFillColor(C_EMERALD)
-    p.drawCentredString(tx, y2 + 17, "90%")
-    y2 -= 32
-
-    # Suggestions heading
-    p.setFont("Helvetica-Bold", 11)
-    p.setFillColor(C_DARK)
-    p.drawString(ML, y2, "AI-Powered Suggestions to Reach 90%+")
-    y2 -= 6
-    p.setStrokeColor(C_EMERALD)
-    p.setLineWidth(1.5)
-    p.line(ML, y2, W - MR, y2)
-    p.setLineWidth(0.5)
-    y2 -= 18
-
-    for item in improvements:
-        if y2 < 60:
-            p.showPage()
-            y2 = H - 50
-
-        skill = (item.get("skill") or "Tip").strip()
-        text  = (item.get("bullet_point") or "").strip()
-
-        bw = min(p.stringWidth(skill.upper(), "Helvetica-Bold", 8) + 22, 220)
-        p.setFillColor(colors.HexColor("#ecfdf5"))
-        p.roundRect(ML, y2 - 3, bw, 18, 4, fill=1, stroke=0)
-        p.setFillColor(C_EMERALD)
-        p.setFont("Helvetica-Bold", 8)
-        p.drawString(ML + 8, y2 + 6, skill.upper()[:32])
-        y2 -= 22
-
-        p.setFillColor(C_DARK)
-        p.setFont("Helvetica", 9.5)
-        for line in _wrap(text, int(TW / 5.3)):
-            if y2 < 50:
-                p.showPage()
-                y2 = H - 50
-            p.drawString(ML + 10, y2, f"• {line}")
-            y2 -= 13
-        y2 -= 8
-
-    p.setFont("Helvetica", 7.5)
-    p.setFillColor(C_LIGHT)
-    p.drawCentredString(W / 2, 22,
-        "Generated by Baalebos Cloud AI  ·  baalebo.xyz  ·  Interview-ready resume")
-
+    rc.footer(1)
     p.save()
     buf.seek(0)
     return buf
