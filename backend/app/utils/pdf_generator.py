@@ -1,122 +1,138 @@
+"""
+ATS-Optimised Resume PDF Generator
+====================================
+Design principles:
+- Single column layout (ATS parsers fail on multi-column)
+- Black text only — no colors (ATS strips colors)
+- Standard Helvetica font (universally parseable)
+- Plain hyphen bullets — no special characters
+- No tables, no text boxes, no graphics
+- Section headings with full-width underline
+- Consistent spacing for clean parsing
+"""
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from io import BytesIO
 import textwrap
 
-W, H = LETTER
-ML = 60       # left margin
-MR = 60       # right margin
-TW = W - ML - MR
-
-# ATS-safe: black only, no colors, standard Helvetica font
-C_BLACK  = colors.black
-C_GRAY   = colors.HexColor("#444444")
-C_LGRAY  = colors.HexColor("#666666")
+W, H   = LETTER
+ML     = 54        # left margin
+MR     = 54        # right margin
+TW     = W - ML - MR
+BLACK  = colors.black
+DGRAY  = colors.HexColor("#333333")
+MGRAY  = colors.HexColor("#555555")
 
 
-def _wrap(text: str, max_chars: int) -> list:
-    return textwrap.wrap(str(text).strip(), width=max(max_chars, 20)) or [""]
+def _wrap(text: str, chars: int) -> list:
+    return textwrap.wrap(str(text).strip(), width=max(chars, 20)) or [""]
 
 
-class ResumeCanvas:
+class RC:
+    """Resume Canvas — thin wrapper around ReportLab canvas."""
+
     def __init__(self, buf):
-        self.p = canvas.Canvas(buf, pagesize=LETTER)
-        self.y = H - ML
-        self._page = 1
+        self.c    = canvas.Canvas(buf, pagesize=LETTER)
+        self.y    = H - ML
+        self._pg  = 1
 
-    def _draw_footer(self):
-        self.p.setFont("Helvetica", 7)
-        self.p.setFillColor(C_LGRAY)
-        self.p.drawCentredString(W / 2, 20, f"Page {self._page}")
+    # ── Page management ───────────────────────────────────────────────────────
+    def _footer(self):
+        self.c.setFont("Helvetica", 7)
+        self.c.setFillColor(MGRAY)
+        self.c.drawCentredString(W / 2, 18, f"Page {self._pg}")
 
-    def check_page(self, needed=40):
-        if self.y < needed + 60:
-            self._draw_footer()
-            self.p.showPage()
-            self._page += 1
+    def need(self, space: int = 40):
+        if self.y < space + 55:
+            self._footer()
+            self.c.showPage()
+            self._pg += 1
             self.y = H - ML
 
-    def section_heading(self, title: str):
+    # ── Section heading ───────────────────────────────────────────────────────
+    def heading(self, title: str):
         self.y -= 10
-        self.check_page(60)
-        # Full-width underline heading — ATS standard
-        self.p.setFont("Helvetica-Bold", 10.5)
-        self.p.setFillColor(C_BLACK)
-        self.p.drawString(ML, self.y, title.upper())
-        self.y -= 3
-        self.p.setStrokeColor(C_BLACK)
-        self.p.setLineWidth(0.8)
-        self.p.line(ML, self.y, W - MR, self.y)
-        self.p.setLineWidth(0.5)
+        self.need(55)
+        self.c.setFont("Helvetica-Bold", 10.5)
+        self.c.setFillColor(BLACK)
+        self.c.drawString(ML, self.y, title.upper())
+        self.y -= 4
+        self.c.setStrokeColor(BLACK)
+        self.c.setLineWidth(0.75)
+        self.c.line(ML, self.y, W - MR, self.y)
+        self.c.setLineWidth(0.4)
         self.y -= 12
 
-    def text_line(self, txt: str, bold=False, size=10, indent=0, color=None):
+    # ── Plain text line ───────────────────────────────────────────────────────
+    def line(self, txt: str, bold=False, size=10, indent=0, color=None):
         if not txt or not txt.strip():
             return
-        self.p.setFont("Helvetica-Bold" if bold else "Helvetica", size)
-        self.p.setFillColor(color or C_BLACK)
-        for line in _wrap(txt, int((TW - indent) / 5.5)):
-            self.check_page()
-            self.p.drawString(ML + indent, self.y, line)
-            self.y -= 13
+        self.c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+        self.c.setFillColor(color or BLACK)
+        chars = int((TW - indent) / (size * 0.56))
+        for ln in _wrap(txt, chars):
+            self.need()
+            self.c.drawString(ML + indent, self.y, ln)
+            self.y -= size + 3
 
+    # ── Bullet point ─────────────────────────────────────────────────────────
     def bullet(self, txt: str):
         if not txt or not txt.strip():
             return
         clean = txt.lstrip("•-*– ").strip()
-        lines = _wrap(clean, int((TW - 16) / 5.5))
-        for i, line in enumerate(lines):
-            self.check_page()
-            if i == 0:
-                # Plain hyphen bullet — ATS safe
-                self.p.setFont("Helvetica", 10)
-                self.p.setFillColor(C_BLACK)
-                self.p.drawString(ML + 4, self.y, f"- {line}")
-            else:
-                self.p.drawString(ML + 14, self.y, line)
+        chars = int((TW - 18) / 5.8)
+        lines = _wrap(clean, chars)
+        for i, ln in enumerate(lines):
+            self.need()
+            self.c.setFont("Helvetica", 10)
+            self.c.setFillColor(BLACK)
+            prefix = "- " if i == 0 else "  "
+            self.c.drawString(ML + 6, self.y, prefix + ln)
             self.y -= 13
 
+    # ── Job header (title left, dates right) ─────────────────────────────────
     def job_header(self, title: str, company: str, dates: str, location: str = ""):
-        self.check_page(55)
-        # Title left, dates right — standard ATS format
-        self.p.setFont("Helvetica-Bold", 10.5)
-        self.p.setFillColor(C_BLACK)
-        self.p.drawString(ML, self.y, title)
+        self.need(50)
+        # Title
+        self.c.setFont("Helvetica-Bold", 10.5)
+        self.c.setFillColor(BLACK)
+        self.c.drawString(ML, self.y, title)
+        # Dates right-aligned
         if dates:
-            self.p.setFont("Helvetica", 9.5)
-            self.p.setFillColor(C_GRAY)
-            self.p.drawRightString(W - MR, self.y, dates)
+            self.c.setFont("Helvetica", 9.5)
+            self.c.setFillColor(MGRAY)
+            self.c.drawRightString(W - MR, self.y, dates)
         self.y -= 13
-        # Company + location on next line
+        # Company | Location
         if company or location:
-            self.p.setFont("Helvetica", 10)
-            self.p.setFillColor(C_GRAY)
-            line = company
-            if location:
-                line = f"{company}  |  {location}" if company else location
-            self.p.drawString(ML, self.y, line)
+            self.c.setFont("Helvetica", 10)
+            self.c.setFillColor(DGRAY)
+            parts = [p for p in [company, location] if p]
+            self.c.drawString(ML, self.y, "  |  ".join(parts))
             self.y -= 13
 
-    def skills_line(self, skills: list):
-        """Render skills as plain comma-separated text — most ATS-friendly format."""
+    # ── Skills row ────────────────────────────────────────────────────────────
+    def skills_row(self, skills: list):
+        """Render skills as pipe-separated rows — ATS-friendly plain text."""
         if not skills:
             return
         clean = [str(s).strip() for s in skills if s and str(s).strip()]
-        # Group into rows of 5
+        # 5 per row
         for i in range(0, len(clean), 5):
             chunk = clean[i:i + 5]
-            line = "  |  ".join(chunk)
-            self.p.setFont("Helvetica", 10)
-            self.p.setFillColor(C_BLACK)
-            self.check_page(20)
-            self.p.drawString(ML, self.y, line)
+            self.c.setFont("Helvetica", 10)
+            self.c.setFillColor(BLACK)
+            self.need(16)
+            self.c.drawString(ML, self.y, "  |  ".join(chunk))
             self.y -= 13
 
     def save(self):
-        self._draw_footer()
-        self.p.save()
+        self._footer()
+        self.c.save()
 
+
+# ── Main entry point ──────────────────────────────────────────────────────────
 
 def generate_optimized_resume(
     filename: str,
@@ -124,18 +140,23 @@ def generate_optimized_resume(
     improvements: list,
     resume_text: str = "",
     task_id: str = "",
-    structured: dict = None
+    structured: dict = None,
 ) -> BytesIO:
     """
-    Generates a clean, ATS-optimised single-column resume PDF.
-    - Black and white only (no colors — ATS scanners strip colors)
-    - Standard Helvetica font (universally parseable)
-    - No tables, no columns, no graphics
-    - Plain hyphen bullets (ATS-safe)
-    - Full-width section dividers
+    Generates a clean, professional, ATS-optimised resume PDF.
+
+    ATS compliance checklist:
+    ✅ Single column
+    ✅ Black text only
+    ✅ Standard Helvetica font
+    ✅ Plain hyphen bullets
+    ✅ No tables / text boxes / graphics
+    ✅ Full-width section dividers
+    ✅ Consistent left margin
+    ✅ Page numbers
     """
     buf = BytesIO()
-    s = structured or {}
+    s   = structured or {}
 
     name           = (s.get("name") or _first_line(resume_text) or "Candidate").strip()
     contact        = (s.get("contact") or _second_line(resume_text) or "").strip()
@@ -145,38 +166,47 @@ def generate_optimized_resume(
     education      = s.get("education") or []
     certifications = s.get("certifications") or []
 
-    rc = ResumeCanvas(buf)
-    p  = rc.p
+    rc = RC(buf)
+    c  = rc.c
 
-    # ── NAME ─────────────────────────────────────────────────────────────────
-    p.setFont("Helvetica-Bold", 18)
-    p.setFillColor(C_BLACK)
-    p.drawCentredString(W / 2, rc.y, name.upper())
-    rc.y -= 18
+    # ── HEADER ────────────────────────────────────────────────────────────────
+    # Name — large, bold, centered
+    c.setFont("Helvetica-Bold", 18)
+    c.setFillColor(BLACK)
+    c.drawCentredString(W / 2, rc.y, name.upper())
+    rc.y -= 20
 
-    # ── CONTACT LINE ─────────────────────────────────────────────────────────
+    # Contact line — centered, smaller
     if contact:
-        p.setFont("Helvetica", 9.5)
-        p.setFillColor(C_GRAY)
-        p.drawCentredString(W / 2, rc.y, contact[:120])
+        c.setFont("Helvetica", 9.5)
+        c.setFillColor(DGRAY)
+        # Truncate if too long but keep all key info
+        c.drawCentredString(W / 2, rc.y, contact[:130])
         rc.y -= 8
 
-    # Thin divider under header
-    p.setStrokeColor(C_BLACK)
-    p.setLineWidth(0.8)
-    p.line(ML, rc.y, W - MR, rc.y)
-    p.setLineWidth(0.5)
+    # Divider under header
+    c.setStrokeColor(BLACK)
+    c.setLineWidth(0.75)
+    c.line(ML, rc.y, W - MR, rc.y)
+    c.setLineWidth(0.4)
     rc.y -= 14
 
     # ── PROFESSIONAL SUMMARY ──────────────────────────────────────────────────
     if summary:
-        rc.section_heading("Professional Summary")
-        rc.text_line(summary, size=10)
+        rc.heading("Professional Summary")
+        # Render summary as wrapped paragraph
+        chars = int(TW / 5.6)
+        for ln in _wrap(summary, chars):
+            rc.need()
+            c.setFont("Helvetica", 10)
+            c.setFillColor(BLACK)
+            c.drawString(ML, rc.y, ln)
+            rc.y -= 13
         rc.y -= 4
 
     # ── WORK EXPERIENCE ───────────────────────────────────────────────────────
     if experience:
-        rc.section_heading("Work Experience")
+        rc.heading("Work Experience")
         for job in experience:
             rc.job_header(
                 (job.get("title") or "").strip(),
@@ -191,35 +221,35 @@ def generate_optimized_resume(
 
     # ── TECHNICAL SKILLS ─────────────────────────────────────────────────────
     if skills:
-        rc.section_heading("Technical Skills")
-        rc.skills_line(skills)
+        rc.heading("Technical Skills")
+        rc.skills_row(skills)
         rc.y -= 4
 
     # ── EDUCATION ────────────────────────────────────────────────────────────
     if education:
-        rc.section_heading("Education")
+        rc.heading("Education")
         for edu in education:
             degree = (edu.get("degree") or "").strip()
             school = (edu.get("school") or "").strip()
             year   = (edu.get("year") or "").strip()
-            rc.check_page(40)
-            p.setFont("Helvetica-Bold", 10.5)
-            p.setFillColor(C_BLACK)
-            p.drawString(ML, rc.y, degree)
+            rc.need(38)
+            c.setFont("Helvetica-Bold", 10.5)
+            c.setFillColor(BLACK)
+            c.drawString(ML, rc.y, degree)
             if year:
-                p.setFont("Helvetica", 9.5)
-                p.setFillColor(C_GRAY)
-                p.drawRightString(W - MR, rc.y, year)
+                c.setFont("Helvetica", 9.5)
+                c.setFillColor(MGRAY)
+                c.drawRightString(W - MR, rc.y, year)
             rc.y -= 13
             if school:
-                p.setFont("Helvetica", 10)
-                p.setFillColor(C_GRAY)
-                p.drawString(ML, rc.y, school)
+                c.setFont("Helvetica", 10)
+                c.setFillColor(DGRAY)
+                c.drawString(ML, rc.y, school)
                 rc.y -= 13
 
     # ── CERTIFICATIONS ────────────────────────────────────────────────────────
     if certifications:
-        rc.section_heading("Certifications")
+        rc.heading("Certifications")
         for cert in certifications:
             if cert and cert.strip():
                 rc.bullet(cert.strip())
@@ -229,18 +259,20 @@ def generate_optimized_resume(
     return buf
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _first_line(text: str) -> str:
-    for line in (text or "").split("\n"):
-        if line.strip():
-            return line.strip()
+    for ln in (text or "").split("\n"):
+        if ln.strip():
+            return ln.strip()
     return "Candidate"
 
 
 def _second_line(text: str) -> str:
     found = 0
-    for line in (text or "").split("\n"):
-        if line.strip():
+    for ln in (text or "").split("\n"):
+        if ln.strip():
             found += 1
             if found == 2:
-                return line.strip()
+                return ln.strip()
     return ""

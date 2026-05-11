@@ -6,6 +6,7 @@ from docx import Document
 from openai import OpenAI
 from backend.app.core.config import settings
 
+
 # ─── Text Extraction ──────────────────────────────────────────────────────────
 
 def extract_text(file_content: bytes, filename: str) -> str:
@@ -25,14 +26,9 @@ def extract_text(file_content: bytes, filename: str) -> str:
     return text.strip()
 
 
-# ─── Main Analysis Function ───────────────────────────────────────────────────
+# ─── ATS Scoring ─────────────────────────────────────────────────────────────
 
 def analyze_detailed_ats(file_content: bytes, filename: str, job_description: str) -> dict:
-    """
-    Uses Groq (free & unlimited) to score a resume against a job description.
-    Model: llama-3.3-70b-versatile — fast, free, no credit card required.
-    Get your key at: https://console.groq.com
-    """
     resume_text = extract_text(file_content, filename)
 
     if not resume_text:
@@ -41,27 +37,34 @@ def analyze_detailed_ats(file_content: bytes, filename: str, job_description: st
     if not settings.GROQ_API_KEY:
         return _simulated_response()
 
-    # Groq uses the same OpenAI SDK interface — just different base_url
     client = OpenAI(
         api_key=settings.GROQ_API_KEY,
         base_url="https://api.groq.com/openai/v1",
     )
 
-    prompt = f"""You are a Senior Technical Recruiter and ATS expert. Analyze the resume against the job description below.
+    prompt = f"""You are a Senior ATS (Applicant Tracking System) expert and technical recruiter.
+Analyze this resume against the job description and score it accurately.
 
 JOB DESCRIPTION:
-{job_description[:2000]}
+{job_description[:2500]}
 
 RESUME:
-{resume_text[:3000]}
+{resume_text[:3500]}
 
-Return ONLY a valid JSON object in exactly this format, no extra text:
+Score the resume on these criteria:
+1. Keyword match — how many job description keywords appear in the resume
+2. Action verbs — strong verbs like "Architected", "Deployed", "Automated", "Reduced"
+3. Quantified achievements — metrics like percentages, numbers, time saved
+4. Job title alignment — does the resume title match the job title
+5. Skills coverage — technical skills required vs present
+
+Return ONLY valid JSON:
 {{
     "overall_score": 78,
     "keywords_matched": 14,
     "keywords_missing": 6,
     "total_keywords": 20,
-    "missing_list": ["Terraform", "Kubernetes", "AWS RDS", "CI/CD", "Helm", "Prometheus"],
+    "missing_list": ["Terraform", "Kubernetes", "AWS RDS", "CI/CD", "Helm"],
     "breakdown": {{
         "action_verbs": {{"score": 80, "count": 8}},
         "technical_skills": {{"score": 65, "count": 12}},
@@ -75,25 +78,22 @@ Return ONLY a valid JSON object in exactly this format, no extra text:
 }}
 
 Rules:
-- overall_score must be a number between 0 and 100
-- missing_list must be an array of strings (the actual missing keywords from the job description)
-- breakdown scores must be numbers between 0 and 100
+- overall_score must be a number 0-100
+- missing_list must be actual missing keywords from the job description (short terms only)
 - Return ONLY the JSON, no markdown, no explanation"""
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  # Free on Groq, very fast
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": "You are an ATS analysis expert. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=1000,
-            temperature=0.3,
+            temperature=0.2,
         )
 
         raw = response.choices[0].message.content.strip()
-
-        # Strip markdown code blocks if present
         raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
         raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
         raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
@@ -122,10 +122,100 @@ Rules:
         return _error_response(str(e))
 
 
+# ─── AI Resume Rewriter ───────────────────────────────────────────────────────
+
+def rewrite_resume_for_job(resume_text: str, job_description: str, job_title: str,
+                           missing_keywords: list, context_phrases: list = None) -> dict:
+    """
+    Rewrites the resume to achieve 96%+ ATS score for the target job.
+    Strategy:
+    - Mirror exact keywords from the job description
+    - Use strong action verbs with quantified achievements
+    - Align job title and summary to the target role
+    - Include ALL skills from original + missing keywords
+    - Keep all facts truthful — only rewrite phrasing
+    """
+    if not settings.GROQ_API_KEY:
+        return _fallback_structured_resume(resume_text, job_title, missing_keywords)
+
+    client = OpenAI(
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+    )
+
+    missing_str = ", ".join(missing_keywords[:20]) if missing_keywords else "none"
+
+    prompt = f"""You are a world-class ATS resume optimization expert. Your goal is to rewrite this resume to score 96%+ on ATS systems for the target job.
+
+TARGET JOB TITLE: {job_title}
+
+JOB DESCRIPTION (read carefully — extract ALL keywords):
+{job_description[:3000]}
+
+ORIGINAL RESUME (preserve ALL facts — only improve phrasing):
+{resume_text[:5000]}
+
+MISSING KEYWORDS TO ADD: {missing_str}
+
+ATS OPTIMIZATION RULES (follow all of these):
+1. TITLE MATCH: The summary must open with the exact job title from the job description
+2. KEYWORD DENSITY: Every keyword from the job description must appear at least once in the resume
+3. ACTION VERBS: Every bullet must start with a strong past-tense action verb (Architected, Deployed, Automated, Engineered, Implemented, Optimized, Reduced, Increased, Designed, Built, Configured, Managed, Monitored, Streamlined, Established)
+4. QUANTIFY EVERYTHING: Every bullet must include at least one metric (%, time, count, dollar amount)
+5. SKILLS COMPLETENESS: Include EVERY skill from the original resume PLUS all missing keywords
+6. NO FABRICATION: Do not invent companies, degrees, or certifications not in the original
+7. SUMMARY: 3 sentences — sentence 1: job title + years of experience + top 3 skills, sentence 2: biggest quantified achievement, sentence 3: what you bring to this specific role
+8. BULLETS: 5-7 bullets per job, each 1-2 lines, starting with action verb + achievement + metric
+9. CONTACT: Preserve exact email, phone, location, LinkedIn from original
+
+Return ONLY valid JSON — no markdown, no explanation:
+{{
+  "name": "FULL NAME IN CAPS",
+  "contact": "email | phone | location | LinkedIn URL",
+  "summary": "3-sentence ATS-optimized summary with exact job title",
+  "experience": [
+    {{
+      "title": "exact job title from resume",
+      "company": "exact company name",
+      "dates": "exact dates",
+      "location": "city, country or Remote",
+      "bullets": [
+        "Action verb + specific achievement + quantified metric",
+        "Action verb + specific achievement + quantified metric"
+      ]
+    }}
+  ],
+  "skills": ["every skill term — short, no sentences"],
+  "education": [
+    {{"degree": "exact degree", "school": "exact school", "year": "year"}}
+  ],
+  "certifications": ["every certification from original resume"]
+}}"""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are an ATS resume optimization expert. Your rewrites consistently score 96%+ on ATS systems. Always respond with valid JSON only. Never fabricate experience."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=4096,
+            temperature=0.2,
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
+        result = json.loads(raw)
+        return result
+    except Exception as e:
+        print(f"[Resume Rewrite] Error: {e}")
+        return _fallback_structured_resume(resume_text, job_title, missing_keywords)
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _simulated_response() -> dict:
-    """Returned when no GROQ_API_KEY is configured."""
     return {
         "overall_score": 45.0,
         "keywords_matched": 5,
@@ -158,110 +248,24 @@ def _error_response(message: str) -> dict:
     }
 
 
-# ─── AI Resume Rewriter ───────────────────────────────────────────────────────────────
-
-def rewrite_resume_for_job(resume_text: str, job_description: str, job_title: str,
-                           missing_keywords: list, context_phrases: list = None) -> dict:
-    """
-    Uses Groq to fully rewrite the resume tailored to the specific job.
-    Returns a structured dict with all resume sections ready for PDF rendering.
-    """
-    if not settings.GROQ_API_KEY:
-        return _fallback_structured_resume(resume_text, job_title, missing_keywords)
-
-    client = OpenAI(
-        api_key=settings.GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1",
-    )
-
-    missing_str = ", ".join(missing_keywords[:15]) if missing_keywords else "none"
-    phrases_str = "; ".join((context_phrases or [])[:5]) if context_phrases else "none"
-
-    prompt = f"""You are an expert resume writer. Rewrite the candidate's resume to be perfectly tailored for the job below.
-
-JOB TITLE: {job_title}
-
-JOB DESCRIPTION:
-{job_description[:2000]}
-
-ORIGINAL RESUME (complete — do not skip any section):
-{resume_text[:5000]}
-
-SKILL KEYWORDS TO ADD TO SKILLS SECTION: {missing_str}
-CONTEXT TO WEAVE INTO BULLET POINTS (do NOT add these as skills): {phrases_str}
-
-CRITICAL INSTRUCTIONS:
-1. Extract and preserve ALL sections: name, contact, summary, ALL work experience, ALL skills, ALL education, ALL certifications
-2. Do NOT invent or fabricate any experience, company, or qualification
-3. Rewrite bullet points with stronger action verbs and quantified achievements
-4. Add SKILL KEYWORDS naturally into the skills array (short technical terms only)
-5. Weave CONTEXT PHRASES naturally into existing bullet points where truthful
-6. Include EVERY skill from the original resume PLUS the skill keywords above
-7. Include ALL education entries from the original resume
-8. Include ALL certifications from the original resume
-9. Skills array must contain ONLY short technical terms (e.g. "Helm", "Kubernetes") NOT sentences
-
-Return ONLY a valid JSON object:
-{{
-  "name": "exact name from resume",
-  "contact": "email | phone | location | linkedin",
-  "summary": "2-3 sentence tailored summary mentioning {job_title}",
-  "experience": [
-    {{
-      "title": "exact job title",
-      "company": "exact company name",
-      "dates": "exact dates",
-      "location": "",
-      "bullets": ["Strong action verb + achievement + metric"]
-    }}
-  ],
-  "skills": ["only short technical skill terms"],
-  "education": [
-    {{"degree": "exact degree", "school": "exact school", "year": "year"}}
-  ],
-  "certifications": ["every certification from original resume"]
-}}
-
-Return ONLY the JSON. No markdown. No explanation."""
-
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are an expert resume writer. Extract ALL sections from the resume. Always respond with valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=4000,
-            temperature=0.3,
-        )
-        raw = response.choices[0].message.content.strip()
-        raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
-        raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
-        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
-        result = json.loads(raw)
-        return result
-    except Exception as e:
-        print(f"[Resume Rewrite] Error: {e}")
-        return _fallback_structured_resume(resume_text, job_title, missing_keywords)
-
-
 def _fallback_structured_resume(resume_text: str, job_title: str, missing_keywords: list) -> dict:
-    """Parse raw resume text into structured sections when AI is unavailable."""
     lines = [l.strip() for l in resume_text.split('\n') if l.strip()]
     name = lines[0] if lines else "Candidate"
     contact = lines[1] if len(lines) > 1 else ""
-
-    # Extract bullets from body
     bullets = [l.lstrip('•-* ') for l in lines[2:] if l.startswith(('•', '-', '*', '–'))]
-    non_bullets = [l for l in lines[2:] if not l.startswith(('•', '-', '*', '–'))]
 
     return {
         "name": name,
         "contact": contact,
-        "summary": f"Experienced professional seeking {job_title} role. Skilled in delivering high-impact solutions.",
-        "experience": [{"title": job_title, "company": "Previous Employer", "dates": "",
-                        "bullets": bullets[:8] or ["Delivered key projects aligned with business objectives."]}],
-        "skills": missing_keywords[:12] if missing_keywords else ["See resume for full skill set"],
+        "summary": f"Experienced {job_title} with a strong background in cloud infrastructure, CI/CD pipelines, and DevOps automation. Delivered measurable results through automated workflows and infrastructure optimization. Seeking to leverage expertise as a {job_title}.",
+        "experience": [{
+            "title": job_title,
+            "company": "Previous Employer",
+            "dates": "",
+            "location": "",
+            "bullets": bullets[:8] or ["Delivered key projects aligned with business objectives."]
+        }],
+        "skills": missing_keywords[:20] if missing_keywords else ["See resume for full skill set"],
         "education": [],
         "certifications": []
     }
