@@ -93,8 +93,40 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
 
 from backend.app.dependencies.auth import get_current_user
 from backend.app.schemas.user import UserResponse
+from backend.app.services.auth_service import verify_password, create_access_token
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Returns the current logged-in user's profile."""
     return current_user
+
+
+@router.post("/admin/login")
+def admin_login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
+    """Dedicated admin login — returns is_admin flag for frontend routing."""
+    ip = _get_ip(request)
+    _check_brute_force(ip)
+
+    db_user = db.query(User).filter(User.email == user.email.lower().strip()).first()
+    if not db_user or not verify_password(user.password, db_user.hashed_password):
+        _record_failure(ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+
+    if not db_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin account required."
+        )
+
+    _clear_failures(ip)
+    token = create_access_token({"sub": db_user.email})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "is_admin": True,
+        "email": db_user.email,
+        "full_name": db_user.full_name,
+    }

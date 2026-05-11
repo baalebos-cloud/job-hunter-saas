@@ -1,48 +1,76 @@
-import os
-import requests
-from bs4 import BeautifulSoup
+import re
 from openai import OpenAI
+from backend.app.core.config import settings
 
 
-def fetch_job_description(job_url: str) -> str:
-    response = requests.get(job_url, timeout=10)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    desc = soup.find("div", class_="description")
-    return desc.get_text(separator="\n").strip() if desc else ""
-
-
-def generate_message(job_url: str, candidate_name: str, resume_text: str) -> str:
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        return "AI outreach unavailable: no API key configured."
-
-    job_description = fetch_job_description(job_url)
-
-    prompt = f"""
-    You are a professional recruiter assistant.
-    Create a personalized, concise, friendly outreach message to a recruiter
-    based on the following job description and candidate resume.
-
-    Candidate Name: {candidate_name}
-
-    Job Description:
-    {job_description}
-
-    Candidate Resume:
-    {resume_text}
-
-    The message should:
-    - Be no longer than 150 words
-    - Highlight the candidate's key skills relevant to the job
-    - Show enthusiasm for the role
-    - Be suitable for LinkedIn InMail or email
+def generate_message(
+    job_title: str,
+    company: str,
+    job_description: str,
+    candidate_name: str,
+    resume_text: str,
+) -> str:
     """
+    Generates a tailored HR outreach message using Groq (free).
+    Uses the job description already stored in the DB — no URL scraping needed.
+    """
+    if not settings.GROQ_API_KEY:
+        return _fallback_message(candidate_name, job_title, company)
 
-    client = OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
+    client = OpenAI(
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
     )
-    return response.choices[0].message.content
+
+    prompt = f"""You are a professional career coach helping a job seeker write an outreach message to a recruiter or hiring manager.
+
+JOB TITLE: {job_title}
+COMPANY: {company}
+
+JOB DESCRIPTION (first 1500 chars):
+{job_description[:1500]}
+
+CANDIDATE NAME: {candidate_name}
+
+CANDIDATE RESUME (first 2000 chars):
+{resume_text[:2000]}
+
+Write a personalized, professional outreach message that:
+1. Opens with a specific reference to the role and company (not generic)
+2. Highlights 2-3 of the candidate's most relevant skills/achievements that match the job
+3. Shows genuine enthusiasm for the specific company/role
+4. Ends with a clear, polite call to action
+5. Is between 100-150 words
+6. Is suitable for LinkedIn InMail or email
+7. Does NOT start with "I hope this message finds you well" or similar clichés
+
+Return ONLY the message text. No subject line. No labels. No explanation."""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are an expert career coach. Write professional, personalized outreach messages."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.7,
+        )
+        message = response.choices[0].message.content.strip()
+        # Clean any markdown that slipped through
+        message = re.sub(r'\*\*|__', '', message)
+        return message
+    except Exception as e:
+        print(f"[Outreach] Groq error: {e}")
+        return _fallback_message(candidate_name, job_title, company)
+
+
+def _fallback_message(candidate_name: str, job_title: str, company: str) -> str:
+    return (
+        f"Hi,\n\n"
+        f"My name is {candidate_name} and I came across the {job_title} opening at {company}. "
+        f"I believe my background aligns well with what you're looking for and I'd love the opportunity "
+        f"to discuss how I can contribute to your team.\n\n"
+        f"I'd welcome the chance to connect at your convenience.\n\n"
+        f"Best regards,\n{candidate_name}"
+    )

@@ -155,6 +155,8 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboar
 app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(hr_router.router, prefix="/api/v1/hr", tags=["HR"])
 
+# Admin login is under /api/v1/auth/admin/login (already in auth router)
+
 # --- AI ANALYZE ENDPOINT ---
 @app.post("/api/v1/ai/analyze", tags=["AI Engine"])
 async def analyze_resume_against_job(payload: AnalysisRequest):

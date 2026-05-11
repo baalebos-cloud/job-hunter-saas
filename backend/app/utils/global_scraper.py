@@ -182,11 +182,32 @@ def scrape_remotive(role: str) -> list:
     return jobs
 
 
-# ── Source 2: Remotive Search (Africa/Global South) ──────────────────────────
+# ── Source 2: Remotive Search (Global — full country coverage) ───────────────
 SEARCH_TERMS = [
-    "nigeria", "africa", "ghana", "kenya", "south africa",
-    "worldwide", "anywhere", "global", "canada", "australia",
-    "germany", "south korea", "singapore", "india",
+    # Africa
+    "nigeria", "ghana", "kenya", "south africa", "egypt", "ethiopia",
+    "tanzania", "uganda", "rwanda", "senegal", "ivory coast", "cameroon",
+    "zimbabwe", "zambia", "botswana", "namibia", "mozambique", "angola",
+    "tunisia", "morocco", "algeria", "libya",
+    # Americas
+    "united states", "canada", "brazil", "mexico", "argentina", "colombia",
+    "chile", "peru", "venezuela", "ecuador", "uruguay", "costa rica",
+    # Europe
+    "united kingdom", "germany", "france", "netherlands", "spain", "italy",
+    "portugal", "sweden", "norway", "denmark", "finland", "switzerland",
+    "austria", "belgium", "poland", "czech republic", "romania", "ukraine",
+    "ireland", "greece", "hungary",
+    # Asia
+    "india", "singapore", "philippines", "indonesia", "malaysia", "vietnam",
+    "thailand", "pakistan", "bangladesh", "sri lanka", "nepal",
+    "south korea", "japan", "china", "taiwan", "hong kong",
+    # Middle East
+    "united arab emirates", "saudi arabia", "qatar", "kuwait", "bahrain",
+    "jordan", "lebanon", "israel", "turkey",
+    # Oceania
+    "australia", "new zealand",
+    # Global
+    "worldwide", "anywhere", "global", "remote",
 ]
 
 def scrape_remotive_search(query: str) -> list:
