@@ -1,5 +1,4 @@
 import re
-import html
 import asyncio
 import logging
 import requests
@@ -7,7 +6,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
-
 
 from backend.app.database import SessionLocal
 from backend.app.models.job import Job
@@ -248,23 +246,6 @@ def scrape_remotive_search(query: str) -> list:
 
 
 # ── Source 3: Jobicy RSS ──────────────────────────────────────────────────────
-def _sanitize_xml(raw: bytes) -> bytes:
-    """
-    Sanitize raw RSS bytes before XML parsing.
-    Jobicy sometimes returns job descriptions with unescaped HTML entities
-    or stray control characters that cause 'not well-formed (invalid token)'
-    errors in xml.etree.ElementTree. We unescape HTML entities and strip
-    ASCII control characters (except tab, newline, carriage return) so the
-    parser receives valid XML.
-    """
-    text = raw.decode("utf-8", errors="replace")
-    # Unescape double-encoded HTML entities (e.g. &amp;amp; → &amp;)
-    text = html.unescape(text)
-    # Strip ASCII control characters that are illegal in XML 1.0
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-    return text.encode("utf-8")
-
-
 def scrape_jobicy(role: str) -> list:
     jobs = []
     try:
@@ -272,35 +253,23 @@ def scrape_jobicy(role: str) -> list:
         res = requests.get(url, timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
-
-        # Sanitize before parsing to avoid 'not well-formed (invalid token)' errors
-        try:
-            xml_bytes = _sanitize_xml(res.content)
-            root = ET.fromstring(xml_bytes)
-        except ET.ParseError as parse_err:
-            logger.warning(f"[Jobicy] {role}: XML parse error after sanitization — {parse_err}")
-            return jobs
-
+        root    = ET.fromstring(res.content)
         channel = root.find("channel")
         if not channel:
             return jobs
         for item in channel.findall("item")[:15]:
-            try:
-                title = item.findtext("title", "").strip()
-                link  = item.findtext("link", "").strip()
-                if not title or not link:
-                    continue
-                desc     = _clean(item.findtext("description", ""))
-                company  = item.findtext("{https://jobicy.com}company", "").strip()
-                location = item.findtext("{https://jobicy.com}jobLocation", "Worldwide").strip()
-                jobs.append({
-                    "title": title, "company": company, "location": location,
-                    "description": desc, "url": link,
-                    "source": "Jobicy", "category": role, "salary_range": _salary(desc),
-                })
-            except Exception as item_err:
-                logger.debug(f"[Jobicy] {role}: skipping malformed item — {item_err}")
+            title = item.findtext("title", "").strip()
+            link  = item.findtext("link", "").strip()
+            if not title or not link:
                 continue
+            desc     = _clean(item.findtext("description", ""))
+            company  = item.findtext("{https://jobicy.com}company", "").strip()
+            location = item.findtext("{https://jobicy.com}jobLocation", "Worldwide").strip()
+            jobs.append({
+                "title": title, "company": company, "location": location,
+                "description": desc, "url": link,
+                "source": "Jobicy", "category": role, "salary_range": _salary(desc),
+            })
     except Exception as e:
         logger.warning(f"[Jobicy] {role}: {e}")
     return jobs
