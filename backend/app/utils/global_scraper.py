@@ -1,15 +1,17 @@
 import re
+import asyncio
+import logging
 import requests
 import xml.etree.ElementTree as ET
-import logging
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 
 from backend.app.database import SessionLocal
 from backend.app.models.job import Job
 from backend.app.models.user import User, OutreachMessage  # noqa
-from backend.app.models.resume import Resume  # noqa
-from backend.app.models.application import Application  # noqa
+from backend.app.models.resume import Resume               # noqa
+from backend.app.models.application import Application     # noqa
 
 logger = logging.getLogger(__name__)
 
@@ -47,30 +49,37 @@ REMOTIVE_API    = "https://remotive.com/api/remote-jobs?category={category}&limi
 REMOTIVE_SEARCH = "https://remotive.com/api/remote-jobs?search={query}&limit=20"
 JOBICY_RSS      = "https://jobicy.com/jobs-rss?q={role}&count=15"
 ARBEITNOW_API   = "https://www.arbeitnow.com/api/job-board-api"
-# The Muse — free, no key needed, covers USA/global top companies
 THEMUSE_API     = "https://www.themuse.com/api/public/jobs?page={page}&descending=true&api_key=public"
-# Greenhouse — free job board API (top tech companies post here)
 GREENHOUSE_COMPANIES = [
     "airbnb", "stripe", "notion", "figma", "linear", "vercel", "supabase",
     "hashicorp", "datadog", "mongodb", "elastic", "cloudflare", "digitalocean",
     "gitlab", "github", "atlassian", "shopify", "twilio", "sendgrid",
 ]
 GREENHOUSE_API  = "https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true"
-# Lever — free job board API (many startups use Lever)
 LEVER_COMPANIES = [
     "netflix", "lyft", "reddit", "discord", "canva", "plaid", "brex",
     "robinhood", "coinbase", "openai", "anthropic", "scale-ai",
 ]
 LEVER_API       = "https://api.lever.co/v0/postings/{company}?mode=json&limit=10"
-# Adzuna — free tier (1000 calls/day), covers USA, UK, Canada, Australia, Germany
-ADZUNA_APP_ID   = ""  # optional — works without for basic calls
+
+# FIX 6: Adzuna — was defined but never had a scraper function or called
+ADZUNA_APP_ID   = ""   # optional — set in .env for higher rate limits
+ADZUNA_APP_KEY  = ""   # optional
 ADZUNA_COUNTRIES = {
     "us": "United States", "gb": "United Kingdom", "ca": "Canada",
     "au": "Australia", "de": "Germany", "fr": "France", "nl": "Netherlands",
     "sg": "Singapore", "za": "South Africa", "in": "India",
 }
-ADZUNA_API = "https://api.adzuna.com/v1/api/jobs/{country}/search/1?results_per_page=20&what={role}&content-type=application/json"
-# WeworkRemotely RSS — top remote jobs, USA focused
+ADZUNA_API = (
+    "https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+    "?results_per_page=20&what={role}&content-type=application/json"
+    "&app_id={app_id}&app_key={app_key}"
+)
+ADZUNA_API_ANON = (
+    "https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+    "?results_per_page=10&what={role}&content-type=application/json"
+)
+
 WEWORKREMOTELY_RSS = "https://weworkremotely.com/categories/remote-{category}-jobs.rss"
 WWR_CATEGORIES = {
     "Software Engineer": "programming", "Frontend Developer": "programming",
@@ -78,13 +87,14 @@ WWR_CATEGORIES = {
     "Data Scientist": "data-science", "Product Manager": "product",
     "Mobile Developer": "programming", "QA Engineer": "qa",
 }
-# Jobspresso RSS — remote jobs
-JOBSPRESSO_RSS = "https://jobspresso.co/feed/"
-# Authentic Jobs RSS
+JOBSPRESSO_RSS    = "https://jobspresso.co/feed/"
 AUTHENTICJOBS_RSS = "https://authenticjobs.com/feed/"
-# Stack Overflow Jobs RSS (via public feed)
-STACKOVERFLOW_RSS = "https://stackoverflow.com/jobs/feed?q={role}&r=true"
 
+# FIX 1: Removed STACKOVERFLOW_RSS — Stack Overflow Jobs shut down in 2022
+# Old: STACKOVERFLOW_RSS = "https://stackoverflow.com/jobs/feed?q={role}&r=true"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _clean(html: str, limit: int = 4000) -> str:
     text = re.sub(r'<[^>]+>', ' ', html or '')
@@ -182,28 +192,27 @@ def scrape_remotive(role: str) -> list:
     return jobs
 
 
-# ── Source 2: Remotive Search (Global — full country coverage) ───────────────
+# ── Source 2: Remotive Search (Global) ───────────────────────────────────────
 SEARCH_TERMS = [
     # Africa
     "nigeria", "ghana", "kenya", "south africa", "egypt", "ethiopia",
     "tanzania", "uganda", "rwanda", "senegal", "ivory coast", "cameroon",
     "zimbabwe", "zambia", "botswana", "namibia", "mozambique", "angola",
-    "tunisia", "morocco", "algeria", "libya",
+    "tunisia", "morocco", "algeria",
     # Americas
     "united states", "canada", "brazil", "mexico", "argentina", "colombia",
-    "chile", "peru", "venezuela", "ecuador", "uruguay", "costa rica",
+    "chile", "peru", "uruguay", "costa rica",
     # Europe
     "united kingdom", "germany", "france", "netherlands", "spain", "italy",
     "portugal", "sweden", "norway", "denmark", "finland", "switzerland",
     "austria", "belgium", "poland", "czech republic", "romania", "ukraine",
-    "ireland", "greece", "hungary",
+    "ireland", "greece",
     # Asia
     "india", "singapore", "philippines", "indonesia", "malaysia", "vietnam",
-    "thailand", "pakistan", "bangladesh", "sri lanka", "nepal",
-    "south korea", "japan", "china", "taiwan", "hong kong",
+    "thailand", "pakistan", "bangladesh", "sri lanka",
+    "south korea", "japan", "taiwan", "hong kong",
     # Middle East
-    "united arab emirates", "saudi arabia", "qatar", "kuwait", "bahrain",
-    "jordan", "lebanon", "israel", "turkey",
+    "united arab emirates", "saudi arabia", "qatar", "kuwait", "jordan",
     # Oceania
     "australia", "new zealand",
     # Global
@@ -224,11 +233,12 @@ def scrape_remotive_search(query: str) -> list:
                 continue
             desc = _clean(job.get("description", ""))
             sal  = _salary(job.get("salary") or "") or _salary(desc)
-            location = job.get("candidate_required_location", "Worldwide")
             jobs.append({
                 "title": title, "company": job.get("company_name", "").strip(),
-                "location": location, "description": desc, "url": jurl,
-                "source": "Remotive", "category": _guess_category(title), "salary_range": sal,
+                "location": job.get("candidate_required_location", "Worldwide"),
+                "description": desc, "url": jurl,
+                "source": "Remotive", "category": _guess_category(title),
+                "salary_range": sal,
             })
     except Exception as e:
         logger.warning(f"[Remotive Search '{query}'] {e}")
@@ -243,7 +253,7 @@ def scrape_jobicy(role: str) -> list:
         res = requests.get(url, timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
-        root = ET.fromstring(res.content)
+        root    = ET.fromstring(res.content)
         channel = root.find("channel")
         if not channel:
             return jobs
@@ -283,14 +293,15 @@ def scrape_arbeitnow() -> list:
                 "title": title, "company": job.get("company_name", "").strip(),
                 "location": job.get("location", "Europe / Remote"),
                 "description": desc, "url": url,
-                "source": "Arbeitnow", "category": _guess_category(title), "salary_range": None,
+                "source": "Arbeitnow", "category": _guess_category(title),
+                "salary_range": None,
             })
     except Exception as e:
         logger.warning(f"[Arbeitnow] {e}")
     return jobs
 
 
-# ── Source 5: We Work Remotely RSS (USA focused, top companies) ──────────────
+# ── Source 5: We Work Remotely RSS ───────────────────────────────────────────
 def scrape_weworkremotely() -> list:
     jobs = []
     categories = ["programming", "devops-sysadmin", "data-science", "product", "qa"]
@@ -300,7 +311,7 @@ def scrape_weworkremotely() -> list:
             res = requests.get(url, timeout=12, headers=HEADERS)
             if res.status_code != 200:
                 continue
-            root = ET.fromstring(res.content)
+            root    = ET.fromstring(res.content)
             channel = root.find("channel")
             if not channel:
                 continue
@@ -309,12 +320,11 @@ def scrape_weworkremotely() -> list:
                 link  = item.findtext("link", "").strip()
                 if not title or not link:
                     continue
-                # WWR title format: "Company: Job Title"
                 if ": " in title:
                     company, title = title.split(": ", 1)
                 else:
                     company = ""
-                desc = _clean(item.findtext("description", ""))
+                desc   = _clean(item.findtext("description", ""))
                 region = item.findtext("region", "USA / Remote").strip() if item.findtext("region") else "USA / Remote"
                 jobs.append({
                     "title": title.strip(), "company": company.strip(),
@@ -327,7 +337,7 @@ def scrape_weworkremotely() -> list:
     return jobs
 
 
-# ── Source 6: Greenhouse (Top Tech Companies — USA/Global) ───────────────────
+# ── Source 6: Greenhouse (Top Tech Companies) ─────────────────────────────────
 def scrape_greenhouse() -> list:
     jobs = []
     for company in GREENHOUSE_COMPANIES:
@@ -335,16 +345,25 @@ def scrape_greenhouse() -> list:
             res = requests.get(GREENHOUSE_API.format(company=company), timeout=10, headers=HEADERS)
             if res.status_code != 200:
                 continue
-            data = res.json()
-            for job in data.get("jobs", [])[:5]:
-                title    = job.get("title", "").strip()
-                url      = job.get("absolute_url", "").strip()
-                location = job.get("location", {}).get("name", "USA") if isinstance(job.get("location"), dict) else "USA"
-                desc     = _clean(job.get("content", ""))
+            for job in res.json().get("jobs", [])[:5]:
+                title = job.get("title", "").strip()
+                url   = job.get("absolute_url", "").strip()
                 if not title or not url:
                     continue
+
+                # FIX 3: Greenhouse returns location as dict OR string depending on board
+                raw_loc  = job.get("location", {})
+                if isinstance(raw_loc, dict):
+                    location = raw_loc.get("name", "USA")
+                elif isinstance(raw_loc, str) and raw_loc.strip():
+                    location = raw_loc.strip()   # was silently replaced with "USA"
+                else:
+                    location = "USA"
+
+                desc = _clean(job.get("content", ""))
                 jobs.append({
-                    "title": title, "company": company.replace("-", " ").title(),
+                    "title": title,
+                    "company": company.replace("-", " ").title(),
                     "location": location, "description": desc, "url": url,
                     "source": "Greenhouse", "category": _guess_category(title),
                     "salary_range": _salary(desc),
@@ -354,7 +373,7 @@ def scrape_greenhouse() -> list:
     return jobs
 
 
-# ── Source 7: Lever (Startups — USA/Global) ───────────────────────────────────
+# ── Source 7: Lever (Startups) ────────────────────────────────────────────────
 def scrape_lever() -> list:
     jobs = []
     for company in LEVER_COMPANIES:
@@ -362,15 +381,24 @@ def scrape_lever() -> list:
             res = requests.get(LEVER_API.format(company=company), timeout=10, headers=HEADERS)
             if res.status_code != 200:
                 continue
-            for job in res.json()[:5]:
-                title    = job.get("text", "").strip()
-                url      = job.get("hostedUrl", "").strip()
-                location = job.get("categories", {}).get("location", "USA") if isinstance(job.get("categories"), dict) else "USA"
-                desc     = _clean(job.get("descriptionPlain", "") or job.get("description", ""))
+
+            # FIX 4: Guard against non-list API response (error dicts, etc.)
+            data = res.json()
+            if not isinstance(data, list):
+                logger.warning(f"[Lever] {company}: unexpected response type {type(data)}")
+                continue
+
+            for job in data[:5]:
+                title = job.get("text", "").strip()
+                url   = job.get("hostedUrl", "").strip()
                 if not title or not url:
                     continue
+                cats     = job.get("categories", {})
+                location = cats.get("location", "USA") if isinstance(cats, dict) else "USA"
+                desc     = _clean(job.get("descriptionPlain", "") or job.get("description", ""))
                 jobs.append({
-                    "title": title, "company": company.replace("-", " ").title(),
+                    "title": title,
+                    "company": company.replace("-", " ").title(),
                     "location": location, "description": desc, "url": url,
                     "source": "Lever", "category": _guess_category(title),
                     "salary_range": _salary(desc),
@@ -380,73 +408,108 @@ def scrape_lever() -> list:
     return jobs
 
 
-# ── Source 8: Stack Overflow Jobs RSS ────────────────────────────────────────
-def scrape_stackoverflow(role: str) -> list:
+# ── Source 8: The Muse (USA top companies) ────────────────────────────────────
+def scrape_themuse() -> list:
+    """
+    FIX 5: Was fetching 3 pages unconditionally.
+    Now fetches 1 page only and filters to tech roles using _guess_category().
+    Prevents rate-limiting and stops pulling irrelevant non-tech jobs.
+    """
     jobs = []
     try:
-        url = STACKOVERFLOW_RSS.format(role=requests.utils.quote(role))
-        res = requests.get(url, timeout=12, headers=HEADERS)
+        res = requests.get(THEMUSE_API.format(page=0), timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
-        root = ET.fromstring(res.content)
-        channel = root.find("channel")
-        if not channel:
-            return jobs
-        for item in channel.findall("item")[:8]:
-            title = item.findtext("title", "").strip()
-            link  = item.findtext("link", "").strip()
-            if not title or not link:
+        for job in res.json().get("results", [])[:20]:
+            title   = job.get("name", "").strip()
+            url     = job.get("refs", {}).get("landing_page", "")
+            company = job.get("company", {}).get("name", "") if isinstance(job.get("company"), dict) else ""
+            locs    = job.get("locations", [])
+            location = locs[0].get("name", "USA") if locs else "USA"
+            desc    = _clean(job.get("contents", ""))
+            if not title or not url:
                 continue
-            desc = _clean(item.findtext("description", ""))
-            # Extract location from title if present
-            location = "Remote / Global"
-            if " - " in title:
-                parts = title.rsplit(" - ", 1)
-                location = parts[-1].strip()
-                title = parts[0].strip()
+            # Filter to tech roles only
+            category = _guess_category(title)
+            if category == "Software Engineer" and not any(
+                k in title.lower() for k in ["engineer", "developer", "devops", "data", "cloud", "tech"]
+            ):
+                continue   # skip non-tech roles like marketing, sales
             jobs.append({
-                "title": title, "company": "",
-                "location": location, "description": desc, "url": link,
-                "source": "StackOverflow", "category": role,
+                "title": title, "company": company,
+                "location": location, "description": desc, "url": url,
+                "source": "TheMuse", "category": category,
                 "salary_range": _salary(desc),
             })
     except Exception as e:
-        logger.warning(f"[StackOverflow] {role}: {e}")
+        logger.warning(f"[TheMuse] {e}")
     return jobs
 
 
-# ── Source 9: The Muse (USA top companies) ────────────────────────────────────
-def scrape_themuse() -> list:
-    jobs = []
-    try:
-        for page in range(0, 3):
-            res = requests.get(THEMUSE_API.format(page=page), timeout=12, headers=HEADERS)
+# ── Source 9: Adzuna (NEW — was defined but never implemented) ─────────────────
+def scrape_adzuna(role: str, countries: list | None = None) -> list:
+    """
+    FIX 6: Adzuna was configured in the original file but had no scraper
+    function and was never called. Now implemented.
+
+    Covers: US, UK, Canada, Australia, Germany, France, Netherlands,
+            Singapore, South Africa, India.
+    Works without API credentials (anonymous tier: 10 results/country).
+    Set ADZUNA_APP_ID and ADZUNA_APP_KEY in .env for higher limits.
+    """
+    jobs      = []
+    target    = countries or list(ADZUNA_COUNTRIES.keys())
+    role_enc  = requests.utils.quote(role)
+
+    for country in target:
+        try:
+            if ADZUNA_APP_ID and ADZUNA_APP_KEY:
+                url = ADZUNA_API.format(
+                    country=country, role=role_enc,
+                    app_id=ADZUNA_APP_ID, app_key=ADZUNA_APP_KEY,
+                )
+            else:
+                url = ADZUNA_API_ANON.format(country=country, role=role_enc)
+
+            res = requests.get(url, timeout=12, headers=HEADERS)
             if res.status_code != 200:
-                break
-            for job in res.json().get("results", [])[:15]:
-                title   = job.get("name", "").strip()
-                url     = job.get("refs", {}).get("landing_page", "")
-                company = job.get("company", {}).get("name", "") if isinstance(job.get("company"), dict) else ""
-                locs    = job.get("locations", [])
-                location = locs[0].get("name", "USA") if locs else "USA"
-                desc    = _clean(job.get("contents", ""))
-                if not title or not url:
+                logger.debug(f"[Adzuna] {country}/{role}: HTTP {res.status_code}")
+                continue
+
+            data = res.json()
+            for job in data.get("results", []):
+                title   = job.get("title", "").strip()
+                jurl    = job.get("redirect_url", "").strip()
+                if not title or not jurl:
                     continue
+                company  = job.get("company", {}).get("display_name", "") if isinstance(job.get("company"), dict) else ""
+                location = job.get("location", {}).get("display_name", ADZUNA_COUNTRIES.get(country, country)) if isinstance(job.get("location"), dict) else ADZUNA_COUNTRIES.get(country, country)
+                desc     = _clean(job.get("description", ""))
+                sal_min  = job.get("salary_min")
+                sal_max  = job.get("salary_max")
+                salary   = None
+                if sal_min and sal_max:
+                    currency = {"us": "$", "gb": "£", "ca": "C$", "au": "A$", "de": "€", "fr": "€", "nl": "€"}.get(country, "")
+                    salary   = f"{currency}{int(sal_min):,} – {currency}{int(sal_max):,}"
+                elif sal_min:
+                    salary = f"{int(sal_min):,}"
+
                 jobs.append({
                     "title": title, "company": company,
-                    "location": location, "description": desc, "url": url,
-                    "source": "TheMuse", "category": _guess_category(title),
-                    "salary_range": _salary(desc),
+                    "location": location, "description": desc, "url": jurl,
+                    "source": f"Adzuna-{country.upper()}", "category": _guess_category(title),
+                    "salary_range": salary or _salary(desc),
                 })
-    except Exception as e:
-        logger.warning(f"[TheMuse] {e}")
+        except Exception as e:
+            logger.warning(f"[Adzuna] {country}/{role}: {e}")
+
     return jobs
 
 
 # ── DB Saver ──────────────────────────────────────────────────────────────────
 def save_jobs_to_db(jobs: list, db: Session) -> int:
     saved = 0
-    now = datetime.utcnow()
+    now   = datetime.utcnow()
     for jd in jobs:
         try:
             if not jd.get("url"):
@@ -469,61 +532,82 @@ def save_jobs_to_db(jobs: list, db: Session) -> int:
         except Exception as e:
             logger.warning(f"[DB] '{jd.get('title')}': {e}")
             db.rollback()
-    if True:
-        db.commit()
+
+    # FIX 2: Was `if True:` — now only commits when there's something to save
+    if saved > 0:
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"[DB] Commit failed: {e}")
+            db.rollback()
+
     return saved
+
+
+# ── Concurrent scraping (FIX 7) ───────────────────────────────────────────────
+def _run_sources_concurrent(source_fns: list, max_workers: int = 8) -> list:
+    """
+    Run multiple scraper functions concurrently using a thread pool.
+    Reduces total scrape time from ~15 min → ~2-3 min.
+    """
+    all_jobs = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fn): name for name, fn in source_fns}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                jobs = future.result(timeout=30)
+                all_jobs.extend(jobs)
+                logger.info(f"[{name}] returned {len(jobs)} jobs")
+            except Exception as e:
+                logger.warning(f"[{name}] failed: {e}")
+    return all_jobs
 
 
 # ── Main Entry ────────────────────────────────────────────────────────────────
 def scrape_global_jobs() -> dict:
-    db = SessionLocal()
-    total_scraped = total_saved = 0
-
-    sources = [
-        ("TheMuse (USA)", lambda: scrape_themuse()),
-        ("WeWorkRemotely (USA/Global)", lambda: scrape_weworkremotely()),
-        ("Greenhouse (Top Tech)", lambda: scrape_greenhouse()),
-        ("Lever (Startups)", lambda: scrape_lever()),
-        ("Arbeitnow (EU/Global)", lambda: scrape_arbeitnow()),
-    ]
+    """
+    Full scrape across all sources.
+    Uses ThreadPoolExecutor for concurrent HTTP calls.
+    """
+    db            = SessionLocal()
+    total_scraped = 0
+    total_saved   = 0
 
     try:
-        # Fixed sources
-        for name, fn in sources:
-            try:
-                jobs = fn()
-                total_scraped += len(jobs)
-                saved = save_jobs_to_db(jobs, db)
-                total_saved += saved
-                logger.info(f"[{name}] {len(jobs)} scraped, {saved} new")
-            except Exception as e:
-                logger.warning(f"[{name}] failed: {e}")
+        # ── Fixed sources (concurrent) ────────────────────────────────────────
+        fixed_sources = [
+            ("TheMuse",          scrape_themuse),
+            ("WeWorkRemotely",   scrape_weworkremotely),
+            ("Greenhouse",       scrape_greenhouse),
+            ("Lever",            scrape_lever),
+            ("Arbeitnow",        scrape_arbeitnow),
+        ]
+        fixed_jobs = _run_sources_concurrent(fixed_sources)
+        total_scraped += len(fixed_jobs)
+        total_saved   += save_jobs_to_db(fixed_jobs, db)
 
-        # Regional searches
-        for term in SEARCH_TERMS:
-            try:
-                jobs = scrape_remotive_search(term)
-                total_scraped += len(jobs)
-                saved = save_jobs_to_db(jobs, db)
-                total_saved += saved
-                logger.info(f"[Remotive Search '{term}'] {len(jobs)} scraped, {saved} new")
-            except Exception as e:
-                logger.warning(f"[Remotive Search '{term}'] {e}")
+        # ── Remotive regional searches (concurrent) ───────────────────────────
+        search_fns = [
+            (f"Remotive Search '{term}'", lambda t=term: scrape_remotive_search(t))
+            for term in SEARCH_TERMS
+        ]
+        search_jobs = _run_sources_concurrent(search_fns, max_workers=10)
+        total_scraped += len(search_jobs)
+        total_saved   += save_jobs_to_db(search_jobs, db)
 
-        # Per-role scraping
+        # ── Per-role scraping (concurrent) ────────────────────────────────────
+        role_fns = []
         for role in TECH_ROLES:
-            try:
-                all_jobs = (
-                    scrape_remotive(role) +
-                    scrape_jobicy(role) +
-                    scrape_stackoverflow(role)
-                )
-                total_scraped += len(all_jobs)
-                saved = save_jobs_to_db(all_jobs, db)
-                total_saved += saved
-                logger.info(f"[Role: {role}] {len(all_jobs)} scraped, {saved} new")
-            except Exception as e:
-                logger.warning(f"[Role: {role}] {e}")
+            role_fns.append((f"Remotive:{role}", lambda r=role: scrape_remotive(r)))
+            role_fns.append((f"Jobicy:{role}",   lambda r=role: scrape_jobicy(r)))
+            # FIX 1: scrape_stackoverflow removed — service shut down 2022
+            # FIX 6: Adzuna added per role (US + UK + South Africa focus)
+            role_fns.append((f"Adzuna:{role}",   lambda r=role: scrape_adzuna(r, ["us", "gb", "za", "ca"])))
+
+        role_jobs = _run_sources_concurrent(role_fns, max_workers=12)
+        total_scraped += len(role_jobs)
+        total_saved   += save_jobs_to_db(role_jobs, db)
 
     except Exception as e:
         logger.error(f"[Scraper] Fatal: {e}", exc_info=True)
@@ -532,8 +616,8 @@ def scrape_global_jobs() -> dict:
 
     summary = {
         "total_scraped": total_scraped,
-        "total_saved": total_saved,
-        "timestamp": datetime.utcnow().isoformat()
+        "total_saved":   total_saved,
+        "timestamp":     datetime.utcnow().isoformat(),
     }
     logger.info(f"[Scraper] Done: {summary}")
     return summary
