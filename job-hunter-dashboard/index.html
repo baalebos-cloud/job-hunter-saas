@@ -2,12 +2,91 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Baalebos Cloud — AI Talent Infrastructure</title>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         FAVICON — Remove Vite logo, use Baalebos brand
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.svg" />
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         PRIMARY SEO
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <title>Baalebos Cloud — AI Resume Optimizer & Job Matching Platform</title>
+    <meta name="description" content="Baalebos Cloud uses AI to analyze your resume against any job description, score your ATS compatibility, identify missing keywords, and match you with live remote jobs globally. Free to use." />
+    <meta name="keywords" content="AI resume optimizer, ATS checker, resume analyzer, job matching AI, ATS score, resume keywords, remote jobs, tech jobs, DevOps jobs, career AI, job search tool" />
+    <meta name="author" content="Baalebos Cloud" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://www.baalebo.xyz" />
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         OPEN GRAPH — How it looks on LinkedIn, WhatsApp, Facebook
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://baalebo.xyz" />
+    <meta property="og:site_name" content="Baalebos Cloud" />
+    <meta property="og:title" content="Baalebos Cloud — AI Resume Optimizer & Job Matching" />
+    <meta property="og:description" content="Upload your resume, get an instant ATS score, see missing keywords, and get matched to live remote jobs — all powered by AI. Free to use." />
+    <meta property="og:image" content="https://baalebo.xyz/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Baalebos Cloud AI Resume Optimizer" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         TWITTER CARD — How it looks when shared on Twitter/X
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://baalebo.xyz" />
+    <meta name="twitter:title" content="Baalebos Cloud — AI Resume Optimizer & Job Matching" />
+    <meta name="twitter:description" content="Upload your resume, get an instant ATS score, see missing keywords, and get matched to live remote jobs — all powered by AI. Free to use." />
+    <meta name="twitter:image" content="https://baalebo.xyz/og-image.png" />
+    <meta name="twitter:image:alt" content="Baalebos Cloud AI Resume Optimizer" />
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         STRUCTURED DATA — JSON-LD schema so Google understands the product
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Baalebos Cloud",
+      "url": "https://baalebo.xyz",
+      "description": "AI-powered resume optimizer and job matching platform. Analyzes resumes against job descriptions, scores ATS compatibility, identifies missing keywords, and matches candidates to live remote jobs globally.",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Free ATS analysis and job matching"
+      },
+      "featureList": [
+        "AI Resume Analysis",
+        "ATS Score Calculator",
+        "Missing Keyword Detection",
+        "AI Job Matching",
+        "Optimized Resume PDF Download",
+        "Application Tracker"
+      ],
+      "creator": {
+        "@type": "Organization",
+        "name": "Baalebos Cloud",
+        "url": "https://www.baalebo.xyz"
+      }
+    }
+    </script>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         FONTS
+    ═══════════════════════════════════════════════════════════════════════ -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+    <!-- Theme color for mobile browsers -->
+    <meta name="theme-color" content="#10b981" />
   </head>
   <body>
     <div id="root"></div>
