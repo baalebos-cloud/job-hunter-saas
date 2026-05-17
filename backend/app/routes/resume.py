@@ -153,6 +153,29 @@ async def upload_resume(
     }
 
 
+@router.get("/preview/{resume_id}")
+def get_resume_preview(
+    resume_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return metadata for an optimized resume by its task/resume ID."""
+    resume = db.query(Resume).filter(
+        Resume.filename == f"optimized_{resume_id}.pdf"
+    ).order_by(Resume.id.desc()).first()
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume preview not found.")
+
+    return {
+        "resume_id": resume_id,
+        "filename": resume.filename,
+        "ats_score": resume.ats_score,
+        "analysis_data": resume.analysis_data,
+        "status": "completed",
+    }
+
+
 @router.get("/status/{task_id}")
 def get_resume_status(task_id: str, db: Session = Depends(get_db)):
     resume = db.query(Resume).filter(
