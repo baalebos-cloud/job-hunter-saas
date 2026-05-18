@@ -42,10 +42,10 @@ function Logo({ company, size = 10 }) {
 }
 
 function JobModal({ app, onClose, token }) {
-  const job = app.job || {};
-  const wt = workType(job.location);
+  const job = app?.job || {};
+  const wt = workType(job?.location);
   const [msg, setMsg] = useState(
-    `Hi ${job.company || 'Team'},\n\nI recently applied for the ${job.title || 'role'} position and wanted to introduce myself directly.\n\nI'm a passionate ${job.category || 'tech'} professional with hands-on experience in the skills listed in your job description. I'm excited about this opportunity and would love to connect.\n\nLooking forward to hearing from you.\n\nBest regards,\n[Your Name]`
+    `Hi ${job?.company || 'Team'},\n\nI recently applied for the ${job?.title || 'role'} position and wanted to introduce myself directly.\n\nI'm a passionate ${job?.category || 'tech'} professional with strong experience in this field. I'd love to discuss how my skills align with your team.\n\nBest regards`
   );
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -56,7 +56,7 @@ function JobModal({ app, onClose, token }) {
     if (!msg.trim()) return;
     setSending(true); setMsgError('');
     try {
-      await axios.post(`${API_BASE_URL}/jobs/${job.id}/message`,
+      await axios.post(`${API_BASE_URL}/jobs/${job?.id}/message`,
         { message: msg },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -82,16 +82,16 @@ function JobModal({ app, onClose, token }) {
             ×
           </button>
           <div className="flex items-start gap-4">
-            <Logo company={job.company} size={14} />
+            <Logo company={job?.company} size={14} />
             <div>
               <h2 className="text-xl font-black leading-tight" style={{ fontFamily: "'Playfair Display', serif" }}>
-                {job.title || `Application #${app.job_id}`}
+                {job?.title || `Application #${app?.job_id}`}
               </h2>
-              <p className="text-emerald-400 font-bold text-sm mt-1">{job.company}</p>
+              <p className="text-emerald-400 font-bold text-sm mt-1">{job?.company}</p>
               <div className="flex flex-wrap gap-2 mt-3">
                 <span className={`text-xs font-bold px-3 py-1 rounded-full border ${wt.cls}`}>{wt.label}</span>
-                {job.location && <span className="text-xs font-semibold px-3 py-1 rounded-full bg-white/10 text-white/80 border border-white/10">📍 {job.location}</span>}
-                {job.salary_range
+                {job?.location && <span className="text-xs font-semibold px-3 py-1 rounded-full bg-white/10 text-white/80 border border-white/10">📍 {job.location}</span>}
+                {job?.salary_range
                   ? <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/20">💰 {job.salary_range}</span>
                   : <span className="text-xs px-3 py-1 rounded-full bg-white/5 text-white/40 border border-white/10">💰 Salary not disclosed</span>
                 }
@@ -104,8 +104,8 @@ function JobModal({ app, onClose, token }) {
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'ATS Match', val: <span className={`text-base font-black px-3 py-1 rounded-full ${scoreCls(app.ats_score)}`}>{app.ats_score || 0}%</span> },
-              { label: 'Status', val: <span className={`text-xs font-black uppercase tracking-wide px-3 py-1 rounded-lg border ${statusCls(app.status)}`}>{app.status || 'Pending'}</span> },
+              { label: 'ATS Match', val: <span className={`text-base font-black px-3 py-1 rounded-full ${scoreCls(app?.ats_score)}`}>{app?.ats_score || 0}%</span> },
+              { label: 'Status', val: <span className={`text-xs font-black uppercase tracking-wide px-3 py-1 rounded-lg border ${statusCls(app?.status)}`}>{app?.status || 'Pending'}</span> },
               { label: 'Work Type', val: <span className={`text-xs font-bold px-3 py-1 rounded-full border ${wt.cls}`}>{wt.label}</span> },
             ].map(({ label, val }) => (
               <div key={label} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
@@ -116,7 +116,7 @@ function JobModal({ app, onClose, token }) {
           </div>
 
           {/* Description */}
-          {job.description && (
+          {job?.description && (
             <div>
               <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Job Description</h3>
               <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 max-h-48 overflow-y-auto">
@@ -147,10 +147,10 @@ function JobModal({ app, onClose, token }) {
             ) : (
               <>
                 <textarea rows={7} value={msg} onChange={e => setMsg(e.target.value)}
-                  className="w-full p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 leading-relaxed resize-none outline-none focus:border-emerald-400 focus:bg-white transition-all" />
+                  className="w-full p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 leading-relaxed resize-none outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200 transition-all" />
                 {msgError && <p className="text-rose-600 text-xs font-bold mt-2">⚠️ {msgError}</p>}
                 <button onClick={sendMessage} disabled={sending}
-                  className="w-full mt-3 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-emerald-600 transition-all disabled:bg-slate-300 active:scale-[0.98]">
+                  className="w-full mt-3 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-emerald-600 transition-all disabled:bg-slate-300 active:scale-95">
                   {sending ? 'Sending...' : '📤 Send to HR & Track'}
                 </button>
               </>
@@ -158,7 +158,7 @@ function JobModal({ app, onClose, token }) {
           </div>
 
           {/* External link */}
-          {job.url && (
+          {job?.url && (
             <a href={job.url} target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl border-2 border-slate-200 text-sm font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 transition-all">
               🔗 View Original Job Posting
@@ -202,18 +202,18 @@ export default function ApplicationsTable({ applications, onDelete, token }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {safeApps.map(app => {
-                const job = app.job || {};
-                const wt = workType(job.location);
+                const job = app?.job || {};
+                const wt = workType(job?.location);
                 return (
-                  <tr key={app.id} className="hover:bg-slate-50/60 transition-colors group">
+                  <tr key={app?.id} className="hover:bg-slate-50/60 transition-colors group">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <Logo company={job.company} size={10} />
+                        <Logo company={job?.company} size={10} />
                         <div>
                           <p className="font-black text-slate-900 text-sm leading-tight">
-                            {job.title || `Application #${app.job_id}`}
+                            {job?.title || `Application #${app?.job_id}`}
                           </p>
-                          <p className="text-xs font-semibold text-slate-500 mt-0.5">{job.company || '—'}</p>
+                          <p className="text-xs font-semibold text-slate-500 mt-0.5">{job?.company || '—'}</p>
                         </div>
                       </div>
                     </td>
@@ -222,17 +222,17 @@ export default function ApplicationsTable({ applications, onDelete, token }) {
                     </td>
                     <td className="px-5 py-4">
                       <span className="text-sm font-bold text-slate-800">
-                        {job.salary_range || <span className="text-slate-300 font-normal text-xs italic">Not disclosed</span>}
+                        {job?.salary_range || <span className="text-slate-300 font-normal text-xs italic">Not disclosed</span>}
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className={`text-sm font-black px-3 py-1 rounded-full ${scoreCls(app.ats_score)}`}>
-                        {app.ats_score || 0}%
+                      <span className={`text-sm font-black px-3 py-1 rounded-full ${scoreCls(app?.ats_score)}`}>
+                        {app?.ats_score || 0}%
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className={`text-xs font-black uppercase tracking-wide px-2.5 py-1 rounded-lg border ${statusCls(app.status)}`}>
-                        {app.status || 'Pending'}
+                      <span className={`text-xs font-black uppercase tracking-wide px-2.5 py-1 rounded-lg border ${statusCls(app?.status)}`}>
+                        {app?.status || 'Pending'}
                       </span>
                     </td>
                     <td className="px-5 py-4">
@@ -241,7 +241,7 @@ export default function ApplicationsTable({ applications, onDelete, token }) {
                           className="text-xs font-black px-3 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-all border border-slate-200">
                           View
                         </button>
-                        <button onClick={() => onDelete && onDelete(app.id)}
+                        <button onClick={() => onDelete && onDelete(app?.id)}
                           className="p-2 rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}

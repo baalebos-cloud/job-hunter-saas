@@ -106,7 +106,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
     }
   };
 
-  const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-200 bg-white outline-none focus:border-emerald-500 transition-all text-slate-900 font-semibold text-sm placeholder:text-slate-300 placeholder:font-normal';
+  const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-200 bg-white outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 transition-all text-slate-900 font-semibold text-sm placeholder:text-slate-400';
 
   return (
     <div className="bg-white p-8 md:p-12 rounded-[2rem] shadow-2xl shadow-slate-200/50 border border-slate-100 max-w-3xl mx-auto my-8"
@@ -199,10 +199,14 @@ export default function ResumeUpload({ onUploadSuccess }) {
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <p className={`text-sm font-black ${workType === wt.value ? 'text-emerald-700' : 'text-slate-700'}`}>
+                <p className={`text-sm font-black ${
+                  workType === wt.value ? 'text-emerald-700' : 'text-slate-700'
+                }`}>
                   {wt.label}
                 </p>
-                <p className={`text-xs font-medium mt-0.5 ${workType === wt.value ? 'text-emerald-600' : 'text-slate-400'}`}>
+                <p className={`text-xs font-medium mt-0.5 ${
+                  workType === wt.value ? 'text-emerald-600' : 'text-slate-400'
+                }`}>
                   {wt.desc}
                 </p>
               </button>
@@ -234,7 +238,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
             Your Resume
           </label>
           <input type="file" id="resume-file" className="hidden"
-            onChange={e => setFile(e.target.files[0])} accept=".pdf,.docx,.doc" />
+            onChange={e => setFile(e.target.files?.[0] || null)} accept=".pdf,.docx,.doc" />
           <label htmlFor="resume-file"
             className={`flex items-center gap-4 p-5 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
               file ? 'border-emerald-400 bg-emerald-50/40' : 'border-slate-200 bg-slate-50/50 hover:border-emerald-300 hover:bg-emerald-50/20'
@@ -245,7 +249,9 @@ export default function ResumeUpload({ onUploadSuccess }) {
               {file ? '✅' : '📄'}
             </div>
             <div>
-              <p className={`font-black text-sm ${file ? 'text-emerald-700' : 'text-slate-700'}`}>
+              <p className={`font-black text-sm ${
+                file ? 'text-emerald-700' : 'text-slate-700'
+              }`}>
                 {file ? file.name : 'Click to upload your resume'}
               </p>
               <p className="text-xs font-medium text-slate-400 mt-0.5">
@@ -259,7 +265,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
         <button
           type="submit"
           disabled={uploading || !file || !jobTitle || !jobDesc}
-          className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest text-white shadow-xl transition-all active:scale-[0.98] ${
+          className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest text-white shadow-xl transition-all active:scale-95 ${
             uploading || !file || !jobTitle || !jobDesc
               ? 'bg-slate-300 cursor-not-allowed'
               : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
