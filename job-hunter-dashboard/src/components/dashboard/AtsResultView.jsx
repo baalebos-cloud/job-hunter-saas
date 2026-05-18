@@ -162,24 +162,29 @@ function FaqSection() {
 }
 
 // NEW: Resume Download Modal
-function ResumeDownloadModal({ isOpen, onClose, onDownload, job_title, downloading }) {
+function ResumeDownloadModal({ isOpen, onClose, onDownload, job_title, downloading, resume_id }) {
   const [selectedFormat, setSelectedFormat] = useState('ats');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
 
   const handlePreview = async () => {
+    if (!resume_id) {
+      alert('Resume ID not found. Please try refreshing the page.');
+      return;
+    }
+
     setPreviewLoading(true);
     try {
-      // Fetch preview from backend
+      // Fetch preview from backend using the correct endpoint with resume_id
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API_BASE_URL}/resume/preview`, {
+      const res = await axios.get(`${API_BASE_URL}/resume/download/${resume_id}`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { format: selectedFormat },
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       setPreviewUrl(url);
     } catch (err) {
+      console.error('Preview error:', err);
       alert('Could not load preview. Try downloading directly.');
     } finally {
       setPreviewLoading(false);
@@ -249,7 +254,7 @@ function ResumeDownloadModal({ isOpen, onClose, onDownload, job_title, downloadi
           {/* Info Box */}
           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
             <p className="text-xs text-emerald-800">
-              <span className="font-bold">💡 Tip:</span> We recommend the <strong>ATS-Optimized format</strong> for most submissions. Use the <strong>Formatted version</strong> only when explicitly requested or for portfolio/personal use.
+              <span className="font-bold">💡 Tip:</span> We recommend the <strong>ATS-Optimized format</strong> for most submissions. Use the <strong>Formatted version</strong> only when explicitly requested by a recruiter.
             </p>
           </div>
         </div>
@@ -281,7 +286,7 @@ export default function AtsResultView({ data }) {
   const {
     overall_score = 0, keywords_matched = 0, keywords_missing = 0,
     total_keywords = 0, breakdown = {}, missing_list = [],
-    job_title = 'Target Role', resume_id,
+    job_title = 'Target Role', resume_id, task_id,
   } = data || {};
 
   useEffect(() => {
@@ -321,11 +326,16 @@ export default function AtsResultView({ data }) {
   };
 
   const handleDownloadWithFormat = async (format) => {
+    const resumeIdentifier = resume_id || task_id;
+    if (!resumeIdentifier) {
+      alert('Resume ID not found. Please try refreshing the page.');
+      return;
+    }
+
     setDownloading(true);
     try {
-      const res = await axios.get(`${API_BASE_URL}/resume/download/${resume_id}`, {
+      const res = await axios.get(`${API_BASE_URL}/resume/download/${resumeIdentifier}`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { format },
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -352,6 +362,8 @@ export default function AtsResultView({ data }) {
     : 'Your resume needs more alignment with the job requirements. Use the Quick Wins below.';
 
   if (!data) return null;
+
+  const displayResumeId = resume_id || task_id;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
@@ -497,6 +509,7 @@ export default function AtsResultView({ data }) {
         onDownload={handleDownloadWithFormat}
         job_title={job_title}
         downloading={downloading}
+        resume_id={displayResumeId}
       />
     </div>
   );
