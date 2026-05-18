@@ -161,11 +161,121 @@ function FaqSection() {
   );
 }
 
+// NEW: Resume Download Modal
+function ResumeDownloadModal({ isOpen, onClose, onDownload, job_title, downloading }) {
+  const [selectedFormat, setSelectedFormat] = useState('ats');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  const handlePreview = async () => {
+    setPreviewLoading(true);
+    try {
+      // Fetch preview from backend
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${API_BASE_URL}/resume/preview`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { format: selectedFormat },
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      setPreviewUrl(url);
+    } catch (err) {
+      alert('Could not load preview. Try downloading directly.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-3xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-slate-100 p-6 flex justify-between items-center">
+          <h2 className="text-xl font-black text-slate-900">Download Your Resume</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Format Selection */}
+          <div>
+            <h3 className="font-bold text-slate-900 mb-3">Choose Format</h3>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                style={{ borderColor: selectedFormat === 'ats' ? '#10b981' : '', backgroundColor: selectedFormat === 'ats' ? '#f0fdf4' : '' }}>
+                <input type="radio" name="format" value="ats" checked={selectedFormat === 'ats'} 
+                  onChange={(e) => setSelectedFormat(e.target.value)} className="mt-1" />
+                <div>
+                  <p className="font-bold text-slate-900">ATS-Optimized (Recommended)</p>
+                  <p className="text-xs text-slate-500 mt-1">Clean, keyword-rich format. Passes through Applicant Tracking Systems without any formatting issues.</p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                style={{ borderColor: selectedFormat === 'formatted' ? '#3b82f6' : '', backgroundColor: selectedFormat === 'formatted' ? '#f0f9ff' : '' }}>
+                <input type="radio" name="format" value="formatted" checked={selectedFormat === 'formatted'} 
+                  onChange={(e) => setSelectedFormat(e.target.value)} className="mt-1" />
+                <div>
+                  <p className="font-bold text-slate-900">Formatted (Visually Enhanced)</p>
+                  <p className="text-xs text-slate-500 mt-1">Professional design with colors and layout. Great for manual reviews and recruiter impressions.</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Preview Section */}
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-slate-900">Preview</h3>
+              <button onClick={handlePreview} disabled={previewLoading} 
+                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 disabled:text-slate-400">
+                {previewLoading ? 'Loading...' : 'View Preview'}
+              </button>
+            </div>
+            {previewUrl ? (
+              <iframe src={previewUrl} className="w-full h-96 border border-slate-200 rounded-xl" />
+            ) : (
+              <div className="bg-slate-50 h-96 rounded-xl flex items-center justify-center text-slate-400">
+                <p className="text-center">
+                  <span className="block mb-2">📄</span>
+                  Click "View Preview" to see your resume before downloading
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Info Box */}
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+            <p className="text-xs text-emerald-800">
+              <span className="font-bold">💡 Tip:</span> We recommend the <strong>ATS-Optimized format</strong> for most submissions. Use the <strong>Formatted version</strong> only when explicitly requested or for portfolio/personal use.
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-6 flex gap-3">
+          <button onClick={onClose} 
+            className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-900 hover:bg-slate-50 transition-all">
+            Cancel
+          </button>
+          <button onClick={() => onDownload(selectedFormat)} disabled={downloading}
+            className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all disabled:bg-slate-400">
+            {downloading ? '⏳ Downloading...' : '📥 Download PDF'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AtsResultView({ data }) {
   const [matchedJobs, setMatchedJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const token = localStorage.getItem("token");
   const {
@@ -205,22 +315,29 @@ export default function AtsResultView({ data }) {
     });
   };
 
-  const handleDownload = async () => {
+  const handleOpenDownload = () => {
     if (!token) { window.location.href = '/signup'; return; }
+    setShowDownloadModal(true);
+  };
+
+  const handleDownloadWithFormat = async (format) => {
     setDownloading(true);
     try {
       const res = await axios.get(`${API_BASE_URL}/resume/download/${resume_id}`, {
         headers: { Authorization: `Bearer ${token}` },
+        params: { format },
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Baalebos_Optimized_${job_title}.pdf`);
+      link.setAttribute('download', `Baalebos_${format === 'ats' ? 'ATS_' : 'Formatted_'}Optimized_${job_title}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
       setDownloaded(true);
+      setShowDownloadModal(false);
     } catch {
       alert('Resume is still being generated. Please wait a moment and try again.');
     } finally {
@@ -297,10 +414,10 @@ export default function AtsResultView({ data }) {
           <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Quick Wins</h3>
           <p className="text-slate-500 text-xs mb-5">These are the fastest changes you can make right now to improve your resume.</p>
           <div className="space-y-3">
-            {breakdown.action_verbs && <QuickWin number={1} color="emerald" text={`Strengthen action verbs — your resume scores ${breakdown.action_verbs.score}% here. Aim for 80%+ by replacing weak verbs with impact words like "Architected", "Spearheaded", "Engineered".`} />}
-            {missing_list?.[0] && <QuickWin number={2} color="blue" text={`Add "${missing_list[0]}" and "${missing_list[1] || 'related skills'}" to your skills section — weave them into bullet points that match the job requirements naturally.`} />}
-            {breakdown.soft_skills && <QuickWin number={3} color="purple" text={`Quantify impact: add specific numbers to your achievements (e.g. "led team of 12", "reduced processing time by 40%") to demonstrate business value.`} />}
-            {job_title && <QuickWin number={4} color="amber" text={`Mirror the job title "${job_title}" in your resume summary/headline — ATS systems heavily weight title-to-title matches.`} />}
+            {breakdown.action_verbs && <QuickWin number={1} color="emerald" text={`Strengthen action verbs — your resume scores ${breakdown.action_verbs.score}% here. Aim for 80%+ by replacing weak verbs.`} />}
+            {missing_list?.[0] && <QuickWin number={2} color="blue" text={`Add "${missing_list[0]}" and "${missing_list[1] || 'related skills'}" to your skills section.`} />}
+            {breakdown.soft_skills && <QuickWin number={3} color="purple" text={`Quantify impact: add specific numbers to your achievements (e.g. "led team of 12", "reduced processing time by 40%").`} />}
+            {job_title && <QuickWin number={4} color="amber" text={`Mirror the job title "${job_title}" in your resume summary/headline.`} />}
           </div>
         </div>
       )}
@@ -324,11 +441,11 @@ export default function AtsResultView({ data }) {
             <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Free Download</p>
             <h3 className="text-xl font-black tracking-tight">Download Your Optimized Resume PDF</h3>
             <p className="text-slate-400 text-sm mt-1">
-              {token ? 'Your AI-optimized resume is ready. Download it free — no payment required.'
+              {token ? 'Choose between ATS-optimized or formatted resume. View preview before downloading.'
                 : 'Create a free account to download your AI-optimized resume instantly.'}
             </p>
           </div>
-          <button onClick={handleDownload} disabled={downloading || downloaded}
+          <button onClick={handleOpenDownload} disabled={downloading || downloaded}
             className={`shrink-0 px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all ${
               downloaded ? 'bg-emerald-500 text-white cursor-default'
               : 'bg-emerald-500 hover:bg-emerald-400 text-white active:scale-[0.98] shadow-xl shadow-emerald-900/30'
@@ -372,6 +489,15 @@ export default function AtsResultView({ data }) {
       </div>
 
       <FaqSection />
+
+      {/* Download Modal */}
+      <ResumeDownloadModal 
+        isOpen={showDownloadModal} 
+        onClose={() => setShowDownloadModal(false)} 
+        onDownload={handleDownloadWithFormat}
+        job_title={job_title}
+        downloading={downloading}
+      />
     </div>
   );
 }
