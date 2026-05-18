@@ -11,6 +11,8 @@ TW     = W - ML - MR
 BLACK  = colors.black
 DGRAY  = colors.HexColor("#333333")
 MGRAY  = colors.HexColor("#555555")
+PRIMARY = colors.HexColor("#1e40af")  # Professional Blue
+ACCENT = colors.HexColor("#0369a1")   # Steel Blue
 
 
 def _wrap(text: str, chars: int) -> list:
@@ -71,11 +73,11 @@ class RC:
         self.y -= 10
         self.need(55)
         self.c.setFont("Helvetica-Bold", 10.5)
-        self.c.setFillColor(BLACK)
+        self.c.setFillColor(PRIMARY)
         self.c.drawString(ML, self.y, title.upper())
         self.y -= 4
-        self.c.setStrokeColor(BLACK)
-        self.c.setLineWidth(0.75)
+        self.c.setStrokeColor(PRIMARY)
+        self.c.setLineWidth(1.5)
         self.c.line(ML, self.y, W - MR, self.y)
         self.c.setLineWidth(0.4)
         self.y -= 12
@@ -101,14 +103,14 @@ class RC:
             self.need()
             self.c.setFont("Helvetica", 10)
             self.c.setFillColor(BLACK)
-            prefix = "- " if i == 0 else "  "
+            prefix = "• " if i == 0 else "  "
             self.c.drawString(ML + 6, self.y, prefix + ln)
             self.y -= 13
 
     def job_header(self, title: str, company: str, dates: str, location: str = ""):
         self.need(50)
-        self.c.setFont("Helvetica-Bold", 10.5)
-        self.c.setFillColor(BLACK)
+        self.c.setFont("Helvetica-Bold", 11)
+        self.c.setFillColor(ACCENT)
         self.c.drawString(ML, self.y, title)
         if dates:
             self.c.setFont("Helvetica", 9.5)
@@ -119,19 +121,19 @@ class RC:
             self.c.setFont("Helvetica", 10)
             self.c.setFillColor(DGRAY)
             parts = [p for p in [company, location] if p]
-            self.c.drawString(ML, self.y, "  |  ".join(parts))
+            self.c.drawString(ML, self.y, "  •  ".join(parts))
             self.y -= 13
 
     def skills_row(self, skills: list):
         if not skills:
             return
         clean = [str(s).strip() for s in skills if s and str(s).strip()]
-        for i in range(0, len(clean), 5):
-            chunk = clean[i:i + 5]
+        for i in range(0, len(clean), 4):
+            chunk = clean[i:i + 4]
             self.c.setFont("Helvetica", 10)
             self.c.setFillColor(BLACK)
             self.need(16)
-            self.c.drawString(ML, self.y, "  |  ".join(chunk))
+            self.c.drawString(ML, self.y, "  •  ".join(chunk))
             self.y -= 13
 
     def save(self):
@@ -139,7 +141,7 @@ class RC:
         self.c.save()
 
 
-# ── Main entry point ──────────────────────────────────────────────────────────
+# ── Main entry point ────────────────────────────────────────────────────────
 
 def generate_optimized_resume(
     filename: str,
@@ -150,21 +152,21 @@ def generate_optimized_resume(
     structured: dict = None,
 ) -> BytesIO:
     """
-    Generates a clean, ATS-optimised resume PDF.
+    Generates a professional, visually-appealing resume PDF optimized for recruiters.
 
+    Features:
+    ✅ Professional color scheme (blue accents)
+    ✅ Clear visual hierarchy
+    ✅ ATS-compliant formatting
+    ✅ Single column layout
+    ✅ Standard fonts (Helvetica)
+    ✅ Consistent spacing and margins
+    ✅ Polished section dividers
+    ✅ Auto-wrapping contact info
+    ✅ Page numbers
+    
     Pass the `structured` dict from optimizer.build_optimized_resume()
     to get a fully populated resume. Without it the PDF will be nearly blank.
-
-    ATS compliance:
-    ✅ Single column
-    ✅ Black text only
-    ✅ Standard Helvetica font
-    ✅ Plain hyphen bullets
-    ✅ No tables / text boxes / graphics
-    ✅ Full-width section dividers
-    ✅ Consistent left margin
-    ✅ Page numbers
-    ✅ Contact line wraps instead of truncating (FIXED)
     """
     buf = BytesIO()
     s   = structured or {}
@@ -180,21 +182,24 @@ def generate_optimized_resume(
     rc = RC(buf)
     c  = rc.c
 
-    # ── HEADER ────────────────────────────────────────────────────────────────
-    c.setFont("Helvetica-Bold", 18)
-    c.setFillColor(BLACK)
+    # ── PROFESSIONAL HEADER ──────────────────────────────────────────────────
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(PRIMARY)
     c.drawCentredString(W / 2, rc.y, name.upper())
-    rc.y -= 20
+    rc.y -= 24
 
-    # FIXED: was contact[:130] — now wraps to second line if too wide
+    # Contact info with wrapping
     if contact:
         _render_contact(c, rc, contact)
+    else:
+        rc.y -= 4
 
-    c.setStrokeColor(BLACK)
-    c.setLineWidth(0.75)
+    # Professional divider
+    c.setStrokeColor(PRIMARY)
+    c.setLineWidth(2)
     c.line(ML, rc.y, W - MR, rc.y)
     c.setLineWidth(0.4)
-    rc.y -= 14
+    rc.y -= 16
 
     # ── PROFESSIONAL SUMMARY ──────────────────────────────────────────────────
     if summary:
@@ -238,7 +243,7 @@ def generate_optimized_resume(
             year   = (edu.get("year") or "").strip()
             rc.need(38)
             c.setFont("Helvetica-Bold", 10.5)
-            c.setFillColor(BLACK)
+            c.setFillColor(ACCENT)
             c.drawString(ML, rc.y, degree)
             if year:
                 c.setFont("Helvetica", 9.5)
@@ -251,7 +256,7 @@ def generate_optimized_resume(
                 c.drawString(ML, rc.y, school)
                 rc.y -= 13
 
-    # ── CERTIFICATIONS ────────────────────────────────────────────────────────
+    # ── CERTIFICATIONS ───────────────────────────────────────────────────────
     if certifications:
         rc.heading("Certifications")
         for cert in certifications:
