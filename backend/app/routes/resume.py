@@ -92,11 +92,38 @@ async def upload_resume(
             context_phrases=context_phrases  # phrases to weave into bullets, not skills
         )
 
-        # Step 4: Generate clean PDF
+        # Step 4: Build improvements list from missing keywords and suggestions
+        improvements = []
+        
+        # Add top missing keywords with descriptions
+        for kw in real_skills_to_add[:8]:
+            if kw and not kw.startswith("Add GROQ"):
+                improvements.append({
+                    "skill": kw,
+                    "bullet_point": f"Added to resume: {kw}"
+                })
+        
+        # Add suggestions (filter actionable ones)
+        for s in suggestions[:4]:
+            if s and not any(s.lower().startswith(p) for p in 
+                ["strengthen", "quantify", "mirror", "add numbers"]):
+                improvements.append({
+                    "skill": "Suggestion",
+                    "bullet_point": s
+                })
+        
+        # Fallback if no improvements generated
+        if not improvements:
+            improvements = [
+                {"skill": "Keywords", "bullet_point": "Resume optimized with job description keywords"},
+                {"skill": "Formatting", "bullet_point": "ATS-compliant formatting applied"},
+            ]
+
+        # Step 5: Generate PDF with improvements
         pdf_buf = generate_optimized_resume(
             filename=file.filename,
             score=round(ats_score, 1),
-            improvements=[],  # no improvements page — clean resume only
+            improvements=improvements,
             resume_text=resume_text,
             task_id=task_id,
             structured=structured,
