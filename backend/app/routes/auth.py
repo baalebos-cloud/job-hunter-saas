@@ -7,6 +7,8 @@ from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.schemas.user import UserCreate, UserLogin, TokenResponse
 from backend.app.services.auth_service import hash_password, verify_password, create_access_token
+from backend.app.dependencies.auth import get_current_user
+from backend.app.schemas.user import UserResponse
 
 router = APIRouter(tags=["Authentication"])
 
@@ -91,10 +93,6 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
     return {"access_token": token, "token_type": "bearer"}
 
 
-from backend.app.dependencies.auth import get_current_user
-from backend.app.schemas.user import UserResponse
-from backend.app.services.auth_service import verify_password, create_access_token
-
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Returns the current logged-in user's profile."""
@@ -103,7 +101,12 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 @router.post("/admin/login")
 def admin_login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
-    """Dedicated admin login — returns is_admin flag for frontend routing."""
+    """
+    FIXED: Dedicated admin login endpoint.
+    - Admins can login directly with their credentials
+    - Returns is_admin flag for frontend routing to admin dashboard
+    - No need to login as user first then manually navigate to /admin
+    """
     ip = _get_ip(request)
     _check_brute_force(ip)
 
@@ -115,7 +118,9 @@ def admin_login(user: UserLogin, request: Request, db: Session = Depends(get_db)
             detail="Invalid email or password"
         )
 
+    # Check if user is admin
     if not db_user.is_admin:
+        _record_failure(ip)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin account required."
@@ -129,4 +134,5 @@ def admin_login(user: UserLogin, request: Request, db: Session = Depends(get_db)
         "is_admin": True,
         "email": db_user.email,
         "full_name": db_user.full_name,
+        "redirect": "/admin/dashboard"
     }
