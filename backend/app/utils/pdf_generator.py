@@ -114,7 +114,7 @@ class RC:
             return
         self.c.setFont("Helvetica", 8)
         self.c.setFillColor(SUCCESS)
-        tag = f"✓ Added: {skill}"
+        tag = f"✓ {skill}"
         self.c.drawString(ML + 18, self.y, tag)
         self.y -= 10
 
@@ -175,8 +175,7 @@ def generate_optimized_resume(
     ✅ Polished section dividers
     ✅ Auto-wrapping contact info
     ✅ Page numbers
-    ✅ ATS Score display
-    ✅ Improvements/Keywords added section
+    ✅ All keywords and improvements integrated naturally
     
     Pass the `structured` dict from optimizer.build_optimized_resume()
     to get a fully populated resume. Without it the PDF will be nearly blank.
@@ -213,15 +212,6 @@ def generate_optimized_resume(
     c.line(ML, rc.y, W - MR, rc.y)
     c.setLineWidth(0.4)
     rc.y -= 16
-
-    # ── ATS SCORE BADGE ──────────────────────────────────────────────────────
-    if score > 0:
-        rc.need(30)
-        score_color = SUCCESS if score >= 80 else colors.HexColor("#f59e0b") if score >= 60 else colors.HexColor("#ef4444")
-        c.setFont("Helvetica-Bold", 9)
-        c.setFillColor(score_color)
-        c.drawString(ML, rc.y, f"ATS Match Score: {score}%")
-        rc.y -= 14
 
     # ── PROFESSIONAL SUMMARY ──────────────────────────────────────────────────
     if summary:
@@ -284,29 +274,6 @@ def generate_optimized_resume(
         for cert in certifications:
             if cert and cert.strip():
                 rc.bullet(cert.strip())
-
-    # ── IMPROVEMENTS APPLIED (Keywords & Suggestions) ───────────────────────
-    if improvements and len(improvements) > 0:
-        rc.heading("AI Improvements Applied", color=SUCCESS)
-        c.setFont("Helvetica", 9)
-        c.setFillColor(DGRAY)
-        improvement_text = "The following keywords and suggestions from the job description have been integrated into your resume above:"
-        chars = int(TW / 5.6)
-        for ln in _wrap(improvement_text, chars):
-            rc.need()
-            c.drawString(ML, rc.y, ln)
-            rc.y -= 11
-        rc.y -= 6
-        
-        # Show top improvements
-        for imp in improvements[:12]:
-            if isinstance(imp, dict):
-                skill = imp.get("skill", "")
-                bullet_point = imp.get("bullet_point", "")
-                if skill:
-                    rc.improvement_tag(skill)
-            elif isinstance(imp, str):
-                rc.improvement_tag(imp)
 
     rc.save()
     buf.seek(0)
