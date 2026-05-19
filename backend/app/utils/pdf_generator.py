@@ -13,6 +13,7 @@ DGRAY  = colors.HexColor("#333333")
 MGRAY  = colors.HexColor("#555555")
 PRIMARY = colors.HexColor("#1e40af")  # Professional Blue
 ACCENT = colors.HexColor("#0369a1")   # Steel Blue
+SUCCESS = colors.HexColor("#059669")  # Green for improvements
 
 
 def _wrap(text: str, chars: int) -> list:
@@ -69,14 +70,14 @@ class RC:
             self._pg += 1
             self.y = H - ML
 
-    def heading(self, title: str):
+    def heading(self, title: str, color=None):
         self.y -= 10
         self.need(55)
         self.c.setFont("Helvetica-Bold", 10.5)
-        self.c.setFillColor(PRIMARY)
+        self.c.setFillColor(color or PRIMARY)
         self.c.drawString(ML, self.y, title.upper())
         self.y -= 4
-        self.c.setStrokeColor(PRIMARY)
+        self.c.setStrokeColor(color or PRIMARY)
         self.c.setLineWidth(1.5)
         self.c.line(ML, self.y, W - MR, self.y)
         self.c.setLineWidth(0.4)
@@ -93,7 +94,7 @@ class RC:
             self.c.drawString(ML + indent, self.y, ln)
             self.y -= size + 3
 
-    def bullet(self, txt: str):
+    def bullet(self, txt: str, color=None):
         if not txt or not txt.strip():
             return
         clean = txt.lstrip("•-*– ").strip()
@@ -102,10 +103,20 @@ class RC:
         for i, ln in enumerate(lines):
             self.need()
             self.c.setFont("Helvetica", 10)
-            self.c.setFillColor(BLACK)
+            self.c.setFillColor(color or BLACK)
             prefix = "• " if i == 0 else "  "
             self.c.drawString(ML + 6, self.y, prefix + ln)
             self.y -= 13
+
+    def improvement_tag(self, skill: str):
+        """Render a small badge for added keywords/improvements."""
+        if not skill or not skill.strip():
+            return
+        self.c.setFont("Helvetica", 8)
+        self.c.setFillColor(SUCCESS)
+        tag = f"✓ Added: {skill}"
+        self.c.drawString(ML + 18, self.y, tag)
+        self.y -= 10
 
     def job_header(self, title: str, company: str, dates: str, location: str = ""):
         self.need(50)
@@ -164,6 +175,8 @@ def generate_optimized_resume(
     ✅ Polished section dividers
     ✅ Auto-wrapping contact info
     ✅ Page numbers
+    ✅ ATS Score display
+    ✅ Improvements/Keywords added section
     
     Pass the `structured` dict from optimizer.build_optimized_resume()
     to get a fully populated resume. Without it the PDF will be nearly blank.
@@ -200,6 +213,15 @@ def generate_optimized_resume(
     c.line(ML, rc.y, W - MR, rc.y)
     c.setLineWidth(0.4)
     rc.y -= 16
+
+    # ── ATS SCORE BADGE ──────────────────────────────────────────────────────
+    if score > 0:
+        rc.need(30)
+        score_color = SUCCESS if score >= 80 else colors.HexColor("#f59e0b") if score >= 60 else colors.HexColor("#ef4444")
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(score_color)
+        c.drawString(ML, rc.y, f"ATS Match Score: {score}%")
+        rc.y -= 14
 
     # ── PROFESSIONAL SUMMARY ──────────────────────────────────────────────────
     if summary:
@@ -263,12 +285,35 @@ def generate_optimized_resume(
             if cert and cert.strip():
                 rc.bullet(cert.strip())
 
+    # ── IMPROVEMENTS APPLIED (Keywords & Suggestions) ───────────────────────
+    if improvements and len(improvements) > 0:
+        rc.heading("AI Improvements Applied", color=SUCCESS)
+        c.setFont("Helvetica", 9)
+        c.setFillColor(DGRAY)
+        improvement_text = "The following keywords and suggestions from the job description have been integrated into your resume above:"
+        chars = int(TW / 5.6)
+        for ln in _wrap(improvement_text, chars):
+            rc.need()
+            c.drawString(ML, rc.y, ln)
+            rc.y -= 11
+        rc.y -= 6
+        
+        # Show top improvements
+        for imp in improvements[:12]:
+            if isinstance(imp, dict):
+                skill = imp.get("skill", "")
+                bullet_point = imp.get("bullet_point", "")
+                if skill:
+                    rc.improvement_tag(skill)
+            elif isinstance(imp, str):
+                rc.improvement_tag(imp)
+
     rc.save()
     buf.seek(0)
     return buf
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────
 
 def _first_line(text: str) -> str:
     for ln in (text or "").split("\n"):
