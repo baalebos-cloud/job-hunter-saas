@@ -86,7 +86,8 @@ Rules:
 - overall_score must be a number 0-100
 - missing_list must be actual missing keywords from the job description (short terms only, max 2-3 words each)
 - Return ONLY the JSON, no markdown, no explanation"""
-
+    
+    raw = ""
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -334,7 +335,7 @@ def _error_response(message: str) -> dict:
 def _fallback_structured_resume(
     resume_text: str,
     job_title: str,
-    missing_keywords: list,
+    missing_keywords: list | None,
 ) -> dict:
     """
     Fallback parser when GROQ_API_KEY is missing or the AI call fails.
