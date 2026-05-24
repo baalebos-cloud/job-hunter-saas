@@ -1,3 +1,8 @@
+"""
+Expert-Grade ATS Engine — AI-Powered Resume Optimization
+Produces compelling, metrics-driven resumes that impress both ATS systems AND human recruiters.
+"""
+
 import io
 import re
 import json
@@ -10,7 +15,7 @@ from backend.app.core.config import settings
 # ─── Text Extraction ──────────────────────────────────────────────────────────
 
 def extract_text(file_content: bytes, filename: str) -> str:
-    ext  = filename.split('.')[-1].lower()
+    ext = filename.split('.')[-1].lower()
     text = ""
     try:
         if ext == "pdf":
@@ -42,7 +47,7 @@ def analyze_detailed_ats(file_content: bytes, filename: str, job_description: st
         base_url="https://api.groq.com/openai/v1",
     )
 
-    prompt = f"""You are a Senior ATS (Applicant Tracking System) expert and technical recruiter.
+    prompt = f"""You are a Senior ATS (Applicant Tracking System) expert and technical recruiter with 15+ years of experience.
 Analyze this resume against the job description and score it accurately.
 
 JOB DESCRIPTION:
@@ -53,9 +58,9 @@ RESUME:
 
 Score the resume on these criteria:
 1. Keyword match — how many job description keywords appear in the resume
-2. Action verbs — strong verbs like "Architected", "Deployed", "Automated", "Reduced"
-3. Quantified achievements — metrics like percentages, numbers, time saved
-4. Job title alignment — does the resume title match the job title
+2. Action verbs — strong verbs like "Architected", "Deployed", "Automated", "Reduced", "Spearheaded"
+3. Quantified achievements — metrics like percentages, numbers, dollar amounts, time saved
+4. Job title alignment — does the resume title/summary match the target job title
 5. Skills coverage — technical skills required vs present
 
 Return ONLY valid JSON:
@@ -79,7 +84,7 @@ Return ONLY valid JSON:
 
 Rules:
 - overall_score must be a number 0-100
-- missing_list must be actual missing keywords from the job description (short terms only)
+- missing_list must be actual missing keywords from the job description (short terms only, max 2-3 words each)
 - Return ONLY the JSON, no markdown, no explanation"""
 
     try:
@@ -95,21 +100,21 @@ Rules:
 
         raw = response.choices[0].message.content.strip()
         raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
-        raw = re.sub(r'^```\s*',     '', raw, flags=re.MULTILINE)
-        raw = re.sub(r'\s*```$',     '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
 
         result = json.loads(raw)
 
         return {
-            "overall_score":    float(result.get("overall_score", 0)),
+            "overall_score": float(result.get("overall_score", 0)),
             "keywords_matched": int(result.get("keywords_matched", 0)),
             "keywords_missing": int(result.get("keywords_missing", 0)),
-            "total_keywords":   int(result.get("total_keywords", 0)),
-            "missing_list":     result.get("missing_list", []),
-            "breakdown":        result.get("breakdown", {
-                "action_verbs":    {"score": 0, "count": 0},
-                "technical_skills":{"score": 0, "count": 0},
-                "soft_skills":     {"score": 0, "count": 0},
+            "total_keywords": int(result.get("total_keywords", 0)),
+            "missing_list": result.get("missing_list", []),
+            "breakdown": result.get("breakdown", {
+                "action_verbs": {"score": 0, "count": 0},
+                "technical_skills": {"score": 0, "count": 0},
+                "soft_skills": {"score": 0, "count": 0},
             }),
             "suggestions": result.get("suggestions", []),
         }
@@ -132,7 +137,7 @@ def rewrite_resume_for_job(
     context_phrases: list = None,
 ) -> dict:
     """
-    Rewrites the resume to achieve 96%+ ATS score for the target job.
+    Rewrites the resume to achieve 96%+ ATS score AND impress human recruiters.
     Returns a structured dict ready for pdf_generator.generate_optimized_resume().
     """
     if not settings.GROQ_API_KEY:
@@ -143,71 +148,149 @@ def rewrite_resume_for_job(
         base_url="https://api.groq.com/openai/v1",
     )
 
-    missing_str = ", ".join(missing_keywords[:20]) if missing_keywords else "none"
+    missing_str = ", ".join(missing_keywords[:20]) if missing_keywords else "none identified"
+    context_str = "; ".join(context_phrases[:5]) if context_phrases else ""
 
-    prompt = f"""You are a world-class ATS resume optimization expert. Your goal is to rewrite this resume to score 96%+ on ATS systems for the target job.
+    prompt = f"""You are an ELITE resume writer who has helped 10,000+ candidates land jobs at Google, Amazon, Meta, and top startups. Your resumes achieve 96%+ ATS scores AND impress human recruiters in 6 seconds.
 
-TARGET JOB TITLE: {job_title}
+TARGET ROLE: {job_title}
 
-JOB DESCRIPTION (read carefully — extract ALL keywords):
-{job_description[:3000]}
+JOB DESCRIPTION (extract EVERY keyword and requirement):
+{job_description[:3500]}
 
-ORIGINAL RESUME (preserve ALL facts — only improve phrasing):
-{resume_text[:5000]}
+CANDIDATE'S ORIGINAL RESUME (preserve ALL facts, improve presentation):
+{resume_text[:5500]}
 
-MISSING KEYWORDS TO ADD: {missing_str}
+MISSING KEYWORDS TO WEAVE IN: {missing_str}
+{f"CONTEXT TO INCORPORATE: {context_str}" if context_str else ""}
 
-ATS OPTIMIZATION RULES (follow all of these):
-1. TITLE MATCH: The summary must open with the exact job title from the job description
-2. KEYWORD DENSITY: Every keyword from the job description must appear at least once
-3. ACTION VERBS: Every bullet must start with a strong past-tense action verb
-4. QUANTIFY EVERYTHING: Every bullet must include at least one metric (%, time, count)
-5. SKILLS COMPLETENESS: Include EVERY skill from original PLUS all missing keywords
-6. NO FABRICATION: Do not invent companies, degrees, or certifications not in the original
-7. SUMMARY: 3 sentences — job title + years + top skills | biggest achievement | value to role
-8. BULLETS: 5-7 bullets per job, each starting with action verb + achievement + metric
-9. CONTACT: Preserve exact email, phone, location, LinkedIn from original
+═══════════════════════════════════════════════════════════════════════════════
+YOUR MISSION: Transform this resume into a POWERFUL document that:
+1. Passes ALL ATS filters with 96%+ keyword match
+2. Makes recruiters say "WOW, we need to interview this person" in 6 seconds
+3. Tells a compelling career story with IMPACT and RESULTS
+═══════════════════════════════════════════════════════════════════════════════
 
-Return ONLY valid JSON — no markdown, no explanation:
+ELITE RESUME RULES (follow ALL):
+
+📌 PROFESSIONAL SUMMARY (3 powerful sentences):
+   - Sentence 1: "[Job Title] with [X] years driving [key outcome] at [company type]"
+   - Sentence 2: "Delivered [biggest quantified achievement] resulting in [business impact]"
+   - Sentence 3: "Expert in [top 3-4 skills from JD] seeking to [value proposition for this role]"
+
+📌 EXPERIENCE BULLETS (5-7 per role, each MUST follow this formula):
+   [POWER VERB] + [specific what you did] + [quantified result] + [business impact]
+   
+   EXCELLENT: "Architected CI/CD pipeline reducing deployment time from 4 hours to 12 minutes, enabling 15x faster feature releases"
+   EXCELLENT: "Spearheaded migration of 50+ microservices to Kubernetes, achieving 99.99% uptime and $2.4M annual cost savings"
+   EXCELLENT: "Led cross-functional team of 8 engineers to deliver real-time analytics platform processing 10M events/day"
+   
+   BAD: "Worked on CI/CD pipelines" (no metrics, no impact)
+   BAD: "Responsible for cloud infrastructure" (passive, no results)
+   
+   POWER VERBS to use: Architected, Engineered, Spearheaded, Drove, Delivered, Reduced, Increased, Automated, Transformed, Led, Optimized, Scaled, Built, Designed, Implemented, Orchestrated, Pioneered, Accelerated
+
+📌 METRICS (every bullet needs at least ONE):
+   - Percentages: "reduced by 40%", "improved by 3x", "increased 150%"
+   - Numbers: "team of 8", "12 microservices", "$2M pipeline", "50+ services"
+   - Time: "in 3 months", "from 4 hours to 12 minutes", "within 6 weeks"
+   - Scale: "serving 2M users", "processing 50K requests/sec", "10M daily events"
+
+📌 SKILLS (comprehensive, from job description):
+   - Include EVERY skill mentioned in the job description
+   - Add the missing keywords naturally
+   - Keep each skill 1-3 words (no sentences)
+   - Order by relevance to the job
+
+📌 STRICT RULES:
+   - NEVER fabricate companies, degrees, dates, or certifications
+   - PRESERVE all existing metrics from the original (never replace "reduced 47%" with "reduced significantly")
+   - Contact info: preserve EXACT email, phone, LinkedIn from original
+   - Dates: normalize to "Month YYYY – Month YYYY" or "Month YYYY – Present"
+
+Return ONLY valid JSON — no markdown, no explanation, no ```json wrapper:
+
 {{
   "name": "FULL NAME IN CAPS",
-  "contact": "email | phone | location | LinkedIn URL",
-  "summary": "3-sentence ATS-optimized summary with exact job title",
+  "contact": "email@domain.com  |  +1-XXX-XXX-XXXX  |  City, Country  |  linkedin.com/in/username",
+  "summary": "3-sentence power summary following the formula above — must mention the exact job title",
   "experience": [
     {{
-      "title": "exact job title from resume",
-      "company": "exact company name",
-      "dates": "exact dates",
-      "location": "city, country or Remote",
+      "title": "Job Title from Original Resume",
+      "company": "Company Name",
+      "dates": "Month YYYY – Present",
+      "location": "City, Country",
       "bullets": [
-        "Action verb + specific achievement + quantified metric",
-        "Action verb + specific achievement + quantified metric"
+        "Power verb + specific achievement + metric + business impact",
+        "Power verb + specific achievement + metric + business impact",
+        "Power verb + specific achievement + metric + business impact",
+        "Power verb + specific achievement + metric + business impact",
+        "Power verb + specific achievement + metric + business impact"
       ]
     }}
   ],
-  "skills": ["every skill term — short, no sentences"],
+  "skills": ["Skill1", "Skill2", "Skill3", "...include ALL from JD plus originals"],
   "education": [
-    {{"degree": "exact degree", "school": "exact school", "year": "year"}}
+    {{"degree": "Degree Name", "school": "University Name", "year": "YYYY"}}
   ],
-  "certifications": ["every certification from original resume"]
+  "certifications": ["Certification 1", "Certification 2"],
+  "projects": [
+    {{"name": "Project Name", "description": "1-2 sentence impact description with metrics", "technologies": ["Tech1", "Tech2"]}}
+  ]
 }}"""
 
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are an ATS resume optimization expert. Always respond with valid JSON only. Never fabricate experience."},
+                {
+                    "role": "system",
+                    "content": "You are an elite resume writer. Return ONLY valid JSON. Never fabricate experience. Every bullet must have a quantified metric and business impact."
+                },
                 {"role": "user", "content": prompt}
             ],
             max_tokens=4096,
-            temperature=0.2,
+            temperature=0.3,  # Slightly higher for more compelling writing
         )
-        raw    = response.choices[0].message.content.strip()
-        raw    = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
-        raw    = re.sub(r'^```\s*',     '', raw, flags=re.MULTILINE)
-        raw    = re.sub(r'\s*```$',     '', raw, flags=re.MULTILINE)
+
+        raw = response.choices[0].message.content.strip()
+
+        # Clean markdown wrappers
+        raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'^```\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
+
         result = json.loads(raw)
+
+        # Validate required fields
+        if not result.get("experience"):
+            result["experience"] = []
+        if not result.get("skills"):
+            result["skills"] = missing_keywords[:20] if missing_keywords else []
+
         return result
+
+    except json.JSONDecodeError as e:
+        print(f"[Resume Rewrite] JSON parse error: {e}")
+        # Retry once with stricter prompt
+        try:
+            retry_response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "Return ONLY a JSON object. No text before or after. No markdown."},
+                    {"role": "user", "content": f"Convert this resume to JSON format with keys: name, contact, summary, experience (array with title, company, dates, location, bullets), skills (array), education (array with degree, school, year), certifications (array):\n\n{resume_text[:3000]}"}
+                ],
+                max_tokens=3000,
+                temperature=0.1,
+            )
+            retry_raw = retry_response.choices[0].message.content.strip()
+            retry_raw = re.sub(r'^```json\s*', '', retry_raw, flags=re.MULTILINE)
+            retry_raw = re.sub(r'^```\s*', '', retry_raw, flags=re.MULTILINE)
+            retry_raw = re.sub(r'\s*```$', '', retry_raw, flags=re.MULTILINE)
+            return json.loads(retry_raw)
+        except:
+            return _fallback_structured_resume(resume_text, job_title, missing_keywords)
+
     except Exception as e:
         print(f"[Resume Rewrite] Error: {e}")
         return _fallback_structured_resume(resume_text, job_title, missing_keywords)
@@ -217,15 +300,15 @@ Return ONLY valid JSON — no markdown, no explanation:
 
 def _simulated_response() -> dict:
     return {
-        "overall_score":    45.0,
+        "overall_score": 45.0,
         "keywords_matched": 5,
         "keywords_missing": 8,
-        "total_keywords":   13,
-        "missing_list":     ["Add GROQ_API_KEY to .env for real AI analysis — free at console.groq.com"],
+        "total_keywords": 13,
+        "missing_list": ["Add GROQ_API_KEY to .env for real AI analysis — free at console.groq.com"],
         "breakdown": {
-            "action_verbs":     {"score": 50, "count": 4},
+            "action_verbs": {"score": 50, "count": 4},
             "technical_skills": {"score": 40, "count": 3},
-            "soft_skills":      {"score": 45, "count": 2},
+            "soft_skills": {"score": 45, "count": 2},
         },
         "suggestions": ["Sign up free at console.groq.com and add your GROQ_API_KEY to .env to enable real AI analysis"],
     }
@@ -233,15 +316,15 @@ def _simulated_response() -> dict:
 
 def _error_response(message: str) -> dict:
     return {
-        "overall_score":    0,
+        "overall_score": 0,
         "keywords_matched": 0,
         "keywords_missing": 0,
-        "total_keywords":   0,
-        "missing_list":     [],
+        "total_keywords": 0,
+        "missing_list": [],
         "breakdown": {
-            "action_verbs":     {"score": 0, "count": 0},
+            "action_verbs": {"score": 0, "count": 0},
             "technical_skills": {"score": 0, "count": 0},
-            "soft_skills":      {"score": 0, "count": 0},
+            "soft_skills": {"score": 0, "count": 0},
         },
         "suggestions": [],
         "error": message,
@@ -254,11 +337,8 @@ def _fallback_structured_resume(
     missing_keywords: list,
 ) -> dict:
     """
-    FIXED: Full section parser replacing the weak original that returned
-    education=[], certifications=[], and capped bullets at 8.
-
-    Now extracts all resume sections from raw text using regex.
-    Used when GROQ_API_KEY is missing or the AI call fails.
+    Fallback parser when GROQ_API_KEY is missing or the AI call fails.
+    Extracts all resume sections from raw text using regex.
     """
     lines = [l.strip() for l in (resume_text or "").split("\n") if l.strip()]
 
@@ -280,15 +360,15 @@ def _fallback_structured_resume(
 
     # ── Section parser ────────────────────────────────────────────────────────
     SECTION_MAP = {
-        "summary":        r'^(professional\s+summary|summary|objective|profile)',
-        "experience":     r'^((work\s+)?experience|professional\s+experience|employment)',
-        "skills":         r'^((technical\s+)?skills|core\s+(skills|competencies)|technologies)',
-        "education":      r'^education',
+        "summary": r'^(professional\s+summary|summary|objective|profile)',
+        "experience": r'^((work\s+)?experience|professional\s+experience|employment)',
+        "skills": r'^((technical\s+)?skills|core\s+(skills|competencies)|technologies)',
+        "education": r'^education',
         "certifications": r'^certifications?(\s+&\s+training)?',
-        "projects":       r'^(selected\s+)?projects',
+        "projects": r'^(selected\s+)?projects',
     }
 
-    sections    = {k: [] for k in SECTION_MAP}
+    sections = {k: [] for k in SECTION_MAP}
     current_sec = None
 
     for line in lines:
@@ -296,24 +376,23 @@ def _fallback_structured_resume(
         for sec, pattern in SECTION_MAP.items():
             if re.match(pattern, line, re.I) and len(line) < 60:
                 current_sec = sec
-                matched     = True
+                matched = True
                 break
         if not matched and current_sec:
             sections[current_sec].append(line)
 
     # ── Summary ───────────────────────────────────────────────────────────────
     summary = " ".join(sections["summary"]).strip() or (
-        f"Results-driven {job_title} with hands-on experience in cloud infrastructure, "
-        f"CI/CD pipeline engineering, and DevOps automation. Delivered measurable improvements "
-        f"including 40%+ reduction in MTTR through observability tooling. "
-        f"Seeking to leverage expertise in a high-impact {job_title} role."
+        f"Results-driven {job_title} with proven expertise in delivering high-impact solutions. "
+        f"Track record of driving measurable improvements including enhanced system performance and streamlined operations. "
+        f"Seeking to leverage technical skills and leadership experience in a challenging {job_title} role."
     )
 
     # ── Experience ────────────────────────────────────────────────────────────
-    exp_lines   = sections["experience"] + sections["projects"]
+    exp_lines = sections["experience"] + sections["projects"]
     job_entries = []
     current_job = None
-    bullets     = []
+    bullets = []
 
     for line in exp_lines:
         is_bullet = line.startswith(("•", "-", "*", "–", "▸")) or (
@@ -328,7 +407,7 @@ def _fallback_structured_resume(
                 current_job["bullets"] = bullets[:]
                 job_entries.append(current_job)
             current_job = {"title": line, "company": "", "dates": "", "location": "", "bullets": []}
-            bullets     = []
+            bullets = []
         elif is_date and current_job:
             current_job["dates"] = line
         elif is_bullet or len(line) > 30:
@@ -364,8 +443,7 @@ def _fallback_structured_resume(
         skills = missing_keywords[:20] if missing_keywords else ["See resume for full skill set"]
 
     # ── Education ─────────────────────────────────────────────────────────────
-    # FIXED: was always returning []
-    education  = []
+    education = []
     current_edu = {}
     for line in sections["education"]:
         if re.search(r'\b(bachelor|master|bsc|msc|b\.sc|m\.sc|phd|diploma|certificate|degree)\b', line, re.I):
@@ -381,7 +459,6 @@ def _fallback_structured_resume(
         education.append(current_edu)
 
     # ── Certifications ────────────────────────────────────────────────────────
-    # FIXED: was always returning []
     certifications = []
     for line in sections["certifications"]:
         clean = line.lstrip("•-*– ").strip()
@@ -389,11 +466,12 @@ def _fallback_structured_resume(
             certifications.append(clean)
 
     return {
-        "name":           name,
-        "contact":        contact,
-        "summary":        summary,
-        "experience":     job_entries,
-        "skills":         skills[:40],
-        "education":      education,      # ← was always []
-        "certifications": certifications, # ← was always []
+        "name": name,
+        "contact": contact,
+        "summary": summary,
+        "experience": job_entries,
+        "skills": skills[:40],
+        "education": education,
+        "certifications": certifications,
+        "projects": [],
     }
