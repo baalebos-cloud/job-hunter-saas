@@ -387,8 +387,9 @@ def generate_optimized_resume(
     improvements: list,
     resume_text: str = "",
     task_id: str = "",
-    structured: dict = None,
+    structured: dict | None = None,
 ) -> BytesIO:
+
     """
     Generates a premium, recruiter-grade resume PDF.
 
