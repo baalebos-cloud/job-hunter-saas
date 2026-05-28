@@ -203,6 +203,122 @@ Rules:
         return {}
 
 
+# ─── Resume Rewriter ─────────────────────────────────────────────────────────
+
+def rewrite_resume_for_job(
+    resume_text: str,
+    job_description: str,
+    job_title: str,
+    missing_keywords: list,
+    context_phrases: list = None,
+) -> dict:
+    """
+    Rewrites/enhances a resume to match a specific job description.
+
+    Incorporates missing keywords naturally, preserves the user's original
+    content and achievements, and tailors language to the target role.
+
+    Args:
+        resume_text:      Plain-text content of the candidate's resume.
+        job_description:  Full job description text.
+        job_title:        Target job title e.g. "DevOps Engineer".
+        missing_keywords: List of skill/keyword strings to weave in.
+        context_phrases:  Optional longer phrases to use as bullet context.
+
+    Returns:
+        A dict with keys: name, title, contact, summary, experience,
+        education, skills, certifications.  Returns {} on failure.
+    """
+    if not resume_text:
+        return {}
+
+    client, model = get_client()
+    if not client:
+        return {}
+
+    context_phrases = context_phrases or []
+    keywords_str = ", ".join(missing_keywords[:20]) if missing_keywords else "None"
+    context_str = "; ".join(context_phrases[:10]) if context_phrases else "None"
+
+    prompt = f"""You are an expert resume writer and ATS optimization specialist.
+Rewrite and enhance the resume below to better match the target job description.
+
+TARGET JOB TITLE: {job_title}
+
+JOB DESCRIPTION:
+{job_description[:2000]}
+
+ORIGINAL RESUME:
+{resume_text[:3000]}
+
+MISSING KEYWORDS TO INCORPORATE: {keywords_str}
+
+CONTEXT PHRASES TO WEAVE INTO BULLETS: {context_str}
+
+Rules:
+- Preserve ALL real experience, companies, dates, education, and achievements from the original resume
+- Do NOT invent jobs, degrees, or metrics that are not in the original resume
+- Incorporate the missing keywords naturally into the summary, experience bullets, and skills
+- Strengthen bullet points with action verbs and quantified outcomes where the original already implies them
+- Tailor the professional summary to the target job title
+- Return ONLY valid JSON, no markdown, no explanation
+
+Return this exact JSON structure:
+{{
+    "name": "Full Name",
+    "title": "Current Job Title | {job_title}",
+    "contact": "Location  |  Phone  |  Email  |  LinkedIn",
+    "summary": "Tailored professional summary paragraph targeting the role",
+    "experience": [
+        {{
+            "role": "Job Title",
+            "company": "Company Name",
+            "location": "City, Country",
+            "dates": "Month Year – Month Year",
+            "bullets": [
+                "Enhanced achievement bullet point with metrics",
+                "Another achievement bullet point"
+            ]
+        }}
+    ],
+    "education": [
+        {{
+            "degree": "Degree Name",
+            "institution": "Institution Name",
+            "year": "Year or In Progress"
+        }}
+    ],
+    "skills": {{
+        "Category Name": ["skill1", "skill2", "skill3"]
+    }},
+    "certifications": [
+        "Certification Name 1"
+    ]
+}}"""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert resume writer. "
+                        "Enhance resumes to match job descriptions while preserving real content. "
+                        "Respond with valid JSON only."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=2500,
+            temperature=0.4,
+        )
+        return json.loads(_clean_json(response.choices[0].message.content))
+    except Exception as e:
+        print(f"[ATS] Resume rewrite error: {e}")
+        return {}
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _simulated_response() -> dict:
