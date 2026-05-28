@@ -128,7 +128,10 @@ async def upload_resume(
             task_id=task_id,
             structured=structured,
         )
-        return analysis, pdf_buf.read(), resume_text
+        pdf_buf.seek(0)
+        pdf_bytes = pdf_buf.read()
+        pdf_buf.seek(0)
+        return analysis, pdf_bytes, resume_text
 
     try:
         analysis, pdf_bytes, resume_text = await run_in_threadpool(run_analysis)
