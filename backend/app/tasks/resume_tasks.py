@@ -2,133 +2,125 @@ import os
 import logging
 from backend.app.celery_app import celery_app
 from backend.app.utils.pdf_generator import generate_optimized_resume
-from backend.app.utils.ats_engine import analyze_detailed_ats, extract_text, rewrite_resume_for_job
+from backend.app.utils.ats_engine import analyze_detailed_ats, extract_resume_data
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/app/output")
+OUTPUT_DIR = "/app/output"
 
 
 @celery_app.task(bind=True, name="process_resume_task")
 def process_resume_task(self, file_content, original_filename, job_description, user_id, job_title):
+    """
+    Full pipeline:
+    1. Run real ATS scoring via Groq/OpenRouter
+    2. Extract structured resume data for professional PDF
+    3. Generate professional resume PDF with AI improvements
+    4. Return structured result to frontend
+    """
     task_id = self.request.id
     logger.info(f"--- STARTING TASK {task_id} for {original_filename} ---")
 
     try:
-        file_bytes = bytes(file_content) if not isinstance(file_content, bytes) else file_content
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-        # ── Step 1: Extract raw text ──────────────────────────────────────────
-        resume_text = extract_text(file_bytes, original_filename)
-        logger.info(f"Extracted {len(resume_text)} chars from {original_filename}")
+        # Ensure file_content is bytes
+        if not isinstance(file_content, bytes):
+            file_content = bytes(file_content)
 
-        # ── Step 2: ATS Analysis ──────────────────────────────────────────────
-        logger.info(f"Running Groq ATS analysis for task {task_id}")
+        # ── Step 1: ATS Scoring ───────────────────────────────────────────────
+        logger.info(f"[{task_id}] Running ATS analysis...")
         analysis = analyze_detailed_ats(
-            file_content=file_bytes,
+            file_content=file_content,
             filename=original_filename,
             job_description=job_description
         )
 
-        ats_score    = analysis.get("overall_score", 0)
+        ats_score   = analysis.get("overall_score", 0)
         missing_list = analysis.get("missing_list", [])
-        breakdown    = analysis.get("breakdown", {
-            "action_verbs":     {"score": 0, "count": 0},
+        breakdown   = analysis.get("breakdown", {
+            "action_verbs":    {"score": 0, "count": 0},
             "technical_skills": {"score": 0, "count": 0},
-            "soft_skills":      {"score": 0, "count": 0},
+            "soft_skills":     {"score": 0, "count": 0}
         })
         suggestions = analysis.get("suggestions", [])
-        logger.info(f"ATS Score: {ats_score}% | Missing: {len(missing_list)} keywords")
 
-        # ── Step 3: AI Resume Rewrite ─────────────────────────────────────────
-        logger.info(f"Rewriting resume for '{job_title}' with Groq AI")
-        structured = rewrite_resume_for_job(
-            resume_text=resume_text,
-            job_description=job_description,
-            job_title=job_title,
-            missing_keywords=missing_list
+        logger.info(f"[{task_id}] ATS Score: {ats_score}%")
+
+        # ── Step 2: Extract Structured Resume Data ────────────────────────────
+        logger.info(f"[{task_id}] Extracting structured resume data...")
+        resume_data = extract_resume_data(
+            file_content=file_content,
+            filename=original_filename,
+            job_title=job_title
         )
 
-        # ── Step 4: Build improvements list ──────────────────────────────────
+        # Inject missing keywords into resume_data for PDF
+        resume_data["missing_keywords"] = missing_list
+
+        # ── Step 3: Build AI Improvements for PDF ─────────────────────────────
         improvements = []
-        for s in suggestions[:5]:
-            improvements.append({"skill": "AI Suggestion", "bullet_point": s})
-        for kw in missing_list[:5]:
-            if len(improvements) >= 10:
-                break
+
+        # Use AI suggestions first
+        for s in suggestions[:4]:
             improvements.append({
-                "skill": kw,
-                "bullet_point": f"Incorporate '{kw}' naturally into your experience bullets and skills section."
+                "skill": "AI Suggestion",
+                "bullet_point": s
             })
+
+        # Add missing keyword bullets
+        for kw in missing_list[:4]:
+            if len(improvements) >= 8:
+                break
+            if kw and "API Key" not in kw:
+                improvements.append({
+                    "skill": kw,
+                    "bullet_point": f"Demonstrated proficiency in {kw} through hands-on implementation in production environments."
+                })
+
+        # Fallback if nothing
         if not improvements:
             improvements = [
-                {"skill": "Action Verbs", "bullet_point": "Start every bullet with a strong action verb: Architected, Engineered, Spearheaded, Optimized, Automated."},
-                {"skill": "Quantify Impact", "bullet_point": "Add numbers to achievements: 'Reduced deployment time by 40%', 'Managed infrastructure for 500K+ users'."},
+                {"skill": "Action Verbs", "bullet_point": "Spearheaded cross-functional initiatives delivering measurable business outcomes."},
+                {"skill": "Metrics",      "bullet_point": "Reduced deployment time by 40% through automated CI/CD pipeline optimization."},
             ]
 
-        # ── Step 5: Generate PDF ──────────────────────────────────────────────
-        logger.info(f"Generating professional PDF for task {task_id}")
+        # ── Step 4: Generate Professional PDF ────────────────────────────────
+        logger.info(f"[{task_id}] Generating professional resume PDF...")
         pdf_buffer = generate_optimized_resume(
             filename=original_filename,
             score=round(ats_score, 1),
             improvements=improvements,
-            resume_text=resume_text,
-            task_id=task_id,
-            structured=structured,
+            resume_data=resume_data
         )
-        pdf_bytes = pdf_buffer.read()
 
-        # ── Step 6: Save PDF to PostgreSQL (Railway-safe) ─────────────────────
-        try:
-            from backend.app.database import SessionLocal
-            from backend.app.models.resume import Resume
-            db_session = SessionLocal()
-            resume_record = Resume(
-                owner_id=user_id,
-                filename=f"optimized_{task_id}.pdf",
-                content=pdf_bytes,
-                ats_score=ats_score,
-                analysis_data={
-                    "task_id": task_id,
-                    "job_title": job_title,
-                    "overall_score": ats_score,
-                    "missing_list": missing_list,
-                    "suggestions": suggestions,
-                }
-            )
-            db_session.add(resume_record)
-            db_session.commit()
-            db_session.close()
-            logger.info(f"PDF saved to database for task {task_id}")
-        except Exception as db_err:
-            logger.warning(f"Could not save PDF to DB: {db_err}")
+        # Save to shared output volume
+        output_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
+        with open(output_path, "wb") as f:
+            f.write(pdf_buffer.read())
 
-        # ── Step 7: Also save to filesystem (local dev fallback) ──────────────
-        try:
-            os.makedirs(OUTPUT_DIR, exist_ok=True)
-            output_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
-            with open(output_path, "wb") as f:
-                f.write(pdf_bytes)
-            logger.info(f"PDF saved to filesystem: {output_path}")
-        except Exception as fs_err:
-            logger.warning(f"Could not save PDF to filesystem: {fs_err}")
+        if os.path.exists(output_path):
+            logger.info(f"[{task_id}] SUCCESS: PDF saved at {output_path}")
+        else:
+            logger.error(f"[{task_id}] PDF missing after write!")
 
-        # ── Step 8: Return result to frontend ─────────────────────────────────
+        # ── Step 5: Return Full Result to Frontend ────────────────────────────
         return {
-            "id": task_id,
-            "task_id": task_id,
-            "resume_id": task_id,
-            "overall_score": ats_score,
-            "ats_score": ats_score,
+            "id":               task_id,
+            "task_id":          task_id,
+            "resume_id":        task_id,
+            "overall_score":    ats_score,
+            "ats_score":        ats_score,
             "keywords_matched": analysis.get("keywords_matched", 0),
             "keywords_missing": analysis.get("keywords_missing", 0),
-            "total_keywords": analysis.get("total_keywords", 0),
-            "missing_list": missing_list,
-            "breakdown": breakdown,
-            "suggestions": suggestions,
-            "job_title": job_title or "Target Role",
-            "status": "success"
+            "total_keywords":   analysis.get("total_keywords", 0),
+            "missing_list":     missing_list,
+            "breakdown":        breakdown,
+            "suggestions":      suggestions,
+            "job_title":        job_title or "Target Role",
+            "status":           "success"
         }
 
     except Exception as e:
-        logger.error(f"FATAL WORKER ERROR for task {task_id}: {str(e)}", exc_info=True)
+        logger.error(f"[{task_id}] FATAL ERROR: {str(e)}", exc_info=True)
         raise e
