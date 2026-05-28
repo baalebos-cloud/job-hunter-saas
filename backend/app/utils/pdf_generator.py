@@ -143,7 +143,10 @@ def generate_optimized_resume(
     filename: str,
     score: float,
     improvements: list,
-    resume_data: dict = None
+    resume_data: dict = None,
+    resume_text: str = None,
+    task_id: str = None,
+    structured: dict = None,
 ) -> BytesIO:
     """
     Generates a professional resume PDF styled like the user's original resume.
@@ -153,13 +156,16 @@ def generate_optimized_resume(
         score: ATS match score 0-100
         improvements: List of {"skill": str, "bullet_point": str}
         resume_data: Structured resume dict from extract_resume_data()
+        resume_text: Plain text of the resume for reference (optional)
+        task_id: Task/resume ID for tracking (optional)
+        structured: Structured resume data from rewrite_resume_for_job() (optional)
 
     Returns:
         BytesIO PDF buffer
     """
     buffer = BytesIO()
     styles = build_styles()
-    data = resume_data or {}
+    data = structured or resume_data or {}
 
     # Fallback name from filename
     name = data.get("name") or (
