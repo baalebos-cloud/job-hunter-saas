@@ -5,376 +5,273 @@ Creates clean, recruiter-friendly resumes that preserve the user's content.
 
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib import colors
-from reportlab.pdfgen import canvas
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
+)
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from io import BytesIO
-import textwrap
-
-# ─── Page Setup ───────────────────────────────────────────────────────────────
-W, H = LETTER
-ML, MR = 50, 50  # Margins
-MT, MB = 40, 50
-TW = W - ML - MR
-
-# ─── Professional Color Palette ───────────────────────────────────────────────
-NAVY = colors.HexColor("#1e293b")       # Header background
-WHITE = colors.white
-DARK = colors.HexColor("#1e293b")       # Primary text
-GRAY = colors.HexColor("#475569")       # Secondary text
-LIGHT_GRAY = colors.HexColor("#64748b") # Tertiary text
-ACCENT = colors.HexColor("#0f766e")     # Accent color (teal)
 
 
-def _wrap(text: str, chars: int) -> list:
-    """Wrap text to specified character width."""
-    return textwrap.wrap(str(text).strip(), width=max(chars, 20)) or [""]
+# ─── Colors ───────────────────────────────────────────────────────────────────
+DARK_SLATE    = colors.HexColor("#0f172a")
+EMERALD       = colors.HexColor("#10b981")
+LIGHT_EMERALD = colors.HexColor("#ecfdf5")
+SLATE_600     = colors.HexColor("#475569")
+SLATE_400     = colors.HexColor("#94a3b8")
+SLATE_200     = colors.HexColor("#e2e8f0")
+WHITE         = colors.white
 
 
-def _clean(text: str) -> str:
-    """Clean bullet prefixes."""
-    return text.lstrip("•-*–▸● ").strip()
+# ─── Styles ───────────────────────────────────────────────────────────────────
+def build_styles():
+    return {
+        "name": ParagraphStyle(
+            "name", fontName="Helvetica-Bold", fontSize=22,
+            textColor=DARK_SLATE, spaceAfter=2, leading=26, alignment=TA_CENTER,
+        ),
+        "title": ParagraphStyle(
+            "title", fontName="Helvetica", fontSize=11,
+            textColor=EMERALD, spaceAfter=4, leading=14, alignment=TA_CENTER,
+        ),
+        "contact": ParagraphStyle(
+            "contact", fontName="Helvetica", fontSize=8.5,
+            textColor=SLATE_600, spaceAfter=2, leading=12, alignment=TA_CENTER,
+        ),
+        "section_header": ParagraphStyle(
+            "section_header", fontName="Helvetica-Bold", fontSize=9,
+            textColor=DARK_SLATE, spaceBefore=10, spaceAfter=3,
+            leading=12, alignment=TA_LEFT,
+        ),
+        "job_title": ParagraphStyle(
+            "job_title", fontName="Helvetica-Bold", fontSize=10,
+            textColor=DARK_SLATE, spaceAfter=1, leading=13,
+        ),
+        "company": ParagraphStyle(
+            "company", fontName="Helvetica", fontSize=9.5,
+            textColor=EMERALD, spaceAfter=1, leading=12,
+        ),
+        "date": ParagraphStyle(
+            "date", fontName="Helvetica-Oblique", fontSize=8.5,
+            textColor=SLATE_400, spaceAfter=3, leading=11,
+        ),
+        "bullet": ParagraphStyle(
+            "bullet", fontName="Helvetica", fontSize=9,
+            textColor=SLATE_600, spaceAfter=2, leading=13, leftIndent=12,
+        ),
+        "body": ParagraphStyle(
+            "body", fontName="Helvetica", fontSize=9,
+            textColor=SLATE_600, spaceAfter=3, leading=13,
+        ),
+        "skill_value": ParagraphStyle(
+            "skill_value", fontName="Helvetica", fontSize=8.5,
+            textColor=SLATE_600, spaceAfter=3, leading=12,
+        ),
+        "suggestion": ParagraphStyle(
+            "suggestion", fontName="Helvetica-Oblique", fontSize=8.5,
+            textColor=SLATE_600, spaceAfter=3, leading=13, leftIndent=12,
+        ),
+        "footer": ParagraphStyle(
+            "footer", fontName="Helvetica", fontSize=7.5,
+            textColor=SLATE_400, alignment=TA_CENTER,
+        ),
+        "tag": ParagraphStyle(
+            "tag", fontName="Helvetica-Bold", fontSize=7.5,
+            textColor=WHITE, alignment=TA_CENTER,
+        ),
+        "score": ParagraphStyle(
+            "score", fontName="Helvetica-Bold", fontSize=18,
+            textColor=EMERALD, alignment=TA_CENTER,
+        ),
+        "ats_label": ParagraphStyle(
+            "ats_label", fontName="Helvetica-Bold", fontSize=8,
+            textColor=EMERALD, alignment=TA_CENTER,
+        ),
+    }
 
 
-class ResumeBuilder:
-    """Builds professional PDF resumes."""
-
-    def __init__(self, buf: BytesIO):
-        self.c = canvas.Canvas(buf, pagesize=LETTER)
-        self.y = H - MT
-        self.page = 1
-
-    def _footer(self):
-        self.c.setFont("Helvetica", 8)
-        self.c.setFillColor(LIGHT_GRAY)
-        self.c.drawCentredString(W / 2, 25, f"Page {self.page}")
-
-    def _new_page_if_needed(self, space: int = 50):
-        if self.y < space + MB:
-            self._footer()
-            self.c.showPage()
-            self.page += 1
-            self.y = H - MT
-
-    def header(self, name: str, contact: str):
-        """Professional header with name and contact."""
-        c = self.c
-        
-        # Header background
-        c.setFillColor(NAVY)
-        c.rect(0, H - 80, W, 80, fill=True, stroke=False)
-
-        # Accent line
-        c.setFillColor(ACCENT)
-        c.rect(0, H - 80, W, 3, fill=True, stroke=False)
-
-        # Name
-        c.setFillColor(WHITE)
-        c.setFont("Helvetica-Bold", 22)
-        c.drawCentredString(W / 2, H - 40, (name or "").upper())
-
-        # Contact
-        if contact:
-            c.setFont("Helvetica", 9)
-            c.setFillColor(colors.HexColor("#cbd5e1"))
-            
-            # Handle long contact info
-            if len(contact) > 85:
-                parts = contact.split("  |  ")
-                mid = len(parts) // 2
-                c.drawCentredString(W / 2, H - 55, "  |  ".join(parts[:mid]))
-                c.drawCentredString(W / 2, H - 67, "  |  ".join(parts[mid:]))
-            else:
-                c.drawCentredString(W / 2, H - 58, contact)
-
-        self.y = H - 95
-
-    def section(self, title: str):
-        """Section header with accent bar."""
-        self._new_page_if_needed(45)
-        c = self.c
-        
-        self.y -= 12
-
-        # Accent bar
-        c.setFillColor(ACCENT)
-        c.rect(ML, self.y - 1, 3, 12, fill=True, stroke=False)
-
-        # Title
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(DARK)
-        c.drawString(ML + 8, self.y, title.upper())
-
-        self.y -= 16
-
-    def summary(self, text: str):
-        """Professional summary paragraph."""
-        if not text:
-            return
-            
-        self.section("Professional Summary")
-        c = self.c
-        
-        c.setFont("Helvetica", 10)
-        c.setFillColor(GRAY)
-        
-        for line in _wrap(text, int(TW / 5)):
-            self._new_page_if_needed(14)
-            c.drawString(ML, self.y, line)
-            self.y -= 13
-
-        self.y -= 5
-
-    def experience(self, jobs: list):
-        """Work experience section."""
-        if not jobs:
-            return
-            
-        self.section("Professional Experience")
-        c = self.c
-
-        for job in jobs:
-            self._new_page_if_needed(60)
-
-            title = (job.get("title") or "").strip()
-            company = (job.get("company") or "").strip()
-            dates = (job.get("dates") or "").strip()
-            location = (job.get("location") or "").strip()
-            bullets = job.get("bullets") or []
-
-            # Job title
-            c.setFont("Helvetica-Bold", 10)
-            c.setFillColor(DARK)
-            c.drawString(ML, self.y, title)
-
-            # Dates (right aligned)
-            if dates:
-                c.setFont("Helvetica", 9)
-                c.setFillColor(LIGHT_GRAY)
-                c.drawRightString(W - MR, self.y, dates)
-
-            self.y -= 13
-
-            # Company and location
-            if company or location:
-                c.setFont("Helvetica", 9)
-                c.setFillColor(ACCENT)
-                line = company
-                if location:
-                    line += f"  •  {location}" if company else location
-                c.drawString(ML, self.y, line)
-                self.y -= 13
-
-            # Bullets
-            for bullet in bullets[:6]:
-                clean = _clean(bullet)
-                if len(clean) < 8:
-                    continue
-
-                self._new_page_if_needed(14)
-                c.setFont("Helvetica", 9)
-                c.setFillColor(GRAY)
-
-                lines = _wrap(clean, int((TW - 12) / 4.8))
-                for i, ln in enumerate(lines):
-                    prefix = "•  " if i == 0 else "    "
-                    c.drawString(ML + 6, self.y, prefix + ln)
-                    self.y -= 12
-
-            self.y -= 8
-
-    def skills(self, skill_list: list):
-        """Skills section."""
-        if not skill_list:
-            return
-            
-        self.section("Skills")
-        c = self.c
-
-        # Clean and dedupe
-        clean = []
-        seen = set()
-        for s in skill_list:
-            s = str(s).strip()
-            if s and len(s) < 40 and s.lower() not in seen:
-                clean.append(s)
-                seen.add(s.lower())
-
-        # Render in rows
-        c.setFont("Helvetica", 9)
-        c.setFillColor(GRAY)
-
-        row = []
-        row_width = 0
-        max_width = TW - 10
-
-        for skill in clean[:30]:
-            skill_w = c.stringWidth(skill, "Helvetica", 9) + 18
-            
-            if row_width + skill_w > max_width and row:
-                self._new_page_if_needed(14)
-                c.drawString(ML, self.y, "  •  ".join(row))
-                self.y -= 13
-                row = []
-                row_width = 0
-
-            row.append(skill)
-            row_width += skill_w
-
-        if row:
-            self._new_page_if_needed(14)
-            c.drawString(ML, self.y, "  •  ".join(row))
-            self.y -= 13
-
-        self.y -= 5
-
-    def education(self, edu_list: list):
-        """Education section."""
-        if not edu_list:
-            return
-            
-        self.section("Education")
-        c = self.c
-
-        for edu in edu_list:
-            self._new_page_if_needed(30)
-
-            degree = (edu.get("degree") or "").strip()
-            school = (edu.get("school") or "").strip()
-            year = (edu.get("year") or "").strip()
-
-            if not degree and not school:
-                continue
-
-            # Degree
-            if degree:
-                c.setFont("Helvetica-Bold", 9)
-                c.setFillColor(DARK)
-                c.drawString(ML, self.y, degree)
-                
-                if year:
-                    c.setFont("Helvetica", 9)
-                    c.setFillColor(LIGHT_GRAY)
-                    c.drawRightString(W - MR, self.y, year)
-                
-                self.y -= 12
-
-            # School
-            if school:
-                c.setFont("Helvetica", 9)
-                c.setFillColor(GRAY)
-                c.drawString(ML, self.y, school)
-                self.y -= 12
-
-            self.y -= 4
-
-    def certifications(self, cert_list: list):
-        """Certifications section."""
-        if not cert_list:
-            return
-            
-        self.section("Certifications")
-        c = self.c
-
-        for cert in cert_list[:6]:
-            clean = _clean(str(cert))
-            if len(clean) < 3:
-                continue
-
-            self._new_page_if_needed(14)
-            c.setFont("Helvetica", 9)
-            c.setFillColor(GRAY)
-            c.drawString(ML + 6, self.y, f"•  {clean}")
-            self.y -= 12
-
-        self.y -= 4
-
-    def projects(self, project_list: list):
-        """Projects section."""
-        if not project_list:
-            return
-            
-        self.section("Projects")
-        c = self.c
-
-        for proj in project_list[:4]:
-            self._new_page_if_needed(35)
-
-            name = (proj.get("name") or proj.get("title") or "").strip()
-            desc = (proj.get("description") or "").strip()
-
-            if not name:
-                continue
-
-            # Project name
-            c.setFont("Helvetica-Bold", 9)
-            c.setFillColor(DARK)
-            c.drawString(ML, self.y, name)
-            self.y -= 12
-
-            # Description
-            if desc:
-                c.setFont("Helvetica", 9)
-                c.setFillColor(GRAY)
-                for line in _wrap(desc, int((TW - 8) / 4.8))[:2]:
-                    self._new_page_if_needed(12)
-                    c.drawString(ML + 6, self.y, line)
-                    self.y -= 11
-
-            self.y -= 5
-
-    def save(self):
-        self._footer()
-        self.c.save()
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+def section_divider(styles, title):
+    return [
+        Spacer(1, 6),
+        Paragraph(title.upper(), styles["section_header"]),
+        HRFlowable(width="100%", thickness=1.5, color=EMERALD, spaceAfter=5),
+    ]
 
 
-# ─── Main Entry Point ─────────────────────────────────────────────────────────
+def build_ats_badge(score, styles):
+    color = EMERALD if score >= 80 else colors.HexColor("#f59e0b") if score >= 60 else colors.HexColor("#ef4444")
+    label = "Strong Fit" if score >= 80 else "Good Fit" if score >= 60 else "Needs Work"
 
+    badge_data = [[
+        Paragraph("ATS MATCH SCORE", styles["ats_label"]),
+        Paragraph(f"<b>{round(score)}%</b>", ParagraphStyle(
+            "sc", fontName="Helvetica-Bold", fontSize=18,
+            textColor=color, alignment=TA_CENTER
+        )),
+        Paragraph(label, ParagraphStyle(
+            "lb", fontName="Helvetica-Bold", fontSize=9,
+            textColor=color, alignment=TA_CENTER
+        )),
+    ]]
+    t = Table(badge_data, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_EMERALD),
+        ("BOX", (0, 0), (-1, -1), 1, color),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return t
+
+
+def build_skill_tag(skill, styles):
+    tag_data = [[Paragraph(f"  {skill.upper()}  ", styles["tag"])]]
+    t = Table(tag_data, colWidths=[1.4*inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), EMERALD),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return t
+
+
+# ─── Main Generator ───────────────────────────────────────────────────────────
 def generate_optimized_resume(
     filename: str,
     score: float,
     improvements: list,
-    resume_text: str = "",
-    task_id: str = "",
-    structured: dict | None = None,
+    resume_data: dict = None
 ) -> BytesIO:
     """
-    Generates a professional, clean resume PDF.
-    
-    The resume preserves the user's original content while presenting it
-    in a professional format that recruiters love.
+    Generates a professional resume PDF styled like the user's original resume.
+
+    Args:
+        filename: Original resume filename
+        score: ATS match score 0-100
+        improvements: List of {"skill": str, "bullet_point": str}
+        resume_data: Structured resume dict from extract_resume_data()
+
+    Returns:
+        BytesIO PDF buffer
     """
-    buf = BytesIO()
-    s = structured or {}
+    buffer = BytesIO()
+    styles = build_styles()
+    data = resume_data or {}
 
-    # Extract data
-    name = (s.get("name") or _get_name(resume_text) or "").strip()
-    contact = (s.get("contact") or "").strip()
-    summary = (s.get("summary") or "").strip()
-    experience = s.get("experience") or []
-    skills = s.get("skills") or []
-    education = s.get("education") or []
-    certifications = s.get("certifications") or []
-    projects = s.get("projects") or []
+    # Fallback name from filename
+    name = data.get("name") or (
+        filename.replace(".pdf", "").replace(".docx", "")
+        .replace("_", " ").replace("-", " ").title()
+    )
 
-    # Build PDF
-    pdf = ResumeBuilder(buf)
-    
-    pdf.header(name, contact)
-    pdf.summary(summary)
-    pdf.experience(experience)
-    pdf.skills(skills)
-    pdf.education(education)
-    pdf.certifications(certifications)
-    pdf.projects(projects)
-    
-    pdf.save()
-    buf.seek(0)
-    return buf
+    doc = SimpleDocTemplate(
+        buffer, pagesize=LETTER,
+        leftMargin=0.6*inch, rightMargin=0.6*inch,
+        topMargin=0.5*inch, bottomMargin=0.5*inch,
+    )
 
+    story = []
 
-def _get_name(text: str) -> str:
-    """Extract name from resume text."""
-    for line in (text or "").split("\n"):
-        line = line.strip()
-        if line and len(line) < 50 and not any(c in line for c in ["@", "http", "+", "|"]):
-            return line
-    return ""
+    # ── Header ────────────────────────────────────────────────────────────────
+    story.append(Paragraph(name.upper(), styles["name"]))
+    if data.get("title"):
+        story.append(Paragraph(data["title"], styles["title"]))
+    if data.get("contact"):
+        story.append(Paragraph(data["contact"], styles["contact"]))
+    story.append(Spacer(1, 8))
+
+    # ── ATS Badge ─────────────────────────────────────────────────────────────
+    story.append(build_ats_badge(score, styles))
+    story.append(Spacer(1, 10))
+
+    # ── Professional Summary ──────────────────────────────────────────────────
+    if data.get("summary"):
+        story.extend(section_divider(styles, "Professional Summary"))
+        story.append(Paragraph(data["summary"], styles["body"]))
+
+    # ── Experience ────────────────────────────────────────────────────────────
+    if data.get("experience"):
+        story.extend(section_divider(styles, "Professional Experience"))
+        for exp in data["experience"]:
+            story.append(Paragraph(exp.get("role", ""), styles["job_title"]))
+            company_line = exp.get("company", "")
+            if exp.get("location"):
+                company_line += f"   |   {exp['location']}"
+            story.append(Paragraph(company_line, styles["company"]))
+            if exp.get("dates"):
+                story.append(Paragraph(exp["dates"], styles["date"]))
+            for bullet in exp.get("bullets", []):
+                story.append(Paragraph(f"• {bullet}", styles["bullet"]))
+            story.append(Spacer(1, 4))
+
+    # ── Core Competencies ─────────────────────────────────────────────────────
+    if data.get("skills"):
+        story.extend(section_divider(styles, "Core Competencies"))
+        for category, items in data["skills"].items():
+            items_str = ", ".join(items) if isinstance(items, list) else str(items)
+            story.append(Paragraph(
+                f"<b>{category}:</b>  {items_str}",
+                styles["skill_value"]
+            ))
+
+    # ── AI-Suggested Improvements ─────────────────────────────────────────────
+    if improvements:
+        story.extend(section_divider(styles, "AI-Suggested Resume Improvements"))
+        story.append(Paragraph(
+            "The following bullet points were generated by Baalebos AI to close the gap "
+            "between your resume and the target job description. Add the most relevant "
+            "ones to improve your ATS score.",
+            styles["body"]
+        ))
+        story.append(Spacer(1, 4))
+
+        for imp in improvements[:8]:
+            skill = imp.get("skill", "Improvement")
+            bullet = imp.get("bullet_point", "")
+            story.append(build_skill_tag(skill, styles))
+            story.append(Paragraph(f'• "{bullet}"', styles["suggestion"]))
+            story.append(Spacer(1, 3))
+
+    # ── Missing Keywords ──────────────────────────────────────────────────────
+    missing = data.get("missing_keywords", [])
+    if not missing and improvements:
+        missing = [imp.get("skill", "") for imp in improvements if imp.get("skill")]
+
+    if missing:
+        story.extend(section_divider(styles, "Missing Keywords to Add"))
+        story.append(Paragraph(
+            "  •  ".join([k for k in missing if k][:15]),
+            styles["body"]
+        ))
+
+    # ── Education ─────────────────────────────────────────────────────────────
+    if data.get("education"):
+        story.extend(section_divider(styles, "Education"))
+        for edu in data["education"]:
+            story.append(Paragraph(f"<b>{edu.get('degree', '')}</b>", styles["job_title"]))
+            institution = edu.get("institution", "")
+            if edu.get("year"):
+                institution += f"   |   {edu['year']}"
+            story.append(Paragraph(institution, styles["company"]))
+
+    # ── Certifications ────────────────────────────────────────────────────────
+    if data.get("certifications"):
+        story.extend(section_divider(styles, "Certifications"))
+        for cert in data["certifications"]:
+            story.append(Paragraph(f"• {cert}", styles["bullet"]))
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 16))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=SLATE_200))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        "Generated by Baalebos Cloud AI  •  baalebo.xyz  •  AI-Powered Career Infrastructure",
+        styles["footer"]
+    ))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
