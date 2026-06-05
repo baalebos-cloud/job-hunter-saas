@@ -5,96 +5,64 @@ from backend.app.utils.pdf_generator import generate_optimized_resume
 from backend.app.utils.ats_engine import analyze_detailed_ats, extract_resume_data
 
 logger = logging.getLogger(__name__)
-
 OUTPUT_DIR = "/app/output"
 
 
 @celery_app.task(bind=True, name="process_resume_task")
 def process_resume_task(self, file_content, original_filename, job_description, user_id, job_title):
-    """
-    Full pipeline:
-    1. Run real ATS scoring via Groq/OpenRouter
-    2. Extract structured resume data for professional PDF
-    3. Generate professional resume PDF with AI improvements
-    4. Return structured result to frontend
-    """
     task_id = self.request.id
     logger.info(f"--- STARTING TASK {task_id} for {original_filename} ---")
 
     try:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-        # Ensure file_content is bytes
         if not isinstance(file_content, bytes):
             file_content = bytes(file_content)
 
-        # ── Step 1: ATS Scoring ───────────────────────────────────────────────
+        # Step 1: ATS Scoring
         logger.info(f"[{task_id}] Running ATS analysis...")
-        analysis = analyze_detailed_ats(
-            file_content=file_content,
-            filename=original_filename,
-            job_description=job_description
-        )
-
-        ats_score   = analysis.get("overall_score", 0)
+        analysis = analyze_detailed_ats(file_content, original_filename, job_description)
+        ats_score    = analysis.get("overall_score", 0)
         missing_list = analysis.get("missing_list", [])
-        breakdown   = analysis.get("breakdown", {
-            "action_verbs":    {"score": 0, "count": 0},
+        breakdown    = analysis.get("breakdown", {
+            "action_verbs":     {"score": 0, "count": 0},
             "technical_skills": {"score": 0, "count": 0},
-            "soft_skills":     {"score": 0, "count": 0}
+            "soft_skills":      {"score": 0, "count": 0}
         })
         suggestions = analysis.get("suggestions", [])
-
         logger.info(f"[{task_id}] ATS Score: {ats_score}%")
 
-        # ── Step 2: Extract Structured Resume Data ────────────────────────────
-        logger.info(f"[{task_id}] Extracting structured resume data...")
-        resume_data = extract_resume_data(
-            file_content=file_content,
-            filename=original_filename,
-            job_title=job_title
-        )
-
-        # Inject missing keywords into resume_data for PDF
+        # Step 2: Extract Resume Structure
+        logger.info(f"[{task_id}] Extracting resume structure...")
+        resume_data = extract_resume_data(file_content, original_filename, job_title)
         resume_data["missing_keywords"] = missing_list
 
-        # ── Step 3: Build AI Improvements for PDF ─────────────────────────────
+        # Step 3: Build improvement bullets
         improvements = []
-
-        # Use AI suggestions first
         for s in suggestions[:4]:
-            improvements.append({
-                "skill": "AI Suggestion",
-                "bullet_point": s
-            })
-
-        # Add missing keyword bullets
+            improvements.append({"skill": "AI Suggestion", "bullet_point": s})
         for kw in missing_list[:4]:
             if len(improvements) >= 8:
                 break
             if kw and "API Key" not in kw:
                 improvements.append({
                     "skill": kw,
-                    "bullet_point": f"Demonstrated proficiency in {kw} through hands-on implementation in production environments."
+                    "bullet_point": f"Incorporate '{kw}' naturally into your experience bullets to improve ATS matching."
                 })
-
-        # Fallback if nothing
         if not improvements:
             improvements = [
-                {"skill": "Action Verbs", "bullet_point": "Spearheaded cross-functional initiatives delivering measurable business outcomes."},
-                {"skill": "Metrics",      "bullet_point": "Reduced deployment time by 40% through automated CI/CD pipeline optimization."},
+                {"skill": "Action Verbs", "bullet_point": "Use stronger action verbs like Architected, Spearheaded, Engineered."},
+                {"skill": "Metrics", "bullet_point": "Quantify achievements with numbers (e.g. reduced deployment time by 40%)."},
+                {"skill": "Keywords", "bullet_point": "Mirror exact keywords from the job description throughout your resume."},
             ]
 
-        # ── Step 4: Generate Professional PDF ────────────────────────────────
-        logger.info(f"[{task_id}] Generating professional resume PDF...")
+        # Step 4: Generate Professional PDF
+        logger.info(f"[{task_id}] Generating professional PDF...")
         pdf_buffer = generate_optimized_resume(
             filename=original_filename,
             score=round(ats_score, 1),
             improvements=improvements,
             resume_data=resume_data
         )
-
-        # Save to shared output volume
         output_path = os.path.join(OUTPUT_DIR, f"optimized_{task_id}.pdf")
         with open(output_path, "wb") as f:
             f.write(pdf_buffer.read())
@@ -104,7 +72,7 @@ def process_resume_task(self, file_content, original_filename, job_description, 
         else:
             logger.error(f"[{task_id}] PDF missing after write!")
 
-        # ── Step 5: Return Full Result to Frontend ────────────────────────────
+        # Step 5: Return result to frontend
         return {
             "id":               task_id,
             "task_id":          task_id,
