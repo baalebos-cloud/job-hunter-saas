@@ -1,68 +1,10 @@
-# --- OS & IDE Junk ---
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# --- Security & Secrets (CRITICAL) ---
-*.pem
-*.key
-*.pub
-.env*
-!.env.example
-secrets.json
-
-# --- Backend (Python/FastAPI) ---
-backend/__pycache__/
-backend/*.py[cod]
-backend/*$py.class
-backend/venv/
-backend/env/
-backend/.venv/
-backend/.pytest_cache/
-backend/db.sqlite3
-backend/.python-version
-backend/pip-log.txt
-
-# --- Frontend (React/Next.js) ---
-job-hunter-dashboard/node_modules/
-job-hunter-dashboard/dist/
-job-hunter-dashboard/build/
-job-hunter-dashboard/.next/
-job-hunter-dashboard/out/
-job-hunter-dashboard/.env
-job-hunter-dashboard/.env.local
-job-hunter-dashboard/.env.development.local
-job-hunter-dashboard/.env.test.local
-job-hunter-dashboard/.env.production.local
-job-hunter-dashboard/.eslintcache
-job-hunter-dashboard/npm-debug.log*
-job-hunter-dashboard/yarn-debug.log*
-job-hunter-dashboard/yarn-error.log*
-
-# --- Docker & Infrastructure ---
-.terraform/
-*.tfstate
-*.tfvars
-*.tfstate.backup
-.terraform.lock.hcl
-docker-compose.override.yml
-*.log
-docker-data/
-
-# --- Root-level venv (was accidentally tracked) ---
-venv/
+.env
+.env.local
+.env.*.local
+node_modules/
+frontend/node_modules/
 .venv/
-env/
-
-# --- Python cache at root and any subfolder ---
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# --- Output/upload folders ---
-output/
-uploads/
+venv/
+dist/
+build/
+.DS_Store
