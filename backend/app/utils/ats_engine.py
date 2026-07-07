@@ -77,7 +77,7 @@ Return ONLY valid JSON in this exact format:
     "keywords_matched": 14,
     "keywords_missing": 6,
     "total_keywords": 20,
-    "missing_list": ["Terraform", "Kubernetes", "CI/CD", "Helm", "Prometheus", "AWS RDS"],
+    "missing_list": ["Terraform", "Kubernetes", "CI/CD", "Helm", "Prometheus"],
     "breakdown": {{
         "action_verbs": {{"score": 80, "count": 8}},
         "technical_skills": {{"score": 65, "count": 12}},
@@ -103,15 +103,15 @@ Return ONLY the JSON. No markdown. No explanation.
         )
         result = json.loads(_clean_json(response.choices[0].message.content))
         return {
-            "overall_score": float(result.get("overall_score", 0)),
+            "overall_score":    float(result.get("overall_score", 0)),
             "keywords_matched": int(result.get("keywords_matched", 0)),
             "keywords_missing": int(result.get("keywords_missing", 0)),
-            "total_keywords": int(result.get("total_keywords", 0)),
-            "missing_list": result.get("missing_list", []),
-            "breakdown": result.get("breakdown", {
-                "action_verbs": {"score": 0, "count": 0},
+            "total_keywords":   int(result.get("total_keywords", 0)),
+            "missing_list":     result.get("missing_list", []),
+            "breakdown":        result.get("breakdown", {
+                "action_verbs":     {"score": 0, "count": 0},
                 "technical_skills": {"score": 0, "count": 0},
-                "soft_skills": {"score": 0, "count": 0}
+                "soft_skills":      {"score": 0, "count": 0}
             }),
             "suggestions": result.get("suggestions", []),
         }
@@ -124,8 +124,9 @@ Return ONLY the JSON. No markdown. No explanation.
 
 def extract_resume_data(file_content: bytes, filename: str, job_title: str) -> dict:
     """
-    Extracts structured resume data for professional PDF generation.
-    Returns name, title, contact, summary, experience, education, skills, certifications.
+    Extracts fully structured resume data for professional PDF generation.
+    Includes: name, title, contact, summary, experience (with environment),
+    projects, education, skills (two-column), certifications.
     """
     resume_text = extract_text(file_content, filename)
     if not resume_text:
@@ -148,18 +149,36 @@ Return this exact JSON structure:
     "name": "Full Name",
     "title": "Current Job Title | Target Role",
     "contact": "Location  |  Phone  |  Email  |  LinkedIn",
-    "summary": "Professional summary paragraph",
+    "summary": "Professional summary paragraph from the resume",
     "experience": [
         {{
             "role": "Job Title",
             "company": "Company Name",
-            "location": "City, Country",
             "dates": "Month Year – Month Year",
             "bullets": [
                 "Achievement bullet point with metrics",
                 "Another achievement bullet point"
+            ],
+            "environment": "Tech1 · Tech2 · Tech3 · Tech4"
+        }}
+    ],
+    "projects": [
+        {{
+            "title": "Project Name",
+            "tech": "Tech1 · Tech2 · Tech3",
+            "bullets": [
+                "What was built and the impact"
             ]
         }}
+    ],
+    "skills": {{
+        "AWS Core Services": ["EC2", "S3", "IAM", "VPC", "RDS"],
+        "Infrastructure as Code": ["Terraform", "CloudFormation"],
+        "CI/CD": ["GitHub Actions", "Jenkins"],
+        "Containers": ["Docker", "Kubernetes"]
+    }},
+    "certifications": [
+        "Certification Name — Issuer"
     ],
     "education": [
         {{
@@ -167,18 +186,14 @@ Return this exact JSON structure:
             "institution": "Institution Name",
             "year": "Year or In Progress"
         }}
-    ],
-    "skills": {{
-        "Category Name": ["skill1", "skill2", "skill3"]
-    }},
-    "certifications": [
-        "Certification Name 1",
-        "Certification Name 2"
     ]
 }}
 
 Rules:
-- Extract REAL data only, do not invent anything
+- Extract REAL data only from the resume, never invent anything
+- skills must be grouped into categories as key-value pairs
+- environment in experience is the tech stack line at the end of each role
+- projects come from any "Selected Projects" or "Projects" section
 - Keep bullets concise and achievement-focused
 - Return ONLY the JSON, no markdown
 """
@@ -189,7 +204,7 @@ Rules:
                 {"role": "system", "content": "You extract structured resume data and return valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=2000,
+            max_tokens=2500,
             temperature=0.1,
         )
         return json.loads(_clean_json(response.choices[0].message.content))
@@ -208,9 +223,9 @@ def _simulated_response() -> dict:
         "total_keywords": 13,
         "missing_list": ["Add GROQ_API_KEY or OPENROUTER_API_KEY to .env for real analysis"],
         "breakdown": {
-            "action_verbs": {"score": 50, "count": 4},
+            "action_verbs":     {"score": 50, "count": 4},
             "technical_skills": {"score": 40, "count": 3},
-            "soft_skills": {"score": 45, "count": 2}
+            "soft_skills":      {"score": 45, "count": 2}
         },
         "suggestions": ["Add your Groq or OpenRouter API key to enable real AI analysis"]
     }
@@ -224,9 +239,9 @@ def _error_response(message: str) -> dict:
         "total_keywords": 0,
         "missing_list": [],
         "breakdown": {
-            "action_verbs": {"score": 0, "count": 0},
+            "action_verbs":     {"score": 0, "count": 0},
             "technical_skills": {"score": 0, "count": 0},
-            "soft_skills": {"score": 0, "count": 0}
+            "soft_skills":      {"score": 0, "count": 0}
         },
         "suggestions": [],
         "error": message
