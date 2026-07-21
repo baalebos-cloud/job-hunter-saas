@@ -6,10 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
     curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (cached layer)
