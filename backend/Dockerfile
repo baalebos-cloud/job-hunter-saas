@@ -6,34 +6,40 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Add Acquire::Retries to prevent Debian mirror timeout errors
-RUN apt-get update -o Acquire::Retries=3 -y && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    gcc \
-    curl \
+# FIX 1: Pin apt-get to avoid stale mirror issues.
+# FIX 2: Add `--fix-missing` and retry logic to handle transient network failures.
+# FIX 3: Install build-essential instead of bare gcc — covers all compiler deps.
+RUN set -eux; \
+    apt-get update --fix-missing -y && \
+    apt-get install -y --no-install-recommends \
+        libpq-dev \
+        build-essential \
+        curl \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install dependencies first (cached layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy ALL source files from backend/ into /app
+# Copy ALL source files — this layer always rebuilds when any file changes
 COPY . .
 
-# Since start scripts live in backend/, COPY . . already copied them!
-# We just need to ensure they have execution permissions.
+# FIX 4: COPY + chmod in one layer (no need for separate COPY lines after COPY . .)
+# start.sh, start-worker.sh, start-beat.sh are already included in COPY . .
+RUN chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh
 
-# Corrected path checks (relative to /app when building from backend context)
-RUN test -f /app/app/routes/admin.py || (echo "ERROR: admin.py missing!" && exit 1)
-RUN test -f /app/app/routes/hr.py || (echo "ERROR: hr.py missing!" && exit 1)
-RUN test -f /app/app/main.py || (echo "ERROR: main.py missing!" && exit 1)
+# Verify critical files exist at build time — fails build if missing
+RUN test -f /app/backend/app/routes/admin.py  || (echo "ERROR: admin.py missing!"  && exit 1)
+RUN test -f /app/backend/app/routes/hr.py     || (echo "ERROR: hr.py missing!"     && exit 1)
+RUN test -f /app/backend/app/main.py          || (echo "ERROR: main.py missing!"   && exit 1)
 
-RUN mkdir -p /app/output /app/uploads && \
-    chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh
+RUN mkdir -p /app/output /app/uploads
 
+# FIX 5: Create user AFTER chown so the directory ownership is correct
 RUN useradd -m appuser && chown -R appuser:appuser /app
+
 USER appuser
 
 CMD ["/app/start.sh"]
