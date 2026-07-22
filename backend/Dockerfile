@@ -19,7 +19,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-COPY . ./backend
+COPY . .
 
 RUN printf '#!/bin/bash\nset -e\nexec uvicorn backend.app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips "*"\n' > /app/start.sh && \
     printf '#!/bin/bash\nset -e\nexec celery -A backend.app.celery_app worker --loglevel=info --concurrency=2\n' > /app/start-worker.sh && \
@@ -33,5 +33,7 @@ RUN mkdir -p /app/output /app/uploads
 RUN useradd -m appuser && chown -R appuser:appuser /app
 
 USER appuser
+
+ESPOSE 8000
 
 CMD ["/app/start.sh"]
