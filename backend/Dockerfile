@@ -1,7 +1,7 @@
 # =============================================================================
 # BAALEBOS CLOUD — Production Dockerfile
-# Build context: project ROOT (not /backend)
-# Command: docker build -f backend/Dockerfile .
+# Railway sets build context to backend/ automatically when dockerfilePath
+# points to backend/Dockerfile — so all COPY paths are relative to backend/
 # =============================================================================
 
 FROM python:3.12-slim
@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps — use --fix-missing to handle mirror staleness
+# System deps
 RUN set -eux; \
     apt-get update --fix-missing -y && \
     apt-get install -y --no-install-recommends \
@@ -22,23 +22,21 @@ RUN set -eux; \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# FIX: requirements.txt lives in ROOT, not in backend/
-# Build context is . so this path is correct
+# requirements.txt is in backend/ — same dir as this Dockerfile
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy entire project into /app
-COPY . .
+# Copy backend source into /app/backend
+COPY . ./backend
 
-# FIX: Create start scripts inline — no more missing file errors
-RUN printf '#!/bin/bash\nset -e\nexec uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*"\n' > /app/start.sh && \
+# Create start scripts inline
+RUN printf '#!/bin/bash\nset -e\nexec uvicorn backend.app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips "*"\n' > /app/start.sh && \
     printf '#!/bin/bash\nset -e\nexec celery -A backend.app.celery_app worker --loglevel=info --concurrency=2\n' > /app/start-worker.sh && \
-    printf '#!/bin/bash\nset -e\nsleep 5\nexec celery -A backend.app.celery_app beat --loglevel=info\n' > /app/start-beat.sh && \
+    printf '#!/bin/bash\nset -e\nsleep 5\nexec celery -A backend.app.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule\n' > /app/start-beat.sh && \
     chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh
 
-# Verify critical files exist at build time
-RUN test -f /app/backend/app/main.py      || (echo "ERROR: main.py missing!"  && exit 1)
+RUN test -f /app/backend/app/main.py || (echo "ERROR: main.py missing!" && exit 1)
 
 RUN mkdir -p /app/output /app/uploads
 
