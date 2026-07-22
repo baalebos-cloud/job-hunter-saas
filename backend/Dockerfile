@@ -1,9 +1,3 @@
-# =============================================================================
-# BAALEBOS CLOUD — Production Dockerfile
-# Railway sets build context to backend/ automatically when dockerfilePath
-# points to backend/Dockerfile — so all COPY paths are relative to backend/
-# =============================================================================
-
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -12,7 +6,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps
 RUN set -eux; \
     apt-get update --fix-missing -y && \
     apt-get install -y --no-install-recommends \
@@ -22,15 +15,12 @@ RUN set -eux; \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# requirements.txt is in backend/ — same dir as this Dockerfile
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy backend source into /app/backend
 COPY . ./backend
 
-# Create start scripts inline
 RUN printf '#!/bin/bash\nset -e\nexec uvicorn backend.app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips "*"\n' > /app/start.sh && \
     printf '#!/bin/bash\nset -e\nexec celery -A backend.app.celery_app worker --loglevel=info --concurrency=2\n' > /app/start-worker.sh && \
     printf '#!/bin/bash\nset -e\nsleep 5\nexec celery -A backend.app.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule\n' > /app/start-beat.sh && \
