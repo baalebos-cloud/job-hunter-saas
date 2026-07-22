@@ -3,11 +3,10 @@ set -e
 
 echo "Starting Celery Beat Scheduler..."
 
-# Wait for the main app/broker to be ready (optional: adjust sleep or use wait-for-it)
+# Give the broker (Redis) a moment to be ready
 sleep 5
 
+# Use plain beat scheduler — django_celery_beat is not installed
 exec celery -A backend.app.celery_app beat \
     --loglevel=info \
-    --scheduler django_celery_beat.schedulers:DatabaseScheduler 2>/dev/null || \
-exec celery -A backend.app.celery_app beat \
-    --loglevel=info
+    --schedule=/tmp/celerybeat-schedule
