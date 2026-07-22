@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
+# Add Acquire::Retries to prevent Debian mirror timeout errors
+RUN apt-get update -o Acquire::Retries=3 -y && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
     curl \
@@ -18,16 +19,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy ALL source files — this layer always rebuilds when any file changes
+# Copy ALL source files from backend/ into /app
 COPY . .
-COPY start.sh ./start.sh
-COPY start-worker.sh ./start-worker.sh
-COPY start-beat.sh ./start-beat.sh
 
-# Verify critical files exist at build time — fails build if missing
-RUN test -f /app/backend/app/routes/admin.py || (echo "ERROR: admin.py missing!" && exit 1)
-RUN test -f /app/backend/app/routes/hr.py || (echo "ERROR: hr.py missing!" && exit 1)
-RUN test -f /app/backend/app/main.py || (echo "ERROR: main.py missing!" && exit 1)
+# Since start scripts live in backend/, COPY . . already copied them!
+# We just need to ensure they have execution permissions.
+
+# Corrected path checks (relative to /app when building from backend context)
+RUN test -f /app/app/routes/admin.py || (echo "ERROR: admin.py missing!" && exit 1)
+RUN test -f /app/app/routes/hr.py || (echo "ERROR: hr.py missing!" && exit 1)
+RUN test -f /app/app/main.py || (echo "ERROR: main.py missing!" && exit 1)
 
 RUN mkdir -p /app/output /app/uploads && \
     chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh
