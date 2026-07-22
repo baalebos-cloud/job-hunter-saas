@@ -1,20 +1,9 @@
 # =============================================================================
 # BAALEBOS CLOUD — PRODUCTION
 # =============================================================================
-# Usage (on your EC2 instance):
-#   docker-compose -f docker-compose.prod.yml pull
-#   docker-compose -f docker-compose.prod.yml up -d
-#   docker-compose -f docker-compose.prod.yml down
-#
-# Required environment variables (set in .env or GitHub Secrets):
-#   ECR_REGISTRY_URL, ECR_REPOSITORY
-# =============================================================================
 
 services:
 
-  # ---------------------------------------------------------------------------
-  # DATABASE
-  # ---------------------------------------------------------------------------
   db:
     image: postgres:15-alpine
     container_name: db
@@ -25,7 +14,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - app-network
-    # FIX: No ports exposed in production — DB should never be public-facing
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d jobhunter"]
       interval: 10s
@@ -33,27 +21,20 @@ services:
       retries: 5
       start_period: 20s
 
-  # ---------------------------------------------------------------------------
-  # REDIS
-  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: always
-    # FIX: No ports exposed in production — Redis should never be public-facing
     networks:
       - app-network
     volumes:
-      - redis_data:/data              # FIX: Added persistence — was missing in prod
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ---------------------------------------------------------------------------
-  # BACKEND API
-  # ---------------------------------------------------------------------------
   backend:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
     container_name: backend
@@ -62,13 +43,14 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app
-      - ENVIRONMENT=production        # Restricts CORS to baalebo.xyz only
+      - ENVIRONMENT=production
       - OUTPUT_DIR=/app/output
     ports:
-      - "8000:8000"                   # Nginx proxies to this
+      - "8000:8000"
+    command: ["/app/start.sh"]
     depends_on:
       db:
-        condition: service_healthy    # FIX: Wait for DB healthcheck, not just container start
+        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -83,9 +65,6 @@ services:
       retries: 5
       start_period: 60s
 
-  # ---------------------------------------------------------------------------
-  # CELERY WORKER
-  # ---------------------------------------------------------------------------
   worker:
     image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
     container_name: worker
@@ -96,9 +75,7 @@ services:
       - PYTHONPATH=/app
       - ENVIRONMENT=production
       - OUTPUT_DIR=/app/output
-    # FIX: Celery app path corrected — was 'backend.app.tasks.celery_app' which
-    # points to a tasks subfolder file, not the main celery_app.py
-    command: ["celery", "-A", "backend.app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    command: ["/app/start-worker.sh"]
     depends_on:
       db:
         condition: service_healthy
@@ -108,26 +85,30 @@ services:
         condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
-      - ./output:/app/output          # FIX: Must match backend volume so PDFs are shared
+      - ./output:/app/output
     networks:
       - app-network
 
-  # ---------------------------------------------------------------------------
-  # FRONTEND
-  # ---------------------------------------------------------------------------
-  frontend:
-    image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:frontend-latest
-    container_name: frontend
+  # FIX: Added beat service — was missing, causing Celery scheduled tasks to never run
+  beat:
+    image: ${ECR_REGISTRY_URL}/${ECR_REPOSITORY}:latest
+    container_name: beat
     restart: always
     env_file:
       - .env
-    ports:
-      - "3000:3000"
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=production
+    command: ["/app/start-beat.sh"]
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     networks:
       - app-network
-    command: ["serve", "-s", "dist", "-l", "3000"]
 
 networks:
   app-network:
@@ -135,4 +116,4 @@ networks:
 
 volumes:
   postgres_data:
-  redis_data:                         # FIX: Added — was missing, Redis had no named volume
+  redis_data:
