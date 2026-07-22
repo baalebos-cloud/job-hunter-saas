@@ -1,54 +1,68 @@
-name: ✅ Baalebos Cloud — CI Check
+name: 🚀 Baalebos AI Production Pipeline
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+
+env:
+  ECR_REGISTRY_URL: 251561352331.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY: job-hunter-repo
 
 jobs:
-  # ── Backend syntax check ───────────────────────────────────────────────────
-  backend-check:
-    name: 🐍 Backend Syntax Check
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: 🚚 Checkout
+      - name: 🚚 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          python-version: '3.12'
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
-      - name: ✅ Check Python syntax
-        run: |
-          find backend/ -name "*.py" -exec python3 -m py_compile {} \;
-          echo "✅ All Python files syntax OK"
+      - name: 📦 Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-  # ── Frontend build check ───────────────────────────────────────────────────
-  frontend-check:
-    name: ⚛️ Frontend Build Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🚚 Checkout
-        uses: actions/checkout@v4
-
-      - name: 📦 Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: job-hunter-dashboard/package-lock.json
-
-      - name: 📦 Install dependencies
-        working-directory: job-hunter-dashboard
-        run: npm ci
-
-      - name: 🏗️ Build frontend
-        working-directory: job-hunter-dashboard
+      - name: 🏗️ Build and Push Backend Image
         env:
-          VITE_API_URL: https://job-hunter-saas-production.up.railway.app/api/v1
-        run: npm run build
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # FIX: Build context is . (root) — requirements.txt and scripts resolve correctly
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} \
+            -f ./backend/Dockerfile \
+            .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
 
-      - name: ✅ Build successful
-        run: echo "✅ Frontend build OK"
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOSTS }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ec2-user/job-hunter-saas/
+
+            export ECR_REGISTRY="${{ env.ECR_REGISTRY_URL }}"
+            export ECR_REPOSITORY="${{ env.ECR_REPOSITORY }}"
+
+            # Authenticate Docker to ECR
+            aws ecr get-login-password --region us-east-1 | \
+              sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+
+            # Clean swap — pull new image, restart services
+            sudo -E docker-compose -f docker-compose.prod.yml down
+            sudo -E docker-compose -f docker-compose.prod.yml pull
+            sudo -E docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Cleanup dangling images
+            sudo docker image prune -f
