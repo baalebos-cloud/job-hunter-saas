@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://baalebo.xyz/api/v1"
+  // Point this directly to your Railway backend
+  baseURL: import.meta.env.VITE_API_URL || "https://job-hunter-saas-production-bb41.up.railway.app/api/v1"
 });
 
 // Automatic Token Injection
