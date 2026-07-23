@@ -125,7 +125,7 @@ if ENVIRONMENT == "production":
         "https://baalebo.xyz",
         "https://www.baalebo.xyz",
         "https://job-hunter-saas-six.vercel.app",
-        "https://job-hunter-saas-production.up.railway.app",
+        "https://job-hunter-saas-production-bb41.up.railway.app",
     ]
     if FRONTEND_URL and FRONTEND_URL not in origins:
         origins.append(FRONTEND_URL)
