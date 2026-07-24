@@ -9,8 +9,8 @@ from backend.app.core.config import settings
 
 # ─── Text Extraction ──────────────────────────────────────────────────────────
 
-def extract_text(file_content: bytes, filename: str) -> str:
-    ext = filename.split('.')[-1].lower()
+def extract_text(file_content: bytes, filename: str = "file.pdf") -> str:
+    ext = filename.split('.')[-1].lower() if filename else "pdf"
     text = ""
     try:
         if ext == "pdf":
@@ -34,7 +34,7 @@ def get_client():
         return OpenAI(
             api_key=settings.GROQ_API_KEY,
             base_url="https://api.groq.com/openai/v1",
-        ), "llama3-8b-8192"
+        ), "llama-3.1-8b-instant"  # Updated to active Groq model
     if getattr(settings, 'OPENROUTER_API_KEY', None):
         return OpenAI(
             api_key=settings.OPENROUTER_API_KEY,
@@ -52,8 +52,14 @@ def _clean_json(raw: str) -> str:
 
 # ─── ATS Scoring ──────────────────────────────────────────────────────────────
 
-def analyze_detailed_ats(file_content: bytes, filename: str, job_description: str) -> dict:
-    resume_text = extract_text(file_content, filename)
+def analyze_detailed_ats(file_content: bytes = None, filename: str = "resume.pdf", job_description: str = "", **kwargs) -> dict:
+    if isinstance(file_content, str):
+        resume_text = file_content
+    elif file_content:
+        resume_text = extract_text(file_content, filename)
+    else:
+        resume_text = kwargs.get("resume_text", "")
+
     if not resume_text:
         return _error_response("Could not extract text. Please use a text-based PDF or DOCX.")
 
@@ -102,6 +108,9 @@ Return ONLY the JSON. No markdown. No explanation.
             temperature=0.3,
         )
         result = json.loads(_clean_json(response.choices[0].message.content))
+        if not isinstance(result, dict):
+            raise ValueError("Model did not return a JSON object")
+
         return {
             "overall_score":    float(result.get("overall_score", 0)),
             "keywords_matched": int(result.get("keywords_matched", 0)),
@@ -122,13 +131,14 @@ Return ONLY the JSON. No markdown. No explanation.
 
 # ─── Resume Data Extraction ───────────────────────────────────────────────────
 
-def extract_resume_data(file_content: bytes, filename: str, job_title: str) -> dict:
-    """
-    Extracts fully structured resume data for professional PDF generation.
-    Includes: name, title, contact, summary, experience (with environment),
-    projects, education, skills (two-column), certifications.
-    """
-    resume_text = extract_text(file_content, filename)
+def extract_resume_data(file_content: bytes = None, filename: str = "resume.pdf", job_title: str = "", **kwargs) -> dict:
+    if isinstance(file_content, str):
+        resume_text = file_content
+    elif file_content:
+        resume_text = extract_text(file_content, filename)
+    else:
+        resume_text = kwargs.get("resume_text", "")
+
     if not resume_text:
         return {}
 
@@ -156,26 +166,22 @@ Return this exact JSON structure:
             "company": "Company Name",
             "dates": "Month Year – Month Year",
             "bullets": [
-                "Achievement bullet point with metrics",
-                "Another achievement bullet point"
+                "Achievement bullet point with metrics"
             ],
-            "environment": "Tech1 · Tech2 · Tech3 · Tech4"
+            "environment": "Tech1 · Tech2 · Tech3"
         }}
     ],
     "projects": [
         {{
             "title": "Project Name",
-            "tech": "Tech1 · Tech2 · Tech3",
+            "tech": "Tech1 · Tech2",
             "bullets": [
                 "What was built and the impact"
             ]
         }}
     ],
     "skills": {{
-        "AWS Core Services": ["EC2", "S3", "IAM", "VPC", "RDS"],
-        "Infrastructure as Code": ["Terraform", "CloudFormation"],
-        "CI/CD": ["GitHub Actions", "Jenkins"],
-        "Containers": ["Docker", "Kubernetes"]
+        "Core Services": ["Tech1", "Tech2"]
     }},
     "certifications": [
         "Certification Name — Issuer"
@@ -184,17 +190,13 @@ Return this exact JSON structure:
         {{
             "degree": "Degree Name",
             "institution": "Institution Name",
-            "year": "Year or In Progress"
+            "year": "Year"
         }}
     ]
 }}
 
 Rules:
-- Extract REAL data only from the resume, never invent anything
-- skills must be grouped into categories as key-value pairs
-- environment in experience is the tech stack line at the end of each role
-- projects come from any "Selected Projects" or "Projects" section
-- Keep bullets concise and achievement-focused
+- Extract REAL data only from the resume
 - Return ONLY the JSON, no markdown
 """
     try:
@@ -207,7 +209,8 @@ Rules:
             max_tokens=2500,
             temperature=0.1,
         )
-        return json.loads(_clean_json(response.choices[0].message.content))
+        result = json.loads(_clean_json(response.choices[0].message.content))
+        return result if isinstance(result, dict) else {}
     except Exception as e:
         print(f"[ATS] Resume extraction error: {e}")
         return {}
@@ -215,26 +218,25 @@ Rules:
 
 # ─── Resume Rewriting / Optimization ──────────────────────────────────────────
 
-def rewrite_resume_for_job(file_content_or_text, filename: str = None, job_description: str = "") -> dict:
-    """
-    Rewrites and optimizes resume content against a job description.
-    Supports either bytes (file content) or direct string input.
-    """
-    if isinstance(file_content_or_text, bytes):
-        resume_text = extract_text(file_content_or_text, filename or "resume.pdf")
-    else:
-        resume_text = str(file_content_or_text)
+def rewrite_resume_for_job(resume_text: str = None, file_content_or_text = None, filename: str = None, job_description: str = "", job_title: str = None, **kwargs) -> dict:
+    if resume_text is None and file_content_or_text is not None:
+        if isinstance(file_content_or_text, bytes):
+            resume_text = extract_text(file_content_or_text, filename or "resume.pdf")
+        else:
+            resume_text = str(file_content_or_text)
 
     if not resume_text:
-        return {"error": "Could not extract resume text."}
+        return {"error": "Could not extract or find resume text."}
 
     client, model = get_client()
     if not client:
         return {"error": "AI client is not configured with an API key."}
 
+    target_title_line = f"\nTARGET JOB TITLE: {job_title}" if job_title else ""
+
     prompt = f"""
 You are an expert Resume Writer and ATS optimization specialist.
-Rewrite and optimize the following resume to perfectly target the given job description.
+Rewrite and optimize the following resume to perfectly target the given job description.{target_title_line}
 Incorporate missing keywords naturally, strengthen bullet points with quantifiable metrics, and maximize ATS compatibility.
 
 JOB DESCRIPTION:
@@ -272,7 +274,8 @@ Return ONLY the JSON. No markdown. No explanation.
             max_tokens=2500,
             temperature=0.3,
         )
-        return json.loads(_clean_json(response.choices[0].message.content))
+        result = json.loads(_clean_json(response.choices[0].message.content))
+        return result if isinstance(result, dict) else {"error": "Invalid model response format."}
     except Exception as e:
         print(f"[ATS] Rewrite error: {e}")
         return {"error": str(e)}
@@ -286,7 +289,7 @@ def _simulated_response() -> dict:
         "keywords_matched": 5,
         "keywords_missing": 8,
         "total_keywords": 13,
-        "missing_list": ["Add GROQ_API_KEY or OPENROUTER_API_KEY to .env for real analysis"],
+        "missing_list": ["Add GROQ_API_KEY or OPENROUTER_API_KEY to environment variables"],
         "breakdown": {
             "action_verbs":     {"score": 50, "count": 4},
             "technical_skills": {"score": 40, "count": 3},
