@@ -32,7 +32,6 @@ async def upload_resume(
     if len(file_content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
-    # Validate magic bytes
     if file_ext == ".pdf" and not file_content.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="Invalid PDF file.")
     if file_ext == ".docx" and not file_content.startswith(b"PK\x03\x04"):
@@ -41,14 +40,19 @@ async def upload_resume(
     task_id = str(uuid.uuid4())
 
     def run_analysis():
-        from backend.app.utils.ats_engine import analyze_detailed_ats, extract_text, rewrite_resume_for_job
+        from backend.app.utils.ats_engine import (
+            analyze_detailed_ats,
+            extract_text,
+            extract_resume_data,
+            rewrite_resume_for_job,
+        )
         from backend.app.utils.pdf_generator import generate_optimized_resume
 
-        # Step 1: Extract text
+        # Step 1: Extract raw text
         resume_text = extract_text(file_content, file.filename)
 
         # Step 2: ATS scoring
-        analysis = analyze_detailed_ats(
+        analysis    = analyze_detailed_ats(
             file_content=file_content,
             filename=file.filename,
             job_description=job_description
@@ -57,80 +61,68 @@ async def upload_resume(
         missing_list = analysis.get("missing_list", [])
         suggestions  = analysis.get("suggestions", [])
 
-        # Step 3: AI rewrite — pass BOTH missing keywords AND suggestions
-        # Filter out phrases that are not actual skills (sentences/descriptions)
+        # Step 3: Extract structured resume data for PDF generation
+        resume_data = extract_resume_data(
+            file_content=file_content,
+            filename=file.filename,
+            job_title=job_title
+        )
+
+        # Step 4: AI rewrite — optimise summary, experience, skills
+        rewritten = rewrite_resume_for_job(
+            resume_text=resume_text,
+            job_description=job_description,
+            job_title=job_title
+        )
+
+        # Merge rewritten sections into resume_data
+        if rewritten and "error" not in rewritten:
+            if rewritten.get("optimized_summary"):
+                resume_data["summary"] = rewritten["optimized_summary"]
+            if rewritten.get("optimized_experience"):
+                resume_data["experience"] = rewritten["optimized_experience"]
+            if rewritten.get("optimized_skills"):
+                resume_data["skills"] = rewritten["optimized_skills"]
+
+        # Step 5: Inject clean missing keywords for skills merge in pdf_generator
         def is_real_skill(kw: str) -> bool:
             kw = kw.strip()
-            # Skip if it's a long phrase (not a skill keyword)
             if len(kw) > 40:
                 return False
-            # Skip if it reads like a sentence
             if any(kw.lower().startswith(p) for p in [
                 "experience", "background", "relevant", "knowledge of",
                 "familiarity", "understanding", "ability to", "proven",
-                "strong", "excellent", "demonstrated"
+                "strong", "excellent", "demonstrated", "add groq"
             ]):
                 return False
             return True
 
-        real_skills_to_add = [kw for kw in missing_list if is_real_skill(kw)]
-        context_phrases = [kw for kw in missing_list if not is_real_skill(kw)]
+        real_skills   = [kw for kw in missing_list if is_real_skill(kw)]
+        resume_data["missing_keywords"] = real_skills
 
-        # Build a richer context for Groq — real skills go into skills array,
-        # phrases go into bullet points as context
-        all_keywords_to_add = real_skills_to_add + [
-            s for s in suggestions
-            if s and not any(s.lower().startswith(p) for p in
-                ["strengthen", "quantify", "mirror", "add numbers", "use strong"])
-        ]
-
-        structured = rewrite_resume_for_job(
-            resume_text=resume_text,
-            job_description=job_description,
-            job_title=job_title,
-            missing_keywords=all_keywords_to_add[:15],
-            context_phrases=context_phrases  # phrases to weave into bullets, not skills
-        )
-
-        # Step 4: Build improvements list from missing keywords and suggestions
+        # Step 6: Build improvements list
         improvements = []
-        
-        # Add top missing keywords with descriptions
-        for kw in real_skills_to_add[:8]:
-            if kw and not kw.startswith("Add GROQ"):
-                improvements.append({
-                    "skill": kw,
-                    "bullet_point": f"Added to resume: {kw}"
-                })
-        
-        # Add suggestions (filter actionable ones)
+        for kw in real_skills[:8]:
+            improvements.append({"skill": kw, "bullet_point": f"Added to resume: {kw}"})
         for s in suggestions[:4]:
-            if s and not any(s.lower().startswith(p) for p in 
-                ["strengthen", "quantify", "mirror", "add numbers"]):
-                improvements.append({
-                    "skill": "Suggestion",
-                    "bullet_point": s
-                })
-        
-        # Fallback if no improvements generated
+            if s and not any(s.lower().startswith(p) for p in
+                    ["strengthen", "quantify", "mirror", "add numbers"]):
+                improvements.append({"skill": "Suggestion", "bullet_point": s})
         if not improvements:
             improvements = [
-                {"skill": "Keywords", "bullet_point": "Resume optimized with job description keywords"},
+                {"skill": "Keywords",   "bullet_point": "Resume optimized with job description keywords"},
                 {"skill": "Formatting", "bullet_point": "ATS-compliant formatting applied"},
             ]
 
-        # Step 5: Generate PDF with improvements
+        # Step 7: Generate PDF — pass resume_data (not resume_text/task_id/structured)
         pdf_buf = generate_optimized_resume(
             filename=file.filename,
             score=round(ats_score, 1),
             improvements=improvements,
-            resume_text=resume_text,
-            task_id=task_id,
-            structured=structured,
+            resume_data=resume_data,
         )
         pdf_buf.seek(0)
         pdf_bytes = pdf_buf.read()
-        pdf_buf.seek(0)
         return analysis, pdf_bytes, resume_text
 
     try:
@@ -166,19 +158,19 @@ async def upload_resume(
         "filename": file.filename,
         "status": "completed",
         "result": {
-            "id": task_id,
-            "task_id": task_id,
-            "resume_id": task_id,
-            "overall_score": analysis.get("overall_score", 0),
-            "ats_score": analysis.get("overall_score", 0),
+            "id":               task_id,
+            "task_id":          task_id,
+            "resume_id":        task_id,
+            "overall_score":    analysis.get("overall_score", 0),
+            "ats_score":        analysis.get("overall_score", 0),
             "keywords_matched": analysis.get("keywords_matched", 0),
             "keywords_missing": analysis.get("keywords_missing", 0),
-            "total_keywords": analysis.get("total_keywords", 0),
-            "missing_list": analysis.get("missing_list", []),
-            "breakdown": analysis.get("breakdown", {}),
-            "suggestions": analysis.get("suggestions", []),
-            "job_title": job_title,
-            "status": "success"
+            "total_keywords":   analysis.get("total_keywords", 0),
+            "missing_list":     analysis.get("missing_list", []),
+            "breakdown":        analysis.get("breakdown", {}),
+            "suggestions":      analysis.get("suggestions", []),
+            "job_title":        job_title,
+            "status":           "success"
         }
     }
 
@@ -189,7 +181,6 @@ def get_resume_preview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Return metadata for an optimized resume by its task/resume ID."""
     resume = db.query(Resume).filter(
         Resume.filename == f"optimized_{resume_id}.pdf"
     ).order_by(Resume.id.desc()).first()
@@ -198,11 +189,11 @@ def get_resume_preview(
         raise HTTPException(status_code=404, detail="Resume preview not found.")
 
     return {
-        "resume_id": resume_id,
-        "filename": resume.filename,
-        "ats_score": resume.ats_score,
+        "resume_id":     resume_id,
+        "filename":      resume.filename,
+        "ats_score":     resume.ats_score,
         "analysis_data": resume.analysis_data,
-        "status": "completed",
+        "status":        "completed",
     }
 
 
