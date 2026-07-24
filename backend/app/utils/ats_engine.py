@@ -44,10 +44,16 @@ def get_client():
 
 
 def _clean_json(raw: str) -> str:
-    raw = re.sub(r'^```json\s*', '', raw.strip())
-    raw = re.sub(r'^```\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw)
-    return raw.strip()
+    """Aggressively extracts JSON from AI responses, ignoring conversational text."""
+    try:
+        # Find the first opening bracket and the last closing bracket
+        start = raw.find('{')
+        end = raw.rfind('}')
+        if start != -1 and end != -1:
+            return raw[start:end+1]
+        return raw.strip()
+    except Exception:
+        return raw.strip()
 
 
 # ─── ATS Scoring ──────────────────────────────────────────────────────────────
