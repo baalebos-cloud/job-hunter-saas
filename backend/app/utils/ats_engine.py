@@ -213,6 +213,71 @@ Rules:
         return {}
 
 
+# ─── Resume Rewriting / Optimization ──────────────────────────────────────────
+
+def rewrite_resume_for_job(file_content_or_text, filename: str = None, job_description: str = "") -> dict:
+    """
+    Rewrites and optimizes resume content against a job description.
+    Supports either bytes (file content) or direct string input.
+    """
+    if isinstance(file_content_or_text, bytes):
+        resume_text = extract_text(file_content_or_text, filename or "resume.pdf")
+    else:
+        resume_text = str(file_content_or_text)
+
+    if not resume_text:
+        return {"error": "Could not extract resume text."}
+
+    client, model = get_client()
+    if not client:
+        return {"error": "AI client is not configured with an API key."}
+
+    prompt = f"""
+You are an expert Resume Writer and ATS optimization specialist.
+Rewrite and optimize the following resume to perfectly target the given job description.
+Incorporate missing keywords naturally, strengthen bullet points with quantifiable metrics, and maximize ATS compatibility.
+
+JOB DESCRIPTION:
+{job_description[:2000]}
+
+RESUME:
+{resume_text[:3000]}
+
+Return ONLY valid JSON in this exact format:
+{{
+    "optimized_summary": "Rewritten professional summary",
+    "optimized_experience": [
+        {{
+            "role": "Job Title",
+            "company": "Company Name",
+            "dates": "Dates",
+            "bullets": ["Optimized bullet 1", "Optimized bullet 2"],
+            "environment": "Tech stack"
+        }}
+    ],
+    "optimized_skills": {{
+        "Category": ["Skill1", "Skill2"]
+    }},
+    "suggestions_applied": ["Added missing keywords", "Quantified achievements"]
+}}
+Return ONLY the JSON. No markdown. No explanation.
+"""
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are an expert resume writer. Respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2500,
+            temperature=0.3,
+        )
+        return json.loads(_clean_json(response.choices[0].message.content))
+    except Exception as e:
+        print(f"[ATS] Rewrite error: {e}")
+        return {"error": str(e)}
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _simulated_response() -> dict:
