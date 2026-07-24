@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+import api from '../../api';
 
 const CAREER_TRACKS = [
   { value: 'Frontend Developer', label: '🎨 Frontend Developer' },
@@ -47,7 +45,7 @@ export default function Signup() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      const res = await axios.post(`${API_BASE_URL}/auth/signup`, {
+      const res = await api.post('/auth/signup', {
         full_name: form.name, email: form.email,
         password: form.password, career_track: form.career_track || null,
         country: form.country || null,
