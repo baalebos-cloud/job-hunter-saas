@@ -215,18 +215,21 @@ Rules:
 
 # ─── Resume Rewriting / Optimization ──────────────────────────────────────────
 
-def rewrite_resume_for_job(file_content_or_text, filename: str = None, job_description: str = "") -> dict:
+# ─── Resume Rewriting / Optimization ──────────────────────────────────────────
+
+def rewrite_resume_for_job(resume_text: str = None, file_content_or_text = None, filename: str = None, job_description: str = "") -> dict:
     """
     Rewrites and optimizes resume content against a job description.
-    Supports either bytes (file content) or direct string input.
+    Supports direct resume_text string or file bytes via file_content_or_text.
     """
-    if isinstance(file_content_or_text, bytes):
-        resume_text = extract_text(file_content_or_text, filename or "resume.pdf")
-    else:
-        resume_text = str(file_content_or_text)
+    if resume_text is None and file_content_or_text is not None:
+        if isinstance(file_content_or_text, bytes):
+            resume_text = extract_text(file_content_or_text, filename or "resume.pdf")
+        else:
+            resume_text = str(file_content_or_text)
 
     if not resume_text:
-        return {"error": "Could not extract resume text."}
+        return {"error": "Could not extract or find resume text."}
 
     client, model = get_client()
     if not client:
