@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+// 1. Import your centralized api client
+import api from '../../api';
 
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
@@ -17,9 +16,14 @@ export default function Login() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      const res = await axios.post(`${API_BASE_URL}/auth/login`, form);
+      // 2. Use the 'api' instance and a relative path
+      const res = await api.post('/auth/login', form);
+      
       const token = res.data.access_token || res.data.token || null;
-      if (token?.trim()) { localStorage.setItem('token', token.trim()); window.location.href = '/'; }
+      if (token?.trim()) { 
+        localStorage.setItem('token', token.trim()); 
+        window.location.href = '/'; 
+      }
       else setError('Login succeeded but no token received.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Invalid email or password.');
