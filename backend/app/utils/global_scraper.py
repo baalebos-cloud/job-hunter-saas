@@ -50,21 +50,55 @@ REMOTIVE_SEARCH = "https://remotive.com/api/remote-jobs?search={query}&limit=20"
 JOBICY_RSS      = "https://jobicy.com/jobs-rss?q={role}&count=15"
 ARBEITNOW_API   = "https://www.arbeitnow.com/api/job-board-api"
 THEMUSE_API     = "https://www.themuse.com/api/public/jobs?page={page}&descending=true&api_key=public"
+GREENHOUSE_API  = "https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true"
+LEVER_API       = "https://api.lever.co/v0/postings/{company}?mode=json&limit=10"
+WEWORKREMOTELY_RSS = "https://weworkremotely.com/categories/remote-{category}-jobs.rss"
+JOBSPRESSO_RSS    = "https://jobspresso.co/feed/"
+AUTHENTICJOBS_RSS = "https://authenticjobs.com/feed/"
+
+# ── NEW SOURCE URLS ───────────────────────────────────────────────────────────
+
+# Source 10: Skillsire — AI/tech job board with RSS feed
+SKILLSIRE_RSS = "https://skillsire.com/jobs/feed/"
+
+# Source 11: Micro1 — AI-vetted remote jobs, has JSON API
+MICRO1_API = "https://jobs.micro1.ai/api/jobs?limit=50&page=1"
+MICRO1_RSS = "https://jobs.micro1.ai/feed"
+
+# Source 12: Amazon Jobs — public JSON API (no auth needed)
+AMAZON_JOBS_API = (
+    "https://www.amazon.jobs/en/search.json"
+    "?base_query={role}&category=software-development"
+    "&result_limit=10&country={country}&radius=25km"
+)
+AMAZON_COUNTRIES = ["us", "gb", "ie", "de", "in", "ca", "au", "sg", "jp", "nl"]
+AMAZON_ROLES = [
+    "Software Engineer", "DevOps Engineer", "Cloud Engineer",
+    "Data Engineer", "Machine Learning Engineer", "Backend Engineer",
+    "Frontend Developer", "Data Scientist", "Security Engineer",
+]
+
+# Source 13: Remoteok — popular remote job board with public API
+REMOTEOK_API = "https://remoteok.com/api"
+
+# Source 14: Jobstash — aggregator focused on Web3, AI, fintech
+JOBSTASH_API = "https://api.jobstash.xyz/jobs/list?page=1&limit=50"
+
+# Source 15: EuroJobs Tech — EU-focused tech jobs
+EUREMOTEJOBS_RSS = "https://euremotejobs.com/feed/"
+
 GREENHOUSE_COMPANIES = [
     "airbnb", "stripe", "notion", "figma", "linear", "vercel", "supabase",
     "hashicorp", "datadog", "mongodb", "elastic", "cloudflare", "digitalocean",
     "gitlab", "github", "atlassian", "shopify", "twilio", "sendgrid",
 ]
-GREENHOUSE_API  = "https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true"
 LEVER_COMPANIES = [
     "netflix", "lyft", "reddit", "discord", "canva", "plaid", "brex",
     "robinhood", "coinbase", "openai", "anthropic", "scale-ai",
 ]
-LEVER_API       = "https://api.lever.co/v0/postings/{company}?mode=json&limit=10"
 
-# FIX 6: Adzuna — was defined but never had a scraper function or called
-ADZUNA_APP_ID   = ""   # optional — set in .env for higher rate limits
-ADZUNA_APP_KEY  = ""   # optional
+ADZUNA_APP_ID  = ""
+ADZUNA_APP_KEY = ""
 ADZUNA_COUNTRIES = {
     "us": "United States", "gb": "United Kingdom", "ca": "Canada",
     "au": "Australia", "de": "Germany", "fr": "France", "nl": "Netherlands",
@@ -80,18 +114,31 @@ ADZUNA_API_ANON = (
     "?results_per_page=10&what={role}&content-type=application/json"
 )
 
-WEWORKREMOTELY_RSS = "https://weworkremotely.com/categories/remote-{category}-jobs.rss"
+SEARCH_TERMS = [
+    "nigeria", "ghana", "kenya", "south africa", "egypt", "ethiopia",
+    "tanzania", "uganda", "rwanda", "senegal", "ivory coast", "cameroon",
+    "zimbabwe", "zambia", "botswana", "namibia", "mozambique", "angola",
+    "tunisia", "morocco", "algeria",
+    "united states", "canada", "brazil", "mexico", "argentina", "colombia",
+    "chile", "peru", "uruguay", "costa rica",
+    "united kingdom", "germany", "france", "netherlands", "spain", "italy",
+    "portugal", "sweden", "norway", "denmark", "finland", "switzerland",
+    "austria", "belgium", "poland", "czech republic", "romania", "ukraine",
+    "ireland", "greece",
+    "india", "singapore", "philippines", "indonesia", "malaysia", "vietnam",
+    "thailand", "pakistan", "bangladesh", "sri lanka",
+    "south korea", "japan", "taiwan", "hong kong",
+    "united arab emirates", "saudi arabia", "qatar", "kuwait", "jordan",
+    "australia", "new zealand",
+    "worldwide", "anywhere", "global", "remote",
+]
+
 WWR_CATEGORIES = {
     "Software Engineer": "programming", "Frontend Developer": "programming",
     "Backend Engineer": "programming", "DevOps Engineer": "devops-sysadmin",
     "Data Scientist": "data-science", "Product Manager": "product",
     "Mobile Developer": "programming", "QA Engineer": "qa",
 }
-JOBSPRESSO_RSS    = "https://jobspresso.co/feed/"
-AUTHENTICJOBS_RSS = "https://authenticjobs.com/feed/"
-
-# FIX 1: Removed STACKOVERFLOW_RSS — Stack Overflow Jobs shut down in 2022
-# Old: STACKOVERFLOW_RSS = "https://stackoverflow.com/jobs/feed?q={role}&r=true"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -166,7 +213,8 @@ def _guess_category(title: str) -> str:
     return "Software Engineer"
 
 
-# ── Source 1: Remotive (Remote, Global) ──────────────────────────────────────
+# ── Existing Sources ──────────────────────────────────────────────────────────
+
 def scrape_remotive(role: str) -> list:
     jobs = []
     try:
@@ -191,33 +239,6 @@ def scrape_remotive(role: str) -> list:
         logger.warning(f"[Remotive] {role}: {e}")
     return jobs
 
-
-# ── Source 2: Remotive Search (Global) ───────────────────────────────────────
-SEARCH_TERMS = [
-    # Africa
-    "nigeria", "ghana", "kenya", "south africa", "egypt", "ethiopia",
-    "tanzania", "uganda", "rwanda", "senegal", "ivory coast", "cameroon",
-    "zimbabwe", "zambia", "botswana", "namibia", "mozambique", "angola",
-    "tunisia", "morocco", "algeria",
-    # Americas
-    "united states", "canada", "brazil", "mexico", "argentina", "colombia",
-    "chile", "peru", "uruguay", "costa rica",
-    # Europe
-    "united kingdom", "germany", "france", "netherlands", "spain", "italy",
-    "portugal", "sweden", "norway", "denmark", "finland", "switzerland",
-    "austria", "belgium", "poland", "czech republic", "romania", "ukraine",
-    "ireland", "greece",
-    # Asia
-    "india", "singapore", "philippines", "indonesia", "malaysia", "vietnam",
-    "thailand", "pakistan", "bangladesh", "sri lanka",
-    "south korea", "japan", "taiwan", "hong kong",
-    # Middle East
-    "united arab emirates", "saudi arabia", "qatar", "kuwait", "jordan",
-    # Oceania
-    "australia", "new zealand",
-    # Global
-    "worldwide", "anywhere", "global", "remote",
-]
 
 def scrape_remotive_search(query: str) -> list:
     jobs = []
@@ -245,7 +266,6 @@ def scrape_remotive_search(query: str) -> list:
     return jobs
 
 
-# ── Source 3: Jobicy RSS ──────────────────────────────────────────────────────
 def scrape_jobicy(role: str) -> list:
     jobs = []
     try:
@@ -275,7 +295,6 @@ def scrape_jobicy(role: str) -> list:
     return jobs
 
 
-# ── Source 4: Arbeitnow (EU + Global) ────────────────────────────────────────
 def scrape_arbeitnow() -> list:
     jobs = []
     try:
@@ -301,7 +320,6 @@ def scrape_arbeitnow() -> list:
     return jobs
 
 
-# ── Source 5: We Work Remotely RSS ───────────────────────────────────────────
 def scrape_weworkremotely() -> list:
     jobs = []
     categories = ["programming", "devops-sysadmin", "data-science", "product", "qa"]
@@ -337,7 +355,6 @@ def scrape_weworkremotely() -> list:
     return jobs
 
 
-# ── Source 6: Greenhouse (Top Tech Companies) ─────────────────────────────────
 def scrape_greenhouse() -> list:
     jobs = []
     for company in GREENHOUSE_COMPANIES:
@@ -350,16 +367,13 @@ def scrape_greenhouse() -> list:
                 url   = job.get("absolute_url", "").strip()
                 if not title or not url:
                     continue
-
-                # FIX 3: Greenhouse returns location as dict OR string depending on board
                 raw_loc  = job.get("location", {})
                 if isinstance(raw_loc, dict):
                     location = raw_loc.get("name", "USA")
                 elif isinstance(raw_loc, str) and raw_loc.strip():
-                    location = raw_loc.strip()   # was silently replaced with "USA"
+                    location = raw_loc.strip()
                 else:
                     location = "USA"
-
                 desc = _clean(job.get("content", ""))
                 jobs.append({
                     "title": title,
@@ -373,7 +387,6 @@ def scrape_greenhouse() -> list:
     return jobs
 
 
-# ── Source 7: Lever (Startups) ────────────────────────────────────────────────
 def scrape_lever() -> list:
     jobs = []
     for company in LEVER_COMPANIES:
@@ -381,13 +394,9 @@ def scrape_lever() -> list:
             res = requests.get(LEVER_API.format(company=company), timeout=10, headers=HEADERS)
             if res.status_code != 200:
                 continue
-
-            # FIX 4: Guard against non-list API response (error dicts, etc.)
             data = res.json()
             if not isinstance(data, list):
-                logger.warning(f"[Lever] {company}: unexpected response type {type(data)}")
                 continue
-
             for job in data[:5]:
                 title = job.get("text", "").strip()
                 url   = job.get("hostedUrl", "").strip()
@@ -408,13 +417,7 @@ def scrape_lever() -> list:
     return jobs
 
 
-# ── Source 8: The Muse (USA top companies) ────────────────────────────────────
 def scrape_themuse() -> list:
-    """
-    FIX 5: Was fetching 3 pages unconditionally.
-    Now fetches 1 page only and filters to tech roles using _guess_category().
-    Prevents rate-limiting and stops pulling irrelevant non-tech jobs.
-    """
     jobs = []
     try:
         res = requests.get(THEMUSE_API.format(page=0), timeout=12, headers=HEADERS)
@@ -429,12 +432,11 @@ def scrape_themuse() -> list:
             desc    = _clean(job.get("contents", ""))
             if not title or not url:
                 continue
-            # Filter to tech roles only
             category = _guess_category(title)
             if category == "Software Engineer" and not any(
                 k in title.lower() for k in ["engineer", "developer", "devops", "data", "cloud", "tech"]
             ):
-                continue   # skip non-tech roles like marketing, sales
+                continue
             jobs.append({
                 "title": title, "company": company,
                 "location": location, "description": desc, "url": url,
@@ -446,38 +448,20 @@ def scrape_themuse() -> list:
     return jobs
 
 
-# ── Source 9: Adzuna (NEW — was defined but never implemented) ─────────────────
 def scrape_adzuna(role: str, countries: list | None = None) -> list:
-    """
-    FIX 6: Adzuna was configured in the original file but had no scraper
-    function and was never called. Now implemented.
-
-    Covers: US, UK, Canada, Australia, Germany, France, Netherlands,
-            Singapore, South Africa, India.
-    Works without API credentials (anonymous tier: 10 results/country).
-    Set ADZUNA_APP_ID and ADZUNA_APP_KEY in .env for higher limits.
-    """
-    jobs      = []
-    target    = countries or list(ADZUNA_COUNTRIES.keys())
-    role_enc  = requests.utils.quote(role)
-
+    jobs     = []
+    target   = countries or list(ADZUNA_COUNTRIES.keys())
+    role_enc = requests.utils.quote(role)
     for country in target:
         try:
             if ADZUNA_APP_ID and ADZUNA_APP_KEY:
-                url = ADZUNA_API.format(
-                    country=country, role=role_enc,
-                    app_id=ADZUNA_APP_ID, app_key=ADZUNA_APP_KEY,
-                )
+                url = ADZUNA_API.format(country=country, role=role_enc, app_id=ADZUNA_APP_ID, app_key=ADZUNA_APP_KEY)
             else:
                 url = ADZUNA_API_ANON.format(country=country, role=role_enc)
-
             res = requests.get(url, timeout=12, headers=HEADERS)
             if res.status_code != 200:
-                logger.debug(f"[Adzuna] {country}/{role}: HTTP {res.status_code}")
                 continue
-
-            data = res.json()
-            for job in data.get("results", []):
+            for job in res.json().get("results", []):
                 title   = job.get("title", "").strip()
                 jurl    = job.get("redirect_url", "").strip()
                 if not title or not jurl:
@@ -493,7 +477,6 @@ def scrape_adzuna(role: str, countries: list | None = None) -> list:
                     salary   = f"{currency}{int(sal_min):,} – {currency}{int(sal_max):,}"
                 elif sal_min:
                     salary = f"{int(sal_min):,}"
-
                 jobs.append({
                     "title": title, "company": company,
                     "location": location, "description": desc, "url": jurl,
@@ -502,7 +485,233 @@ def scrape_adzuna(role: str, countries: list | None = None) -> list:
                 })
         except Exception as e:
             logger.warning(f"[Adzuna] {country}/{role}: {e}")
+    return jobs
 
+
+# ── NEW Source 10: Skillsire ──────────────────────────────────────────────────
+def scrape_skillsire() -> list:
+    """
+    Skillsire — AI & tech job board targeting emerging markets including Nigeria.
+    Scrapes via RSS feed.
+    """
+    jobs = []
+    try:
+        res = requests.get(SKILLSIRE_RSS, timeout=12, headers=HEADERS)
+        if res.status_code != 200:
+            logger.warning(f"[Skillsire] HTTP {res.status_code}")
+            return jobs
+        root    = ET.fromstring(res.content)
+        channel = root.find("channel")
+        if not channel:
+            return jobs
+        for item in channel.findall("item")[:30]:
+            title = item.findtext("title", "").strip()
+            link  = item.findtext("link", "").strip()
+            if not title or not link:
+                continue
+            desc     = _clean(item.findtext("description", ""))
+            company  = item.findtext("{https://skillsire.com}company", "").strip() or ""
+            location = item.findtext("{https://skillsire.com}location", "Remote").strip()
+            jobs.append({
+                "title": title, "company": company,
+                "location": location, "description": desc, "url": link,
+                "source": "Skillsire", "category": _guess_category(title),
+                "salary_range": _salary(desc),
+            })
+    except Exception as e:
+        logger.warning(f"[Skillsire] {e}")
+    return jobs
+
+
+# ── NEW Source 11: Micro1 ─────────────────────────────────────────────────────
+def scrape_micro1() -> list:
+    """
+    Micro1 — AI-vetted remote jobs platform. Engineers pass an AI interview
+    to get matched to jobs. Has a JSON API and RSS feed.
+    Targets: Worldwide remote, strong in AI/ML, DevOps, Backend.
+    """
+    jobs = []
+
+    # Try JSON API first
+    try:
+        res = requests.get(MICRO1_API, timeout=12, headers={
+            **HEADERS,
+            "Accept": "application/json",
+        })
+        if res.status_code == 200:
+            data = res.json()
+            job_list = data if isinstance(data, list) else data.get("jobs", data.get("data", []))
+            for job in job_list[:30]:
+                title   = (job.get("title") or job.get("job_title") or "").strip()
+                url     = (job.get("url") or job.get("apply_url") or job.get("link") or "").strip()
+                if not title or not url:
+                    continue
+                company  = (job.get("company") or job.get("company_name") or "").strip()
+                location = (job.get("location") or "Remote").strip()
+                desc     = _clean(job.get("description") or job.get("summary") or "")
+                salary   = _salary(job.get("salary") or job.get("compensation") or "") or _salary(desc)
+                jobs.append({
+                    "title": title, "company": company,
+                    "location": location, "description": desc, "url": url,
+                    "source": "Micro1", "category": _guess_category(title),
+                    "salary_range": salary,
+                })
+            if jobs:
+                return jobs
+    except Exception as e:
+        logger.warning(f"[Micro1 API] {e}")
+
+    # Fallback to RSS
+    try:
+        res = requests.get(MICRO1_RSS, timeout=12, headers=HEADERS)
+        if res.status_code == 200:
+            root    = ET.fromstring(res.content)
+            channel = root.find("channel")
+            if channel:
+                for item in channel.findall("item")[:30]:
+                    title = item.findtext("title", "").strip()
+                    link  = item.findtext("link", "").strip()
+                    if not title or not link:
+                        continue
+                    desc = _clean(item.findtext("description", ""))
+                    jobs.append({
+                        "title": title, "company": "",
+                        "location": "Remote", "description": desc, "url": link,
+                        "source": "Micro1", "category": _guess_category(title),
+                        "salary_range": _salary(desc),
+                    })
+    except Exception as e:
+        logger.warning(f"[Micro1 RSS] {e}")
+
+    return jobs
+
+
+# ── NEW Source 12: Amazon Jobs ────────────────────────────────────────────────
+def scrape_amazon_jobs() -> list:
+    """
+    Amazon Jobs — public JSON API, no auth needed.
+    Covers 10 countries. Targets software, cloud, and data engineering roles.
+    Amazon is one of the highest-paying employers globally.
+    """
+    jobs = []
+    for role in AMAZON_ROLES:
+        for country in AMAZON_COUNTRIES[:5]:  # US, UK, IE, DE, IN — top 5 for volume
+            try:
+                url = AMAZON_JOBS_API.format(
+                    role=requests.utils.quote(role),
+                    country=country
+                )
+                res = requests.get(url, timeout=15, headers={
+                    **HEADERS,
+                    "Accept": "application/json",
+                    "Referer": "https://www.amazon.jobs/",
+                })
+                if res.status_code != 200:
+                    continue
+                data     = res.json()
+                job_list = data.get("jobs", [])
+                for job in job_list[:5]:
+                    title = job.get("title", "").strip()
+                    job_id = job.get("id_icims", "")
+                    if not title or not job_id:
+                        continue
+                    url_slug = job.get("job_path", f"/en/jobs/{job_id}")
+                    job_url  = f"https://www.amazon.jobs{url_slug}"
+                    location = job.get("location", "").strip() or country.upper()
+                    desc     = _clean(job.get("description", "") or job.get("basic_qualifications", ""))
+                    jobs.append({
+                        "title": title,
+                        "company": "Amazon",
+                        "location": location,
+                        "description": desc,
+                        "url": job_url,
+                        "source": "Amazon Jobs",
+                        "category": _guess_category(title),
+                        "salary_range": None,  # Amazon rarely publishes salary
+                    })
+            except Exception as e:
+                logger.warning(f"[Amazon Jobs] {role}/{country}: {e}")
+    return jobs
+
+
+# ── NEW Source 13: Remote OK ──────────────────────────────────────────────────
+def scrape_remoteok() -> list:
+    """
+    RemoteOK — one of the largest remote job boards.
+    Public API with no auth. Returns tech jobs worldwide.
+    """
+    jobs = []
+    try:
+        res = requests.get(REMOTEOK_API, timeout=15, headers={
+            **HEADERS,
+            "Accept": "application/json",
+        })
+        if res.status_code != 200:
+            return jobs
+        data = res.json()
+        # First item is a legal notice, skip it
+        job_list = [j for j in data if isinstance(j, dict) and j.get("position")]
+        for job in job_list[:50]:
+            title   = job.get("position", "").strip()
+            url     = job.get("url", "").strip()
+            if not title or not url:
+                continue
+            company  = job.get("company", "").strip()
+            location = job.get("location", "Worldwide").strip() or "Worldwide"
+            desc     = _clean(job.get("description", ""))
+            tags     = " ".join(job.get("tags", []))
+            salary   = _salary(job.get("salary", "") or "") or _salary(desc)
+            jobs.append({
+                "title": title, "company": company,
+                "location": location, "description": f"{desc} {tags}".strip(),
+                "url": url, "source": "RemoteOK",
+                "category": _guess_category(title),
+                "salary_range": salary,
+            })
+    except Exception as e:
+        logger.warning(f"[RemoteOK] {e}")
+    return jobs
+
+
+# ── NEW Source 14: Jobstash (Web3 / AI / Fintech) ────────────────────────────
+def scrape_jobstash() -> list:
+    """
+    Jobstash — aggregator focused on Web3, AI, and fintech startups.
+    Strong for blockchain, DeFi, and AI engineer roles globally.
+    """
+    jobs = []
+    try:
+        res = requests.get(JOBSTASH_API, timeout=12, headers={
+            **HEADERS,
+            "Accept": "application/json",
+        })
+        if res.status_code != 200:
+            return jobs
+        data     = res.json()
+        job_list = data if isinstance(data, list) else data.get("jobs", data.get("data", []))
+        for job in job_list[:30]:
+            title = (job.get("title") or job.get("role") or "").strip()
+            url   = (job.get("url") or job.get("apply_url") or "").strip()
+            if not title or not url:
+                continue
+            company  = (job.get("organization", {}).get("name") if isinstance(job.get("organization"), dict) else job.get("company") or "").strip()
+            location = (job.get("location") or job.get("locationName") or "Remote").strip()
+            desc     = _clean(job.get("summary") or job.get("description") or "")
+            sal_min  = job.get("minimumSalary") or job.get("salary_min")
+            sal_max  = job.get("maximumSalary") or job.get("salary_max")
+            salary   = None
+            if sal_min and sal_max:
+                salary = f"${int(sal_min):,} – ${int(sal_max):,}"
+            elif sal_min:
+                salary = f"${int(sal_min):,}+"
+            jobs.append({
+                "title": title, "company": company,
+                "location": location, "description": desc, "url": url,
+                "source": "Jobstash", "category": _guess_category(title),
+                "salary_range": salary or _salary(desc),
+            })
+    except Exception as e:
+        logger.warning(f"[Jobstash] {e}")
     return jobs
 
 
@@ -533,7 +742,6 @@ def save_jobs_to_db(jobs: list, db: Session) -> int:
             logger.warning(f"[DB] '{jd.get('title')}': {e}")
             db.rollback()
 
-    # FIX 2: Was `if True:` — now only commits when there's something to save
     if saved > 0:
         try:
             db.commit()
@@ -544,12 +752,8 @@ def save_jobs_to_db(jobs: list, db: Session) -> int:
     return saved
 
 
-# ── Concurrent scraping (FIX 7) ───────────────────────────────────────────────
+# ── Concurrent Executor ───────────────────────────────────────────────────────
 def _run_sources_concurrent(source_fns: list, max_workers: int = 8) -> list:
-    """
-    Run multiple scraper functions concurrently using a thread pool.
-    Reduces total scrape time from ~15 min → ~2-3 min.
-    """
     all_jobs = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fn): name for name, fn in source_fns}
@@ -566,10 +770,6 @@ def _run_sources_concurrent(source_fns: list, max_workers: int = 8) -> list:
 
 # ── Main Entry ────────────────────────────────────────────────────────────────
 def scrape_global_jobs() -> dict:
-    """
-    Full scrape across all sources.
-    Uses ThreadPoolExecutor for concurrent HTTP calls.
-    """
     db            = SessionLocal()
     total_scraped = 0
     total_saved   = 0
@@ -577,13 +777,19 @@ def scrape_global_jobs() -> dict:
     try:
         # ── Fixed sources (concurrent) ────────────────────────────────────────
         fixed_sources = [
-            ("TheMuse",          scrape_themuse),
-            ("WeWorkRemotely",   scrape_weworkremotely),
-            ("Greenhouse",       scrape_greenhouse),
-            ("Lever",            scrape_lever),
-            ("Arbeitnow",        scrape_arbeitnow),
+            ("TheMuse",         scrape_themuse),
+            ("WeWorkRemotely",  scrape_weworkremotely),
+            ("Greenhouse",      scrape_greenhouse),
+            ("Lever",           scrape_lever),
+            ("Arbeitnow",       scrape_arbeitnow),
+            # ── NEW fixed sources ─────────────────────────────────────────────
+            ("Skillsire",       scrape_skillsire),   # AI/tech, emerging markets
+            ("Micro1",          scrape_micro1),       # AI-vetted remote jobs
+            ("Amazon Jobs",     scrape_amazon_jobs),  # Top-paying, global
+            ("RemoteOK",        scrape_remoteok),     # Largest remote board
+            ("Jobstash",        scrape_jobstash),     # Web3 / AI / fintech
         ]
-        fixed_jobs = _run_sources_concurrent(fixed_sources)
+        fixed_jobs = _run_sources_concurrent(fixed_sources, max_workers=10)
         total_scraped += len(fixed_jobs)
         total_saved   += save_jobs_to_db(fixed_jobs, db)
 
@@ -601,8 +807,6 @@ def scrape_global_jobs() -> dict:
         for role in TECH_ROLES:
             role_fns.append((f"Remotive:{role}", lambda r=role: scrape_remotive(r)))
             role_fns.append((f"Jobicy:{role}",   lambda r=role: scrape_jobicy(r)))
-            # FIX 1: scrape_stackoverflow removed — service shut down 2022
-            # FIX 6: Adzuna added per role (US + UK + South Africa focus)
             role_fns.append((f"Adzuna:{role}",   lambda r=role: scrape_adzuna(r, ["us", "gb", "za", "ca"])))
 
         role_jobs = _run_sources_concurrent(role_fns, max_workers=12)
