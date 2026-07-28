@@ -15,6 +15,7 @@ from backend.app.routes import jobs, resume, auth, application, dashboard
 from backend.app.routes import admin as admin_router
 from backend.app.routes import hr as hr_router
 from backend.app.services.ai_service import ai_engine
+from backend.app.routes import billing as billing_router
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
 from backend.app.models.job import Job  # noqa: F401
@@ -149,6 +150,7 @@ app.add_middleware(
 )
 
 # --- ROUTES ---
+app.include_router(billing_router.router, prefix="/api/v1/billing", tags=["Billing"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
 app.include_router(resume.router, prefix="/api/v1/resume", tags=["Resume"])
