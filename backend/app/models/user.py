@@ -22,6 +22,7 @@ class User(Base):
     resumes = relationship("Resume", back_populates="owner")
     applications = relationship("Application", back_populates="user")
     outreach_messages = relationship("OutreachMessage", back_populates="user")
+    subscription = relationship("Subscription", back_populates="user", uselist=False)
 
 
 class OutreachMessage(Base):
