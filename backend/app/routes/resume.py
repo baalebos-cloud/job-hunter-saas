@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
+from backend.app.dependencies.plan_guard import require_scan_quota
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
 from backend.app.models.user import User
@@ -14,7 +15,14 @@ router = APIRouter(tags=["Resume"])
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/app/output")
 
-
+@router.post("/upload")
+async def upload_resume(
+    file: UploadFile = File(...),
+    job_description: str = Form(...),
+    job_title: str = Form(...),
+    db: Session = Depends(get_db),
+    get_current_user: User = Depends(require_scan_quota),
+    
 @router.post("/upload")
 async def upload_resume(
     file: UploadFile = File(...),
