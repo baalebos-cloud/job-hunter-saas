@@ -21,6 +21,7 @@ from backend.app.models.user import User, OutreachMessage  # noqa: F401
 from backend.app.models.job import Job  # noqa: F401
 from backend.app.models.resume import Resume  # noqa: F401
 from backend.app.models.application import Application  # noqa: F401
+from backend.app.models.subscription import Subscription  # noqa: F401
 
 app = FastAPI(
     title="Baalebos Cloud AI v2",
