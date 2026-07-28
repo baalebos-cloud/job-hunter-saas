@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import axios from 'axios'
 
+import PricingPage from './components/PricingPage'
 import StatsGrid from './components/StatsGrid'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
@@ -338,6 +339,7 @@ const Dashboard = () => {
                   Create a free account to save your ATS scores, track applications, message HR directly, and download your optimized resume.
                 </p>
               </div>
+              <a href="/pricing" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2"> Pricing </a>
               <a href="/signup"
                 className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-600/20 text-sm uppercase tracking-widest whitespace-nowrap">
                 Join Free →
@@ -453,6 +455,7 @@ function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/pricing" element={<PricingPage />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
