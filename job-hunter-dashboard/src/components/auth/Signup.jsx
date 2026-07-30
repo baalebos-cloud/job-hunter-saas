@@ -1,22 +1,28 @@
-import React, { useState } from 'react';
-import api from '../../api';
+// =============================================================================
+// job-hunter-dashboard/src/components/auth/Signup.jsx
+// Wired with referral tracking — captures ?ref= from URL and calls /referral/track
+// =============================================================================
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 const CAREER_TRACKS = [
-  { value: 'Frontend Developer', label: '🎨 Frontend Developer' },
-  { value: 'Backend Engineer', label: '⚙️ Backend Engineer' },
-  { value: 'Full Stack Developer', label: '🔥 Full Stack Developer' },
-  { value: 'DevOps Engineer', label: '🚀 DevOps Engineer' },
-  { value: 'Cloud Engineer', label: '☁️ Cloud Engineer' },
-  { value: 'Data Engineer', label: '📊 Data Engineer' },
-  { value: 'Data Scientist', label: '🧠 Data Scientist' },
+  { value: 'Frontend Developer',      label: '🎨 Frontend Developer' },
+  { value: 'Backend Engineer',        label: '⚙️ Backend Engineer' },
+  { value: 'Full Stack Developer',    label: '🔥 Full Stack Developer' },
+  { value: 'DevOps Engineer',         label: '🚀 DevOps Engineer' },
+  { value: 'Cloud Engineer',          label: '☁️ Cloud Engineer' },
+  { value: 'Data Engineer',           label: '📊 Data Engineer' },
+  { value: 'Data Scientist',          label: '🧠 Data Scientist' },
   { value: 'Machine Learning Engineer', label: '🤖 ML Engineer' },
-  { value: 'Cybersecurity Engineer', label: '🔒 Cybersecurity' },
-  { value: 'Product Manager', label: '📋 Product Manager' },
-  { value: 'UI/UX Designer', label: '✏️ UI/UX Designer' },
-  { value: 'Mobile Developer', label: '📱 Mobile Developer' },
-  { value: 'QA Engineer', label: '🧪 QA Engineer' },
-  { value: 'Platform Engineer', label: '🏗️ Platform Engineer' },
-  { value: 'Software Engineer', label: '💻 Software Engineer' },
+  { value: 'Cybersecurity Engineer',  label: '🔒 Cybersecurity' },
+  { value: 'Product Manager',         label: '📋 Product Manager' },
+  { value: 'UI/UX Designer',          label: '✏️ UI/UX Designer' },
+  { value: 'Mobile Developer',        label: '📱 Mobile Developer' },
+  { value: 'QA Engineer',             label: '🧪 QA Engineer' },
+  { value: 'Platform Engineer',       label: '🏗️ Platform Engineer' },
+  { value: 'Software Engineer',       label: '💻 Software Engineer' },
 ];
 
 const COUNTRIES = [
@@ -36,26 +42,70 @@ const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-800 bg-sl
 const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-500 mb-2';
 
 export default function Signup() {
-  const [form, setForm] = useState({ name: '', email: '', password: '', career_track: '', country: '' });
+  const [form, setForm]     = useState({ name: '', email: '', password: '', career_track: '', country: '' });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError]   = useState('');
+  const [refCode, setRefCode] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── Capture referral code from URL or localStorage ────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref    = params.get('ref') || localStorage.getItem('ref_code') || '';
+    if (ref) setRefCode(ref);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
+
     try {
-      const res = await api.post('/auth/signup', {
-        full_name: form.name, email: form.email,
-        password: form.password, career_track: form.career_track || null,
-        country: form.country || null,
+      // Step 1: Create the account
+      const res = await axios.post(`${API_BASE_URL}/auth/signup`, {
+        full_name:    form.name,
+        email:        form.email,
+        password:     form.password,
+        career_track: form.career_track || null,
+        country:      form.country || null,
       });
+
       const token = res.data.access_token || res.data.token || null;
-      if (token?.trim()) { localStorage.setItem('token', token.trim()); window.location.href = '/'; }
-      else window.location.href = '/login';
+
+      // Step 2: Track referral if a ref code was present
+      if (refCode && form.email) {
+        try {
+          await axios.post(
+            `${API_BASE_URL}/referral/track`,
+            null,
+            {
+              params: {
+                ref_code:       refCode,
+                referred_email: form.email,
+              },
+            }
+          );
+          // Clear stored ref code after tracking
+          localStorage.removeItem('ref_code');
+        } catch (refErr) {
+          // Referral tracking failure must never block signup
+          console.warn('Referral tracking failed (non-blocking):', refErr.message);
+        }
+      }
+
+      // Step 3: Redirect
+      if (token?.trim()) {
+        localStorage.setItem('token', token.trim());
+        window.location.href = '/';
+      } else {
+        window.location.href = '/login';
+      }
+
     } catch (err) {
       setError(err.response?.data?.detail || 'Signup failed. Please try again.');
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -67,10 +117,9 @@ export default function Signup() {
           alt="tech" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/88 to-emerald-950/80" />
 
-        {/* Floating stats */}
         <div className="absolute top-28 right-10 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 shadow-2xl">
           <div className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">Live Stats</div>
-          {[['🌍', '80+ Countries', 'text-blue-400'], ['⚡', '5-min Refresh', 'text-emerald-400'], ['🎯', '94% Avg ATS', 'text-amber-400']].map(([icon, label, cls]) => (
+          {[['🌍','80+ Countries','text-blue-400'],['⚡','6h Job Refresh','text-emerald-400'],['🎯','94% Avg ATS','text-amber-400']].map(([icon,label,cls]) => (
             <div key={label} className="flex items-center gap-2 mb-2 last:mb-0">
               <span>{icon}</span>
               <span className={`text-sm font-bold ${cls}`}>{label}</span>
@@ -91,8 +140,7 @@ export default function Signup() {
         </div>
 
         <div className="relative z-10">
-          <h2 className="text-4xl font-black text-white leading-tight mb-4"
-            style={{ fontFamily: "'Playfair Display', serif" }}>
+          <h2 className="text-4xl font-black text-white leading-tight mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>
             Join Engineers<br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-blue-400">
               Getting Hired
@@ -127,8 +175,17 @@ export default function Signup() {
             <h1 className="text-3xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
               Create your account
             </h1>
-            <p className="text-slate-400 text-sm font-medium mt-2">Join engineers from 80+ countries finding global tech roles.</p>
+            <p className="text-slate-400 text-sm font-medium mt-2">
+              Join engineers from 80+ countries finding global tech roles.
+            </p>
           </div>
+
+          {/* Referral banner — shown when a ref code is detected */}
+          {refCode && (
+            <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-2xl text-sm font-bold flex items-center gap-2">
+              🎉 You were referred! Sign up to give your friend credit — and get started free.
+            </div>
+          )}
 
           {error && (
             <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-2xl text-sm font-bold flex items-center gap-2">
@@ -164,7 +221,9 @@ export default function Signup() {
                     style={{ color: form.career_track ? '#fff' : '#4b5563' }}
                     value={form.career_track} onChange={e => set('career_track', e.target.value)}>
                     <option value="" disabled>Select role...</option>
-                    {CAREER_TRACKS.map(t => <option key={t.value} value={t.value} style={{ color: '#fff', background: '#0f172a' }}>{t.label}</option>)}
+                    {CAREER_TRACKS.map(t => (
+                      <option key={t.value} value={t.value} style={{ color: '#fff', background: '#0f172a' }}>{t.label}</option>
+                    ))}
                   </select>
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-xs">▾</span>
                 </div>
@@ -177,7 +236,9 @@ export default function Signup() {
                     style={{ color: form.country ? '#fff' : '#4b5563' }}
                     value={form.country} onChange={e => set('country', e.target.value)}>
                     <option value="" style={{ color: '#4b5563', background: '#0f172a' }}>Select country...</option>
-                    {COUNTRIES.map(c => <option key={c} value={c} style={{ color: '#fff', background: '#0f172a' }}>{c}</option>)}
+                    {COUNTRIES.map(c => (
+                      <option key={c} value={c} style={{ color: '#fff', background: '#0f172a' }}>{c}</option>
+                    ))}
                   </select>
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-xs">▾</span>
                 </div>
@@ -204,6 +265,7 @@ export default function Signup() {
               <a href="/login" className="text-emerald-400 font-black hover:text-emerald-300 transition-colors">Sign in →</a>
             </p>
           </div>
+
         </div>
       </div>
     </div>
