@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import axios from 'axios'
 
-import PricingPage from './components/PricingPage'
 import StatsGrid from './components/StatsGrid'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
@@ -13,6 +12,8 @@ import Login from './components/auth/Login'
 import AdminDashboard from './components/admin/AdminDashboard'
 import HRPortal from './components/hr/HRPortal'
 import HRSignup from './components/hr/HRSignup'
+import PricingPage from './components/PricingPage'
+import ReferralDashboard from './components/ReferralDashboard'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -129,6 +130,17 @@ const Dashboard = () => {
       .catch(() => {})
   }, [token])
 
+  // Capture ?ref= referral code and ?upgraded= Stripe success redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const ref = params.get('ref')
+    if (ref) localStorage.setItem('ref_code', ref)
+    if (params.get('upgraded') === 'true') {
+      alert('Welcome to Pro! Your account has been upgraded.')
+      window.history.replaceState({}, '', '/')
+    }
+  }, [])
+
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <div className="text-center">
@@ -160,6 +172,7 @@ const Dashboard = () => {
             {!isAuthenticated ? (
               <>
                 <a href="/login" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2">Login</a>
+                <a href="/pricing" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2">Pricing</a>
                 <a href="/signup" className="text-sm font-black text-white bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-600/20">
                   Get Started →
                 </a>
@@ -178,6 +191,8 @@ const Dashboard = () => {
                     {userProfile.is_hr && !userProfile.is_admin && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400">HR</span>}
                   </div>
                 )}
+                <a href="/pricing" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-3 py-2">Pricing</a>
+                <a href="/referral" className="text-sm font-bold text-emerald-400 hover:text-emerald-300 transition-colors px-3 py-2">Refer & Earn</a>
                 <button onClick={handleLogout}
                   className="text-sm font-bold text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 px-4 py-2 rounded-xl transition-all">
                   Sign Out
@@ -207,7 +222,7 @@ const Dashboard = () => {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-2 mb-6">
               <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-              <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">AI-Powered · Live Jobs Every 5 Minutes</span>
+              <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">AI-Powered · Live Jobs Every 6 Hours</span>
             </div>
 
             <h1 className="text-5xl md:text-6xl font-black text-white leading-[1.05] mb-6"
@@ -245,7 +260,7 @@ const Dashboard = () => {
 
             {/* Stats row */}
             <div className="flex flex-wrap gap-8">
-              {[['94%', 'Avg ATS Score'], ['5 min', 'Job Refresh Rate'], ['80+', 'Countries Covered'], ['Free', 'Always']].map(([v, l]) => (
+              {[['94%', 'Avg ATS Score'], ['6 hrs', 'Job Refresh Rate'], ['80+', 'Countries Covered'], ['Free', 'Always']].map(([v, l]) => (
                 <div key={l}>
                   <div className="text-2xl font-black text-white">{v}</div>
                   <div className="text-xs text-slate-500 font-semibold mt-0.5">{l}</div>
@@ -339,7 +354,6 @@ const Dashboard = () => {
                   Create a free account to save your ATS scores, track applications, message HR directly, and download your optimized resume.
                 </p>
               </div>
-              <a href="/pricing" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2"> Pricing </a>
               <a href="/signup"
                 className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-600/20 text-sm uppercase tracking-widest whitespace-nowrap">
                 Join Free →
@@ -350,7 +364,7 @@ const Dashboard = () => {
 
         {/* ── GLOBAL JOB FEED ── */}
         <section>
-          <div className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-2">Live · Updates Every 5 Minutes</div>
+          <div className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-2">Live · Updates Every 6 Hours</div>
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
             <h2 className="text-3xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
               Global Tech Jobs
@@ -455,14 +469,15 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/pricing" element={<PricingPage />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/hr" element={<HRPortal />} />
+        <Route path="/pricing"  element={<PricingPage />} />
+        <Route path="/referral" element={<ReferralDashboard />} />
+        <Route path="/admin"    element={<AdminDashboard />} />
+        <Route path="/hr"       element={<HRPortal />} />
         <Route path="/hr/signup" element={<HRSignup />} />
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route path="*"         element={<Navigate to="/" />} />
       </Routes>
     </Router>
   )
