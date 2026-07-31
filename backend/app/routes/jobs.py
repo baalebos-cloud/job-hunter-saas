@@ -1,6 +1,5 @@
 # =============================================================================
 # backend/app/routes/jobs.py
-# Fixed:
 #  1. ATS score calculated at apply time from existing resume analysis_data
 #  2. apply endpoint returns job_url so frontend opens the real job page
 #  3. HR message: honest labelling — saved internally + copied to user's email
