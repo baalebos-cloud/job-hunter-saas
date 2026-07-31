@@ -70,6 +70,11 @@ function JobModal({ app, onClose, token }) {
 
   const copy = () => { navigator.clipboard.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
+  // FIX: ATS score display — show "Upload resume first" when score is 0
+  const atsDisplay = app?.ats_score > 0
+    ? { label: `${app.ats_score}%`, cls: scoreCls(app.ats_score) }
+    : { label: 'Upload resume first', cls: 'bg-slate-100 text-slate-400 border border-slate-200' };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm"
       style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -104,7 +109,7 @@ function JobModal({ app, onClose, token }) {
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'ATS Match', val: <span className={`text-base font-black px-3 py-1 rounded-full ${scoreCls(app?.ats_score)}`}>{app?.ats_score || 0}%</span> },
+              { label: 'ATS Match', val: <span className={`text-base font-black px-3 py-1 rounded-full ${atsDisplay.cls}`}>{atsDisplay.label}</span> },
               { label: 'Status', val: <span className={`text-xs font-black uppercase tracking-wide px-3 py-1 rounded-lg border ${statusCls(app?.status)}`}>{app?.status || 'Pending'}</span> },
               { label: 'Work Type', val: <span className={`text-xs font-bold px-3 py-1 rounded-full border ${wt.cls}`}>{wt.label}</span> },
             ].map(({ label, val }) => (
@@ -125,12 +130,15 @@ function JobModal({ app, onClose, token }) {
             </div>
           )}
 
-          {/* HR Message */}
+          {/* FIX 3 & 4: Honest HR Message section */}
           <div>
             <div className="flex justify-between items-center mb-3">
               <div>
-                <h3 className="text-sm font-black text-slate-900">📨 Send Direct Message to HR</h3>
-                <p className="text-xs font-medium text-slate-400 mt-0.5">Message is tracked in your dashboard after sending.</p>
+                <h3 className="text-sm font-black text-slate-900">📨 Outreach Message for HR</h3>
+                {/* FIX: Honest subtitle — no longer claims to send to HR */}
+                <p className="text-xs font-medium text-slate-400 mt-0.5">
+                  Saved to your dashboard + sent to your email. Copy it to send via LinkedIn InMail or email.
+                </p>
               </div>
               <button onClick={copy}
                 className={`text-xs font-black px-3 py-1.5 rounded-xl transition-all ${copied ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
@@ -138,20 +146,40 @@ function JobModal({ app, onClose, token }) {
               </button>
             </div>
 
+            {/* FIX: Info banner explaining why we can't directly email HR */}
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-2xl flex gap-2">
+              <span className="text-amber-500 shrink-0">ℹ️</span>
+              <p className="text-xs font-medium text-amber-700">
+                Jobs are scraped from public boards — HR contact details are not available.
+                Copy this message and send it via <strong>LinkedIn InMail</strong> or find the recruiter's
+                email on <a href="https://hunter.io" target="_blank" rel="noopener noreferrer" className="underline font-black">Hunter.io</a>.
+              </p>
+            </div>
+
             {sent ? (
               <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-5 text-center">
                 <p className="text-2xl mb-2">✅</p>
-                <p className="text-emerald-700 font-black text-sm">Message sent & tracked!</p>
-                <p className="text-emerald-600 text-xs font-medium mt-1">Your status has been updated to "Messaged". A confirmation email has been sent to you.</p>
+                <p className="text-emerald-700 font-black text-sm">Message saved & sent to your email!</p>
+                <p className="text-emerald-600 text-xs font-medium mt-1 mb-3">
+                  Check your inbox for a copy. Now send it to HR via LinkedIn InMail or email.
+                </p>
+                {/* FIX: Direct link to the actual job so user can find HR contact */}
+                {job?.url && (
+                  <a href={job.url} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-xs font-black px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-emerald-600 transition-all">
+                    🔗 Go to Job Posting → Find HR Contact
+                  </a>
+                )}
               </div>
             ) : (
               <>
                 <textarea rows={7} value={msg} onChange={e => setMsg(e.target.value)}
                   className="w-full p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 leading-relaxed resize-none outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200 transition-all" />
                 {msgError && <p className="text-rose-600 text-xs font-bold mt-2">⚠️ {msgError}</p>}
+                {/* FIX: Honest button label */}
                 <button onClick={sendMessage} disabled={sending}
                   className="w-full mt-3 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-emerald-600 transition-all disabled:bg-slate-300 active:scale-95">
-                  {sending ? 'Sending...' : '📤 Send to HR & Track'}
+                  {sending ? 'Saving...' : '📋 Save & Send Copy to My Email'}
                 </button>
               </>
             )}
@@ -204,6 +232,11 @@ export default function ApplicationsTable({ applications, onDelete, token }) {
               {safeApps.map(app => {
                 const job = app?.job || {};
                 const wt = workType(job?.location);
+                // FIX 1: Show real ATS score or "Upload resume" when 0
+                const atsLabel = app?.ats_score > 0 ? `${app.ats_score}%` : 'Upload resume';
+                const atsCls   = app?.ats_score > 0
+                  ? scoreCls(app.ats_score)
+                  : 'bg-slate-100 text-slate-400 border border-slate-200';
                 return (
                   <tr key={app?.id} className="hover:bg-slate-50/60 transition-colors group">
                     <td className="px-5 py-4">
@@ -226,8 +259,9 @@ export default function ApplicationsTable({ applications, onDelete, token }) {
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className={`text-sm font-black px-3 py-1 rounded-full ${scoreCls(app?.ats_score)}`}>
-                        {app?.ats_score || 0}%
+                      {/* FIX 1: Real ATS score from backend */}
+                      <span className={`text-sm font-black px-3 py-1 rounded-full ${atsCls}`}>
+                        {atsLabel}
                       </span>
                     </td>
                     <td className="px-5 py-4">
