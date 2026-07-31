@@ -15,6 +15,7 @@ from backend.app.routes import admin as admin_router
 from backend.app.routes import hr as hr_router
 from backend.app.routes import billing as billing_router
 from backend.app.routes import referral as referral_router
+from backend.app.routes import hr_auth as hr_auth_router
 from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
@@ -130,7 +131,7 @@ if ENVIRONMENT == "production":
         "https://baalebo.xyz",
         "https://www.baalebo.xyz",
         "https://job-hunter-saas-six.vercel.app",
-        "https://job-hunter-saas-production-bb41.up.railway.app",
+        "https://job-hunter-saas-production.up.railway.app",
     ]
     if FRONTEND_URL and FRONTEND_URL not in origins:
         origins.append(FRONTEND_URL)
@@ -159,8 +160,9 @@ app.include_router(application.router, prefix="/api/v1/application", tags=["Appl
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(admin_router.router,    prefix="/api/v1/admin",   tags=["Admin"])
 app.include_router(hr_router.router,       prefix="/api/v1/hr",      tags=["HR"])
-app.include_router(billing_router.router,  prefix="/api/v1/billing",  tags=["Billing"])
-app.include_router(referral_router.router, prefix="/api/v1/referral", tags=["Referral"])
+app.include_router(billing_router.router,  prefix="/api/v1/billing",   tags=["Billing"])
+app.include_router(referral_router.router, prefix="/api/v1/referral",  tags=["Referral"])
+app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR Auth"])
 
 # Admin login is under /api/v1/auth/admin/login (already in auth router)
 
