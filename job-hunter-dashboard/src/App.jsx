@@ -18,9 +18,6 @@ import HRLogin from './components/hr/HRLogin'
 import ForgotPassword from './components/auth/ForgotPassword'
 import ResetPassword from './components/auth/ResetPassword'
 import VerifyEmail from './components/auth/VerifyEmail'
-import ForgotPassword from './components/auth/ForgotPassword'
-import ResetPassword from './components/auth/ResetPassword'
-import VerifyEmail from './components/auth/VerifyEmail'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
