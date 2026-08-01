@@ -15,6 +15,12 @@ import HRSignup from './components/hr/HRSignup'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 import HRLogin from './components/hr/HRLogin'
+import ForgotPassword from './components/auth/ForgotPassword'
+import ResetPassword from './components/auth/ResetPassword'
+import VerifyEmail from './components/auth/VerifyEmail'
+import ForgotPassword from './components/auth/ForgotPassword'
+import ResetPassword from './components/auth/ResetPassword'
+import VerifyEmail from './components/auth/VerifyEmail'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -473,12 +479,20 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/pricing"      element={<PricingPage />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password"  element={<ResetPassword />} />
+        <Route path="/verify-email"    element={<VerifyEmail />} />
+        <Route path="/hr/verify"       element={<VerifyEmail />} />
+        <Route path="/pricing"         element={<PricingPage />} />
         <Route path="/referral"     element={<ReferralDashboard />} />
         <Route path="/admin"        element={<AdminDashboard />} />
         <Route path="/hr"           element={<HRPortal />} />
-        <Route path="/hr/login"     element={<HRLogin />} />
-        <Route path="/hr/signup"    element={<HRSignup />} />
+        <Route path="/hr/login"          element={<HRLogin />} />
+        <Route path="/hr/signup"         element={<HRSignup />} />
+        <Route path="/hr/verify"         element={<VerifyEmail isHR={true} />} />
+        <Route path="/forgot-password"   element={<ForgotPassword />} />
+        <Route path="/reset-password"    element={<ResetPassword />} />
+        <Route path="/verify-email"      element={<VerifyEmail />} />
         <Route path="*"         element={<Navigate to="/" />} />
       </Routes>
     </Router>
