@@ -29,6 +29,34 @@ function RequireAuth({ children }) {
   return children
 }
 
+// ── Role guard — blocks non-admin/HR users from restricted pages ─────────────
+// FIX 3: Admin and HR pages are hidden from regular users, even via direct URL
+function RequireRole({ role, children }) {
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const token = localStorage.getItem('token')
+
+  useEffect(() => {
+    if (!token) { setLoading(false); return }
+    axios.get(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => setProfile(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [token])
+
+  if (!token) return <Navigate to="/login" replace />
+  if (loading) return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+    </div>
+  )
+
+  const hasAccess = role === 'admin' ? profile?.is_admin : (profile?.is_admin || profile?.is_hr)
+  if (!hasAccess) return <Navigate to="/" replace />
+
+  return children
+}
+
 // ── Overview page (/) ─────────────────────────────────────────────────────────
 function OverviewPage() {
   const [data, setData]             = useState({ stats: null, apps: [] })
@@ -332,6 +360,64 @@ function LandingPage() {
   )
 }
 
+
+// ── Applications page (/applications) ────────────────────────────────────────
+function ApplicationsPage() {
+  const [apps, setApps]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const token = localStorage.getItem('token')
+
+  const fetchApps = useCallback(async () => {
+    if (!token) { setLoading(false); return }
+    try {
+      const res = await axios.get(`${API_BASE_URL}/dashboard/applied`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setApps(Array.isArray(res.data) ? res.data : [])
+    } catch (err) { console.error(err) }
+    finally { setLoading(false) }
+  }, [token])
+
+  useEffect(() => { fetchApps() }, [fetchApps])
+
+  const handleDelete = useCallback(async (appId) => {
+    if (!appId || !token) return
+    try {
+      await axios.delete(`${API_BASE_URL}/dashboard/applied/${appId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      fetchApps()
+    } catch { alert('Failed to delete. Please try again.') }
+  }, [token, fetchApps])
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+    </div>
+  )
+
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-6">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">Tracker</p>
+          <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
+            Your Applications
+          </h2>
+          <p className="text-slate-400 text-sm mt-1">
+            <span className="text-emerald-400 font-black">{apps.length}</span> job{apps.length !== 1 ? 's' : ''} tracked
+          </p>
+        </div>
+        <a href="/jobs"
+          className="text-xs font-black px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all uppercase tracking-widest">
+          Browse Jobs →
+        </a>
+      </div>
+      <ApplicationsTable applications={apps} onDelete={handleDelete} token={token} />
+    </div>
+  )
+}
+
 // ── App router ────────────────────────────────────────────────────────────────
 function App() {
   const token = localStorage.getItem('token')
@@ -373,13 +459,7 @@ function App() {
           <RequireAuth><DashboardLayout><JobsPage /></DashboardLayout></RequireAuth>
         } />
         <Route path="/applications" element={
-          <RequireAuth><DashboardLayout>
-            <ApplicationsTable
-              applications={[]}
-              onDelete={() => {}}
-              token={token}
-            />
-          </DashboardLayout></RequireAuth>
+          <RequireAuth><DashboardLayout><ApplicationsPage /></DashboardLayout></RequireAuth>
         } />
         <Route path="/referral" element={
           <RequireAuth><DashboardLayout><ReferralDashboard /></DashboardLayout></RequireAuth>
@@ -388,10 +468,10 @@ function App() {
           <DashboardLayout><PricingPage /></DashboardLayout>
         } />
         <Route path="/admin" element={
-          <RequireAuth><DashboardLayout><AdminDashboard /></DashboardLayout></RequireAuth>
+          <RequireRole role="admin"><DashboardLayout><AdminDashboard /></DashboardLayout></RequireRole>
         } />
         <Route path="/hr" element={
-          <RequireAuth><DashboardLayout><HRPortal /></DashboardLayout></RequireAuth>
+          <RequireRole role="hr"><DashboardLayout><HRPortal /></DashboardLayout></RequireRole>
         } />
 
         <Route path="*" element={<Navigate to="/" />} />
