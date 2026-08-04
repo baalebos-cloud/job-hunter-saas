@@ -430,8 +430,10 @@ function LandingPage() {
     </svg>
   )
   return (
-    <div className="min-h-screen bg-slate-950" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <nav className="sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
+    <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <div className="app-canvas-mesh" />
+      <div className="app-canvas-grain" />
+      <nav className="relative z-10 sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/30">
@@ -452,12 +454,10 @@ function LandingPage() {
         </div>
       </nav>
 
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&q=80"
-          alt="tech background" className="absolute inset-0 w-full h-full object-cover opacity-[0.07]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/80 to-slate-950" />
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'linear-gradient(#10b981 1px, transparent 1px), linear-gradient(90deg, #10b981 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
+          alt="tech background" className="absolute inset-0 w-full h-full object-cover opacity-[0.05] mix-blend-luminosity" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#080b12]/40 to-[#080b12]" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-20">
           <div className="max-w-3xl">
@@ -491,7 +491,7 @@ function LandingPage() {
         </div>
       </section>
 
-      <footer className="max-w-7xl mx-auto px-4 md:px-8 py-12 border-t border-slate-800 mt-20 flex flex-col md:flex-row items-center justify-between gap-6">
+      <footer className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 py-12 border-t border-slate-800 mt-20 flex flex-col md:flex-row items-center justify-between gap-6">
         <p className="text-slate-600 text-sm">© {new Date().getFullYear()} Baalebos Cloud · AI Talent Infrastructure</p>
         <div className="flex gap-4">
           <a href="https://www.linkedin.com/in/oluwadare-jayeola-6874591b4/" target="_blank" rel="noopener noreferrer"
