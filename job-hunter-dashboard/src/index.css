@@ -3,6 +3,7 @@
 @theme {
   --color-brand-dark: #0f172a;
   --color-brand-primary: #10b981;
+  --color-brand-amber: #f0b429;
 }
 
 *, *::before, *::after {
@@ -15,7 +16,7 @@ html {
 
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #020617;
+  background-color: #080b12;
   color: #f1f5f9;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -30,17 +31,74 @@ input::placeholder, textarea::placeholder {
   color: #475569;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* =============================================================================
+   SIGNAL ROOM — premium layered background system
+   Replaces flat #020617. Three stacked layers:
+     1. .app-canvas       — base graphite + dual-tone drifting aurora glow
+     2. .app-canvas-mesh  — fine circuit/grid line overlay
+     3. .app-canvas-grain — subtle noise texture for depth (no banding)
+   Usage: wrap any full-height page root with className="app-canvas"
+   ============================================================================= */
+
+.app-canvas {
+  position: relative;
+  background-color: #080b12;
+  background-image:
+    radial-gradient(ellipse 900px 600px at 12% -8%, rgba(16, 185, 129, 0.16), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 88% 8%, rgba(240, 180, 41, 0.09), transparent 55%),
+    radial-gradient(ellipse 1000px 700px at 50% 115%, rgba(16, 185, 129, 0.08), transparent 60%);
+  background-attachment: fixed;
+  isolation: isolate;
 }
-::-webkit-scrollbar-track {
-  background: #0f172a;
+
+.app-canvas::before {
+  /* Drifting aurora — slow, quiet motion signaling a "live" system */
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle 480px at 20% 30%, rgba(16, 185, 129, 0.10), transparent 70%),
+    radial-gradient(circle 420px at 80% 70%, rgba(240, 180, 41, 0.07), transparent 70%);
+  animation: aurora-drift 70s ease-in-out infinite alternate;
+  will-change: transform;
 }
-::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 3px;
+
+@keyframes aurora-drift {
+  0%   { transform: translate(0%, 0%) scale(1); }
+  50%  { transform: translate(3%, -4%) scale(1.05); }
+  100% { transform: translate(-2%, 3%) scale(1); }
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #10b981;
+
+.app-canvas-mesh {
+  /* Fine circuit-grid overlay — engineering-tool texture, not decoration */
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image:
+    linear-gradient(rgba(16, 185, 129, 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.5) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+}
+
+.app-canvas-grain {
+  /* Subtle noise — prevents flat gradient banding, adds material depth */
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-canvas::before {
+    animation: none;
+  }
 }
