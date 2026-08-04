@@ -27,7 +27,9 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <div className="app-canvas-mesh" />
+      <div className="app-canvas-grain" />
 
       {/* ── Left hero panel ── */}
       <div className="hidden lg:flex lg:w-[55%] relative flex-col justify-between p-14 overflow-hidden">
