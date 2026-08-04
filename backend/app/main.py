@@ -107,6 +107,24 @@ async def startup_event():
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR",
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS posted_by_hr BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_user_id INTEGER",
+                # Email verification / password reset
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP",
+                # Profile page fields
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS available_for_work BOOLEAN DEFAULT TRUE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS expected_pay_hourly FLOAT",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS about TEXT",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_url VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_filename VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS notice_period_days INTEGER",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified BOOLEAN DEFAULT FALSE",
             ]
             for sql in migrations:
                 try:
@@ -125,7 +143,7 @@ class AnalysisRequest(BaseModel):
 
 # --- CORS SETUP ---
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")  # Set in Railway: https://baalebo.xyz
 
 if ENVIRONMENT == "production":
     origins = [
