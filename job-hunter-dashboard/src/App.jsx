@@ -17,6 +17,7 @@ import AdminDashboard from './components/admin/AdminDashboard'
 import HRPortal from './components/hr/HRPortal'
 import HRSignup from './components/hr/HRSignup'
 import HRLogin from './components/hr/HRLogin'
+import ProfilePage from './components/ProfilePage'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 
@@ -613,6 +614,9 @@ function App() {
         } />
         <Route path="/referral" element={
           <RequireAuth><DashboardLayout><ReferralDashboard /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/profile" element={
+          <RequireAuth><DashboardLayout><ProfilePage /></DashboardLayout></RequireAuth>
         } />
         <Route path="/settings" element={
           <RequireAuth><DashboardLayout><SettingsPage /></DashboardLayout></RequireAuth>
