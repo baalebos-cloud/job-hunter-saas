@@ -59,9 +59,11 @@ export default function ResetPassword() {
   };
 
   if (success) return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8"
+    <div className="app-canvas min-h-screen bg-slate-950 flex items-center justify-center p-8"
       style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="max-w-md w-full text-center">
+        <div className="app-canvas-mesh" />
+        <div className="app-canvas-grain" />
         <div className="w-20 h-20 bg-emerald-500/10 border-2 border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-6">
           <span className="text-4xl">🔓</span>
         </div>
