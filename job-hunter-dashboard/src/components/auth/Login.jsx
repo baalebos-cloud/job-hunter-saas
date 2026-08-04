@@ -27,20 +27,20 @@ export default function Login() {
   };
 
   return (
-    <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
+    // FIX: w-full + min-w-0 on children prevents the flex row from collapsing
+    // and leaving dead space — this is what caused the black void bug.
+    <div className="app-canvas min-h-screen w-full flex" style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="app-canvas-mesh" />
       <div className="app-canvas-grain" />
 
       {/* ── Left hero panel ── */}
-      <div className="hidden lg:flex lg:w-[55%] relative flex-col justify-between p-14 overflow-hidden">
-        {/* Tech background image */}
+      <div className="hidden lg:flex lg:w-[55%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1400&q=85"
-          alt="tech" className="absolute inset-0 w-full h-full object-cover" />
-        {/* Dark overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/90 to-emerald-950/85" />
+          alt="tech" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#080b12]/95 via-[#0f172a]/90 to-emerald-950/70" />
 
         {/* Floating code snippets */}
-        <div className="absolute top-32 right-16 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 text-xs font-mono shadow-2xl">
+        <div className="absolute top-32 right-16 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 text-xs font-mono shadow-2xl z-10">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-3 h-3 rounded-full bg-rose-500"/>
             <span className="w-3 h-3 rounded-full bg-amber-500"/>
@@ -53,7 +53,7 @@ export default function Login() {
           <div className="text-slate-400">{'}'}</div>
         </div>
 
-        <div className="absolute bottom-48 right-12 bg-slate-900/80 backdrop-blur border border-blue-500/20 rounded-2xl p-4 text-xs font-mono shadow-xl">
+        <div className="absolute bottom-48 right-12 bg-slate-900/80 backdrop-blur border border-blue-500/20 rounded-2xl p-4 text-xs font-mono shadow-xl z-10">
           <div className="text-slate-500 mb-2">// AI Match Engine</div>
           <div><span className="text-purple-400">const</span> <span className="text-blue-300">match</span> <span className="text-slate-400">= </span><span className="text-emerald-400">97.3</span><span className="text-slate-400">%</span></div>
           <div><span className="text-purple-400">const</span> <span className="text-blue-300">role</span> <span className="text-slate-400">= </span><span className="text-amber-400">"DevOps Eng."</span></div>
@@ -77,7 +77,7 @@ export default function Login() {
           <h2 className="text-5xl font-black text-white leading-[1.1] mb-5"
             style={{ fontFamily: "'Playfair Display', serif" }}>
             Land Your<br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-blue-400">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">
               Dream Tech Job
             </span><br/>
             With AI.
@@ -101,7 +101,7 @@ export default function Login() {
       </div>
 
       {/* ── Right form panel ── */}
-      <div className="w-full lg:w-[45%] flex items-center justify-center p-8 bg-slate-950">
+      <div className="w-full lg:w-[45%] min-w-0 flex-1 flex items-center justify-center p-8 relative z-10">
         <div className="w-full max-w-md">
 
           {/* Mobile logo */}
