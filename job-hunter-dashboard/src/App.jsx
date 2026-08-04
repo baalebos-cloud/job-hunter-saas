@@ -59,11 +59,8 @@ function RequireRole({ role, children }) {
 
 // ── Overview page (/) ─────────────────────────────────────────────────────────
 function OverviewPage() {
-  const [data, setData]             = useState({ stats: null, apps: [] })
-  const [loading, setLoading]       = useState(true)
-  const [analysisResult, setAnalysisResult] = useState(null)
-  const [activeTaskId, setActiveTaskId]     = useState(null)
-  const [isAnalyzing, setIsAnalyzing]       = useState(false)
+  const [data, setData]       = useState({ stats: null, apps: [] })
+  const [loading, setLoading] = useState(true)
   const token = localStorage.getItem('token')
 
   const fetchData = useCallback(async () => {
@@ -90,6 +87,69 @@ function OverviewPage() {
     } catch { alert('Failed to delete. Please try again.') }
   }, [token, fetchData])
 
+  useEffect(() => { fetchData() }, [fetchData])
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">Loading dashboard...</p>
+      </div>
+    </div>
+  )
+
+  const recentApps = (data.apps || []).slice(0, 5)
+
+  return (
+    <div className="space-y-10">
+      {/* Stats */}
+      {data.stats && <StatsGrid stats={data.stats} />}
+
+      {/* Quick action */}
+      <div className="bg-gradient-to-br from-emerald-900/30 to-slate-900 border border-emerald-800/30 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-2">AI Engine</p>
+          <h3 className="text-2xl font-black text-white mb-1" style={{ fontFamily: "'Playfair Display', serif" }}>
+            Optimize a new resume
+          </h3>
+          <p className="text-slate-400 text-sm max-w-md">
+            Get an instant ATS score and AI-optimized PDF tailored for any job description.
+          </p>
+        </div>
+        <a href="/optimizer"
+          className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-600/20 text-sm uppercase tracking-widest whitespace-nowrap">
+          Start Analysis →
+        </a>
+      </div>
+
+      {/* Recent applications */}
+      <div>
+        <div className="flex items-end justify-between mb-5">
+          <h2 className="text-2xl font-black text-white flex items-center gap-3"
+            style={{ fontFamily: "'Playfair Display', serif" }}>
+            <span className="w-1.5 h-7 bg-emerald-500 rounded-full" />
+            Recent Applications
+          </h2>
+          {data.apps.length > 5 && (
+            <a href="/applications" className="text-xs font-black text-emerald-400 hover:text-emerald-300 transition-colors">
+              View all {data.apps.length} →
+            </a>
+          )}
+        </div>
+        <ApplicationsTable applications={recentApps} onDelete={handleDelete} token={token} />
+      </div>
+    </div>
+  )
+}
+
+
+// ── Resume Optimizer page (/optimizer) ────────────────────────────────────────
+function OptimizerPage() {
+  const [analysisResult, setAnalysisResult] = useState(null)
+  const [activeTaskId, setActiveTaskId]     = useState(null)
+  const [isAnalyzing, setIsAnalyzing]       = useState(false)
+  const token = localStorage.getItem('token')
+
   useEffect(() => {
     let interval
     if (activeTaskId) {
@@ -102,7 +162,6 @@ function OverviewPage() {
             setActiveTaskId(null)
             setIsAnalyzing(false)
             localStorage.setItem('lastTaskId', res.data.result?.task_id || '')
-            fetchData()
           } else if (res.data.status === 'failed') {
             alert('Analysis failed. Please check your file format.')
             setActiveTaskId(null)
@@ -112,72 +171,160 @@ function OverviewPage() {
       }, 2000)
     }
     return () => clearInterval(interval)
-  }, [activeTaskId, fetchData])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-32">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">Loading dashboard...</p>
-      </div>
-    </div>
-  )
+  }, [activeTaskId])
 
   return (
-    <div className="space-y-10">
-      {/* Stats */}
-      {data.stats && <StatsGrid stats={data.stats} />}
-
-      {/* AI Resume Optimizer */}
-      <div>
-        <div className="flex items-end justify-between mb-5">
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">AI Engine</p>
-            <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
-              Resume Optimizer
-            </h2>
-          </div>
-          {analysisResult && (
-            <button onClick={() => setAnalysisResult(null)}
-              className="text-xs font-black text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 px-3 py-2 rounded-xl transition-colors">
-              + New Analysis
-            </button>
-          )}
+    <div>
+      <div className="flex items-end justify-between mb-6">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">AI Engine</p>
+          <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
+            Resume Optimizer
+          </h2>
+          <p className="text-slate-400 text-sm mt-1">
+            Upload your resume and get an instant ATS score with AI-optimized rewrites.
+          </p>
         </div>
-
-        {isAnalyzing ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center">
-            <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4" />
-            <h3 className="text-lg font-black text-white mb-1">AI Engine Processing...</h3>
-            <p className="text-slate-400 text-sm">Calculating ATS scores, extracting keywords, generating PDF.</p>
-          </div>
-        ) : !analysisResult ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
-            <ResumeUpload onUploadSuccess={(taskId, directResult) => {
-              if (directResult) {
-                setAnalysisResult(directResult)
-                localStorage.setItem('lastTaskId', directResult.task_id || taskId)
-                fetchData()
-              } else {
-                setActiveTaskId(taskId)
-              }
-            }} />
-          </div>
-        ) : (
-          <AtsResultView data={analysisResult} />
+        {analysisResult && (
+          <button onClick={() => setAnalysisResult(null)}
+            className="text-xs font-black text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 px-3 py-2 rounded-xl transition-colors shrink-0">
+            + New Analysis
+          </button>
         )}
       </div>
 
-      {/* Application Tracker */}
-      <div>
-        <h2 className="text-2xl font-black text-white mb-5 flex items-center gap-3"
-          style={{ fontFamily: "'Playfair Display', serif" }}>
-          <span className="w-1.5 h-7 bg-emerald-500 rounded-full" />
-          Application Tracker
+      {isAnalyzing ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-16 text-center">
+          <div className="w-14 h-14 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-5" />
+          <h3 className="text-xl font-black text-white mb-2">AI Engine Processing...</h3>
+          <p className="text-slate-400 text-sm">Calculating ATS scores, extracting keywords, generating your optimized PDF.</p>
+        </div>
+      ) : !analysisResult ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+          <ResumeUpload onUploadSuccess={(taskId, directResult) => {
+            if (directResult) {
+              setAnalysisResult(directResult)
+              localStorage.setItem('lastTaskId', directResult.task_id || taskId)
+            } else {
+              setActiveTaskId(taskId)
+            }
+          }} />
+        </div>
+      ) : (
+        <AtsResultView data={analysisResult} />
+      )}
+    </div>
+  )
+}
+
+// ── Settings page (/settings) ─────────────────────────────────────────────────
+function SettingsPage() {
+  const [profile, setProfile]   = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [saved, setSaved]       = useState(false)
+  const [form, setForm]         = useState({ full_name: '', career_track: '', country: '' })
+  const token = localStorage.getItem('token')
+
+  useEffect(() => {
+    if (!token) { setLoading(false); return }
+    axios.get(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        setProfile(r.data)
+        setForm({
+          full_name:    r.data.full_name || '',
+          career_track: r.data.career_track || '',
+          country:      r.data.country || '',
+        })
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [token])
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    setSaving(true); setSaved(false)
+    try {
+      await axios.patch(`${API_BASE_URL}/auth/me`, form, { headers: { Authorization: `Bearer ${token}` } })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to save. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+    </div>
+  )
+
+  const inputCls = 'w-full px-4 py-3 rounded-2xl border-2 border-slate-800 bg-slate-950 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600'
+  const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-500 mb-2'
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-6">
+        <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">Account</p>
+        <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
+          Settings
         </h2>
-        <ApplicationsTable applications={data.apps || []} onDelete={handleDelete} token={token} />
+      </div>
+
+      {/* Profile card */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 mb-6">
+        <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-800">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-white text-lg font-black shadow-lg shadow-emerald-900/40">
+            {(profile?.full_name || profile?.email || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2)}
+          </div>
+          <div>
+            <p className="text-white font-black text-base">{profile?.full_name || profile?.email?.split('@')[0]}</p>
+            <p className="text-slate-500 text-sm">{profile?.email}</p>
+            <div className="flex gap-2 mt-1.5">
+              {profile?.is_admin && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/20">ADMIN</span>}
+              {profile?.is_hr && !profile?.is_admin && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/20">HR</span>}
+              {!profile?.is_admin && !profile?.is_hr && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">JOB SEEKER</span>}
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className={labelCls}>Full Name</label>
+            <input type="text" className={inputCls} value={form.full_name}
+              onChange={e => set('full_name', e.target.value)} placeholder="Your full name" />
+          </div>
+          <div>
+            <label className={labelCls}>Career Track</label>
+            <input type="text" className={inputCls} value={form.career_track}
+              onChange={e => set('career_track', e.target.value)} placeholder="e.g. DevOps Engineer" />
+          </div>
+          <div>
+            <label className={labelCls}>Country</label>
+            <input type="text" className={inputCls} value={form.country}
+              onChange={e => set('country', e.target.value)} placeholder="e.g. Nigeria" />
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button type="submit" disabled={saving}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-3 rounded-2xl text-xs uppercase tracking-widest transition-all disabled:bg-slate-700 disabled:text-slate-500">
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+            {saved && <span className="text-emerald-400 text-xs font-bold">✓ Saved successfully</span>}
+          </div>
+        </form>
+      </div>
+
+      {/* Danger zone */}
+      <div className="bg-rose-950/20 border border-rose-900/30 rounded-3xl p-6">
+        <p className="text-rose-400 font-black text-sm mb-1">Sign Out</p>
+        <p className="text-slate-500 text-xs mb-4">You'll need to log in again to access your account.</p>
+        <button onClick={() => { localStorage.removeItem('token'); window.location.href = '/login' }}
+          className="text-xs font-black px-5 py-2.5 rounded-xl bg-rose-900/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition-all uppercase tracking-widest">
+          Sign Out of Account
+        </button>
       </div>
     </div>
   )
@@ -455,6 +602,9 @@ function App() {
             ? <DashboardLayout><OverviewPage /></DashboardLayout>
             : <LandingPage />
         } />
+        <Route path="/optimizer" element={
+          <RequireAuth><DashboardLayout><OptimizerPage /></DashboardLayout></RequireAuth>
+        } />
         <Route path="/jobs" element={
           <RequireAuth><DashboardLayout><JobsPage /></DashboardLayout></RequireAuth>
         } />
@@ -463,6 +613,9 @@ function App() {
         } />
         <Route path="/referral" element={
           <RequireAuth><DashboardLayout><ReferralDashboard /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/settings" element={
+          <RequireAuth><DashboardLayout><SettingsPage /></DashboardLayout></RequireAuth>
         } />
         <Route path="/pricing" element={
           <DashboardLayout><PricingPage /></DashboardLayout>
