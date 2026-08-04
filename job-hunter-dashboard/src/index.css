@@ -31,6 +31,25 @@ input::placeholder, textarea::placeholder {
   color: #475569;
 }
 
+/* Kill Vite's default boilerplate #root constraint — this was clipping every
+   full-screen page at 1280px and leaving a dead black void on wide screens. */
+#root {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
 /* =============================================================================
    SIGNAL ROOM — premium layered background system
    Replaces flat #020617. Three stacked layers:
