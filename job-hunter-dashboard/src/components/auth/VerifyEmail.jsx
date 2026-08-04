@@ -76,9 +76,11 @@ export default function VerifyEmail() {
   const s = states[status];
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8"
+    <div className="app-canvas min-h-screen bg-slate-950 flex items-center justify-center p-8"
       style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="max-w-md w-full text-center">
+        <div className="app-canvas-mesh" />
+        <div className="app-canvas-grain" />
 
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-12">
