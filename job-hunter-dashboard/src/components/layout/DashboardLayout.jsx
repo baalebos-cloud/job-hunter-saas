@@ -22,6 +22,7 @@ const NAV_MAIN = [
 const NAV_ACCOUNT = [
   { name: 'Refer & Earn', path: '/referral',    icon: '💸' },
   { name: 'Pricing',      path: '/pricing',     icon: '⚡' },
+  { name: 'My Profile',   path: '/profile',     icon: '👤' },
   { name: 'Settings',     path: '/settings',    icon: '⚙️' },
 ];
 const NAV_ADMIN = [
