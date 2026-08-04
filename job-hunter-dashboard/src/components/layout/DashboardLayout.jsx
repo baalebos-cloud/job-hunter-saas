@@ -1,6 +1,5 @@
 // =============================================================================
 // job-hunter-dashboard/src/components/layout/DashboardLayout.jsx
-// Fixes:
 //  1. Mobile responsive — drawer on mobile, collapsible on desktop
 //  2. Applications page fetches and shows real data
 //  3. Admin/HR nav hidden from regular users
@@ -41,14 +40,12 @@ const TechGrid = () => (
   />
 );
 
-// Same grid but for the main content area — lighter
-const TechGridLight = () => (
-  <div className="fixed inset-0 pointer-events-none z-0"
-    style={{
-      backgroundImage: 'linear-gradient(rgba(16,185,129,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,0.04) 1px, transparent 1px)',
-      backgroundSize: '40px 40px',
-    }}
-  />
+// ── Signal Room background — see index.css for the .app-canvas layer system ──
+const SignalRoomBg = () => (
+  <>
+    <div className="app-canvas-mesh" />
+    <div className="app-canvas-grain" />
+  </>
 );
 
 // ── Nav item ──────────────────────────────────────────────────────────────────
@@ -256,10 +253,10 @@ export default function DashboardLayout({ children }) {
   );
 
   return (
-    <div className="min-h-screen bg-[#020617] flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="app-canvas min-h-screen flex" style={{ fontFamily: "'Inter', sans-serif" }}>
 
-      {/* FIX 4: Visible tech grid on main background */}
-      <TechGridLight />
+      {/* Signal Room — layered mesh + grain over the aurora canvas */}
+      <SignalRoomBg />
 
       {/* ── FIX 1 Mobile overlay ── */}
       {mobileOpen && (
