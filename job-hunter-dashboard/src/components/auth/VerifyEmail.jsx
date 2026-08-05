@@ -1,5 +1,5 @@
 // =============================================================================
-// job-hunter-dashboard/src/components/auth/VerifyEmail.jsx
+// job-hunter-dashboard/src/components/auth/VerifyEmail.jsx  — NEW FILE
 // Handles both /verify-email (regular users) and /hr/verify (HR users)
 // Reads ?token= from URL, calls the correct backend endpoint
 // =============================================================================
@@ -76,11 +76,11 @@ export default function VerifyEmail() {
   const s = states[status];
 
   return (
-    <div className="app-canvas min-h-screen bg-slate-950 flex items-center justify-center p-8"
+    <div className="app-canvas min-h-screen w-full flex items-center justify-center p-8"
       style={{ fontFamily: "'Inter', sans-serif" }}>
-      <div className="max-w-md w-full text-center">
-        <div className="app-canvas-mesh" />
-        <div className="app-canvas-grain" />
+      <div className="app-canvas-mesh" />
+      <div className="app-canvas-grain" />
+      <div className="max-w-md w-full relative z-10 text-center">
 
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-12">
