@@ -36,8 +36,8 @@ export default function Login() {
       {/* ── Left hero panel ── */}
       <div className="hidden lg:flex lg:w-[55%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1400&q=85"
-          alt="tech" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#080b12]/95 via-[#0f172a]/90 to-emerald-950/70" />
+          alt="tech" className="absolute inset-0 w-full h-full object-cover opacity-70 mix-blend-luminosity" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#080b12]/70 via-[#0f172a]/55 to-emerald-950/40" />
 
         {/* Floating code snippets */}
         <div className="absolute top-32 right-16 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 text-xs font-mono shadow-2xl z-10">
