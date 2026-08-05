@@ -1,3 +1,22 @@
 User-agent: *
 Allow: /
-sitemap: https://a582879.sitemaphosting7.com/4691264/sitemap_4691264.xml
+Allow: /pricing
+Allow: /signup
+Allow: /login
+Allow: /hr/signup
+Allow: /hr/login
+
+# Block authenticated / private app routes from being crawled
+Disallow: /jobs
+Disallow: /optimizer
+Disallow: /applications
+Disallow: /profile
+Disallow: /settings
+Disallow: /referral
+Disallow: /admin
+Disallow: /hr
+Disallow: /verify-email
+Disallow: /reset-password
+Disallow: /forgot-password
+
+Sitemap: https://www.baalebo.xyz/sitemap.xml
