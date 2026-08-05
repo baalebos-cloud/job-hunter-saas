@@ -117,7 +117,7 @@ export default function Signup() {
       <div className="hidden lg:flex lg:w-[45%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&q=85"
           alt="tech" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/88 to-emerald-950/80" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/70 via-slate-900/55 to-emerald-950/45" />
 
         <div className="absolute top-28 right-10 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 shadow-2xl">
           <div className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">Live Stats</div>
