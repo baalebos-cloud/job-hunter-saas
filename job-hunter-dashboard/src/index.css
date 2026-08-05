@@ -63,9 +63,10 @@ html, body {
   position: relative;
   background-color: #080b12;
   background-image:
-    radial-gradient(ellipse 900px 600px at 12% -8%, rgba(16, 185, 129, 0.16), transparent 60%),
-    radial-gradient(ellipse 700px 500px at 88% 8%, rgba(240, 180, 41, 0.09), transparent 55%),
-    radial-gradient(ellipse 1000px 700px at 50% 115%, rgba(16, 185, 129, 0.08), transparent 60%);
+    radial-gradient(ellipse 1100px 750px at 12% -5%, rgba(16, 185, 129, 0.30), transparent 62%),
+    radial-gradient(ellipse 850px 600px at 90% 10%, rgba(240, 180, 41, 0.18), transparent 58%),
+    radial-gradient(ellipse 1200px 800px at 50% 115%, rgba(16, 185, 129, 0.16), transparent 62%),
+    radial-gradient(ellipse 600px 600px at 60% 40%, rgba(59, 130, 246, 0.08), transparent 60%);
   background-attachment: fixed;
   isolation: isolate;
 }
@@ -78,8 +79,8 @@ html, body {
   z-index: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(circle 480px at 20% 30%, rgba(16, 185, 129, 0.10), transparent 70%),
-    radial-gradient(circle 420px at 80% 70%, rgba(240, 180, 41, 0.07), transparent 70%);
+    radial-gradient(circle 560px at 20% 30%, rgba(16, 185, 129, 0.18), transparent 70%),
+    radial-gradient(circle 480px at 80% 70%, rgba(240, 180, 41, 0.14), transparent 70%);
   animation: aurora-drift 70s ease-in-out infinite alternate;
   will-change: transform;
 }
@@ -96,13 +97,15 @@ html, body {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.05;
+  opacity: 0.11;
   background-image:
-    linear-gradient(rgba(16, 185, 129, 0.5) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 185, 129, 0.5) 1px, transparent 1px);
+    linear-gradient(rgba(16, 185, 129, 0.6) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.6) 1px, transparent 1px);
   background-size: 42px 42px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+  /* Fades only at the very edges so it stays visible across the full page,
+     not just near the top like before */
+  mask-image: radial-gradient(ellipse 100% 100% at 50% 30%, black 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 100% 100% at 50% 30%, black 55%, transparent 100%);
 }
 
 .app-canvas-grain {
