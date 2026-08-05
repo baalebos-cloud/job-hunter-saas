@@ -109,14 +109,14 @@ export default function Signup() {
   };
 
   return (
-    <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="app-canvas min-h-screen w-full flex" style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="app-canvas-mesh" />
       <div className="app-canvas-grain" />
 
       {/* ── Left hero panel ── */}
-      <div className="hidden lg:flex lg:w-[45%] relative flex-col justify-between p-14 overflow-hidden">
+      <div className="hidden lg:flex lg:w-[45%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&q=85"
-          alt="tech" className="absolute inset-0 w-full h-full object-cover" />
+          alt="tech" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
         <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/88 to-emerald-950/80" />
 
         <div className="absolute top-28 right-10 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 shadow-2xl">
@@ -160,7 +160,7 @@ export default function Signup() {
       </div>
 
       {/* ── Right form panel ── */}
-      <div className="w-full lg:w-[55%] flex items-center justify-center p-8 bg-slate-950 overflow-y-auto">
+      <div className="w-full lg:w-[55%] min-w-0 flex-1 flex items-center justify-center p-8 relative z-10 overflow-y-auto">
         <div className="w-full max-w-lg py-8">
 
           {/* Mobile logo */}
