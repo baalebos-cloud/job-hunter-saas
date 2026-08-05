@@ -8,56 +8,40 @@
   <!-- Homepage -->
   <url>
     <loc>https://www.baalebo.xyz/</loc>
-    <lastmod>2026-05-12</lastmod>
-    <changefreq>monthly</changefreq>
+    <lastmod>2026-08-05</lastmod>
+    <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
 
-  <!-- About / Hero section anchor -->
+  <!-- Pricing -->
   <url>
-    <loc>https://www.baalebo.xyz/#about</loc>
-    <lastmod>2026-05-12</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-
-  <!-- Skills section anchor -->
-  <url>
-    <loc>https://www.baalebo.xyz/#skills</loc>
-    <lastmod>2026-05-12</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-
-  <!-- Experience section anchor -->
-  <url>
-    <loc>https://www.baalebo.xyz/#experience</loc>
-    <lastmod>2026-05-12</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-
-  <!-- Projects section anchor -->
-  <url>
-    <loc>https://www.baalebo.xyz/#projects</loc>
-    <lastmod>2026-05-12</lastmod>
+    <loc>https://www.baalebo.xyz/pricing</loc>
+    <lastmod>2026-08-05</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
 
-  <!-- Blog section anchor -->
+  <!-- Signup -->
   <url>
-    <loc>https://www.baalebo.xyz/#blog</loc>
-    <lastmod>2026-05-12</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://www.baalebo.xyz/signup</loc>
+    <lastmod>2026-08-05</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
 
-  <!-- Contact section anchor -->
+  <!-- Login -->
   <url>
-    <loc>https://www.baalebo.xyz/#contact</loc>
-    <lastmod>2026-05-12</lastmod>
-    <changefreq>yearly</changefreq>
+    <loc>https://www.baalebo.xyz/login</loc>
+    <lastmod>2026-08-05</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <!-- HR Signup -->
+  <url>
+    <loc>https://www.baalebo.xyz/hr/signup</loc>
+    <lastmod>2026-08-05</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
 
