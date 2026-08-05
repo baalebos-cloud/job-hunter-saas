@@ -1,5 +1,6 @@
 // =============================================================================
 // job-hunter-dashboard/src/components/layout/DashboardLayout.jsx
+// Fixes:
 //  1. Mobile responsive — drawer on mobile, collapsible on desktop
 //  2. Applications page fetches and shows real data
 //  3. Admin/HR nav hidden from regular users
@@ -90,6 +91,21 @@ export default function DashboardLayout({ children }) {
 
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+
+  // Lock body scroll while drawer is open + close on Escape key
+  // (also fixes the "drawer looks stuck open" symptom caused by background scroll)
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+      const onEsc = (e) => { if (e.key === 'Escape') setMobileOpen(false); };
+      window.addEventListener('keydown', onEsc);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', onEsc);
+      };
+    }
+    document.body.style.overflow = '';
+  }, [mobileOpen]);
 
   // Fetch profile + plan
   useEffect(() => {
