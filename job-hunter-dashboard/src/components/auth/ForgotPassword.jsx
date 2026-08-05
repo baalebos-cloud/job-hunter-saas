@@ -1,5 +1,5 @@
 // =============================================================================
-// job-hunter-dashboard/src/components/auth/ForgotPassword.jsx
+// job-hunter-dashboard/src/components/auth/ForgotPassword.jsx  — NEW FILE
 // =============================================================================
 import React, { useState } from 'react';
 import axios from 'axios';
@@ -28,11 +28,11 @@ export default function ForgotPassword() {
   };
 
   if (sent) return (
-    <div className="app-canvas min-h-screen bg-slate-950 flex items-center justify-center p-8"
+    <div className="app-canvas min-h-screen w-full flex items-center justify-center p-8"
       style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="app-canvas-mesh" />
       <div className="app-canvas-grain" />
-      <div className="max-w-md w-full text-center">
+      <div className="max-w-md w-full relative z-10 text-center">
         <div className="w-20 h-20 bg-emerald-500/10 border-2 border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-6">
           <span className="text-4xl">📬</span>
         </div>
@@ -64,9 +64,11 @@ export default function ForgotPassword() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8"
+    <div className="app-canvas min-h-screen w-full flex items-center justify-center p-8"
       style={{ fontFamily: "'Inter', sans-serif" }}>
-      <div className="w-full max-w-md">
+      <div className="app-canvas-mesh" />
+      <div className="app-canvas-grain" />
+      <div className="w-full max-w-md relative z-10">
 
         {/* Logo */}
         <div className="flex items-center gap-3 mb-10">
