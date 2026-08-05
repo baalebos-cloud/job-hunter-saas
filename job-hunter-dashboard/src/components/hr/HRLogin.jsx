@@ -1,5 +1,5 @@
 // =============================================================================
-// job-hunter-dashboard/src/components/hr/HRLogin.jsx  — NEW FILE
+// job-hunter-dashboard/src/components/hr/HRLogin.jsx
 // Dedicated HR login — company email only, clear error states
 // =============================================================================
 import React, { useState } from 'react';
@@ -63,8 +63,8 @@ export default function HRLogin() {
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-[45%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=85"
-          alt="office" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/88 to-blue-950/80" />
+          alt="office" className="absolute inset-0 w-full h-full object-cover opacity-70 mix-blend-luminosity" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/70 via-slate-900/55 to-blue-950/45" />
 
         <div className="relative z-10 flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
