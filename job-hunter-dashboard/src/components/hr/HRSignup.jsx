@@ -76,10 +76,8 @@ export default function HRSignup() {
 
   // ── Success state ─────────────────────────────────────────────────────────
   if (success) return (
-    <div className="app-canvas min-h-screen bg-slate-950 flex items-center justify-center p-8"
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8"
       style={{ fontFamily: "'Inter', sans-serif" }}>
-      <div className="app-canvas-mesh" />
-      <div className="app-canvas-grain" />
       <div className="max-w-md w-full text-center">
         <div className="w-20 h-20 bg-blue-500/10 border-2 border-blue-500/30 rounded-full flex items-center justify-center mx-auto mb-6">
           <span className="text-4xl">📬</span>
@@ -114,12 +112,14 @@ export default function HRSignup() {
   );
 
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="app-canvas min-h-screen w-full flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <div className="app-canvas-mesh" />
+      <div className="app-canvas-grain" />
 
       {/* Left panel */}
-      <div className="hidden lg:flex lg:w-[45%] relative flex-col justify-between p-14 overflow-hidden">
+      <div className="hidden lg:flex lg:w-[45%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=85"
-          alt="office" className="absolute inset-0 w-full h-full object-cover" />
+          alt="office" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
         <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/88 to-blue-950/80" />
 
         {/* Verification badge */}
@@ -171,7 +171,7 @@ export default function HRSignup() {
       </div>
 
       {/* Right form */}
-      <div className="w-full lg:w-[55%] flex items-center justify-center p-8 bg-slate-950 overflow-y-auto">
+      <div className="w-full lg:w-[55%] min-w-0 flex-1 flex items-center justify-center p-8 relative z-10 overflow-y-auto">
         <div className="w-full max-w-lg py-8">
 
           <div className="mb-6">
