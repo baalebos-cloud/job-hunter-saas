@@ -119,8 +119,8 @@ export default function HRSignup() {
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-[45%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
         <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=85"
-          alt="office" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-slate-900/88 to-blue-950/80" />
+          alt="office" className="absolute inset-0 w-full h-full object-cover opacity-70 mix-blend-luminosity" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/70 via-slate-900/55 to-blue-950/45" />
 
         {/* Verification badge */}
         <div className="absolute top-24 right-8 bg-slate-900/90 backdrop-blur border border-blue-500/20 rounded-2xl p-4 shadow-xl">
