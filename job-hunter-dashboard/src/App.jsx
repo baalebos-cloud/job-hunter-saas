@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { HelmetProvider } from 'react-helmet-async'
 import axios from 'axios'
+import SEO from './components/SEO'
 
 import DashboardLayout from './components/layout/DashboardLayout'
 import StatsGrid from './components/StatsGrid'
@@ -431,6 +433,7 @@ function LandingPage() {
   )
   return (
     <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <SEO path="/" description="AI-powered resume optimizer and job matching for global tech talent. Upload your resume, get an instant ATS score, and get matched to live remote jobs — from Nigeria to Silicon Valley." />
       <div className="app-canvas-mesh" />
       <div className="app-canvas-grain" />
       <nav className="relative z-10 sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
@@ -622,8 +625,9 @@ function App() {
   }, [])
 
   return (
-    <Router>
-      <Routes>
+    <HelmetProvider>
+      <Router>
+        <Routes>
         {/* ── Public landing ── */}
         <Route path="/landing" element={<LandingPage />} />
 
@@ -671,9 +675,10 @@ function App() {
           <RequireRole role="hr"><DashboardLayout><HRPortal /></DashboardLayout></RequireRole>
         } />
 
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </Router>
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </Router>
+    </HelmetProvider>
   )
 }
 
