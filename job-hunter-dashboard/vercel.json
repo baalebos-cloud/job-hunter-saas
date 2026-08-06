@@ -4,17 +4,6 @@
   "installCommand": "npm install",
   "framework": "vite",
 
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/((?!sitemap\\.xml|robots\\.txt|favicon\\.ico|manifest\\.json).*)",
-      "destination": "/index.html"
-    }
-  ],
-
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -24,6 +13,13 @@
           "value": "public, max-age=31536000, immutable"
         }
       ]
+    }
+  ],
+
+  "rewrites": [
+    {
+      "source": "/((?!robots\\.txt|sitemap\\.xml|favicon\\.ico|manifest\\.json).*)",
+      "destination": "/index.html"
     }
   ]
 }
