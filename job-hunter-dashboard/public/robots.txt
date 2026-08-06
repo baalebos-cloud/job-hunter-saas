@@ -1,22 +1,15 @@
 User-agent: *
-Allow: /
-Allow: /pricing
-Allow: /signup
-Allow: /login
-Allow: /hr/signup
-Allow: /hr/login
 
-# Block authenticated / private app routes from being crawled
-Disallow: /jobs
-Disallow: /optimizer
+Allow: /
+
 Disallow: /applications
 Disallow: /profile
 Disallow: /settings
+Disallow: /optimizer
 Disallow: /referral
 Disallow: /admin
-Disallow: /hr
 Disallow: /verify-email
-Disallow: /reset-password
 Disallow: /forgot-password
+Disallow: /reset-password
 
 Sitemap: https://www.baalebo.xyz/sitemap.xml
