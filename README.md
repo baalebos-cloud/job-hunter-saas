@@ -1,64 +1,197 @@
-Job Hunter SaaS (Baalebos Cloud)
-A production-ready, cloud-native Job Application Automation Platform. Optimized for resume parsing, ATS scoring, and automated job discovery using an asynchronous distributed architecture.
-📌 Overview
-Job Hunter SaaS is a full-stack solution designed to modernize the job search. It solves the "black hole" of applications by providing data-driven insights into resume performance and application tracking.
-Core Capabilities
- * AI Resume Analysis: Real-time ATS scoring and keyword optimization.
- * Automated Discovery: Distributed scraping and categorization of job listings.
- * Asynchronous Pipelines: Heavy processing (PDF parsing/AI) handled by background workers.
- * DevOps Excellence: Fully automated "Push-to-Deploy" pipeline with container pruning for cost-efficiency.
-🧱 System Architecture
-The platform utilizes a Decoupled Micro-service Architecture:
- * Frontend: React (Vite) + Tailwind CSS v4 (Native Engine).
- * API Gateway: Nginx acting as a Reverse Proxy.
- * Core API: FastAPI (Asynchronous Python 3.12).
- * Task Orchestration: Redis 7 (Broker) + Celery (Workers).
- * Persistence: PostgreSQL (AWS RDS).
-⚙️ Tech Stack
-| Layer | Technologies |
-|---|---|
-| Frontend | React 18, Vite 5, Tailwind CSS v4, Axios, Lucide Icons |
-| Backend | FastAPI, SQLAlchemy, Pydantic v2, Python 3.12 |
-| Async Processing | Celery, Redis 7 (Message Broker) |
-| Cloud & DevOps | Terraform (IaC), AWS EC2, Amazon ECR, GitHub Actions |
-| Web Server | Nginx (Reverse Proxy & Static Asset Hosting) |
-✨ Key Features
-📊 Intelligent Dashboard
- * Live Metrics: Aggregate stats for resumes analyzed, average scores, and tracking status.
- * Application Funnel: Visual breakdown of Pending → Applied → Interview → Offer.
-📄 Resume Analyzer
- * Multi-format Support: Upload PDF/DOCX for instant parsing.
- * ATS Engine: AI-driven keyword extraction and improvement suggestions.
-⚡ Background Processing
- * Non-blocking UI: Resume analysis is offloaded to Celery workers, allowing the user to continue browsing while the AI processes data in the background.
-☁️ Deployment & DevOps (AWS)
-The CI/CD Pipeline
- * Continuous Integration: GitHub Actions builds a multi-stage Docker image upon every push to main.
- * Image Registry: Images are versioned and pushed to Amazon ECR.
- * Automated Deployment: GitHub Actions triggers an SSH handshake to the AWS EC2 instance.
- * Resource Management: The deployment script executes docker image prune -a to maintain a lean footprint on 8GB EBS volumes.
-Security & Optimization
- * Secret Management: All AWS keys and DB credentials are encrypted via GitHub Secrets.
- * Reverse Proxy: FastAPI is shielded behind Nginx; only ports 80/443 are exposed.
- * Storage: Automated pruning prevents disk-full errors on small cloud instances.
-🧪 Local Development
-1. Backend & Workers
-# Start API
-uvicorn app.main:app --reload
+# job-hunter-saas
 
-# Start Celery Worker
-celery -A app.celery_app worker --loglevel=info
+**AI-powered job hunting platform** — ATS resume optimization, live job aggregation, and AI interview assistant built with FastAPI, React/Vite, and LLM APIs.
 
-2. Frontend (Tailwind v4)
-cd job-hunter-dashboard
+---
+
+## What it does
+
+Most resumes fail ATS screening before a human ever reads them. job-hunter-saas solves this end-to-end:
+
+1. **Upload your CV** (PDF or DOCX) + paste a job description
+2. **AI scores your resume** against the JD — keyword gaps, action verbs, quantified achievements
+3. **LLM rewrites your resume** targeting 96%+ ATS score for that specific role
+4. **Download an ATS-optimized PDF** — single column, Helvetica, no tables or graphics
+5. **Browse live job listings** aggregated from 9 global sources in real time
+
+---
+
+## Tech Stack
+
+### Backend
+- **Python3** — FastAPI, Pydantic, SQLAlchemy
+- **LLM** — Groq API (`llama-3.3-70b-versatile`) via OpenAI-compatible client
+- **Document processing** — pdfplumber (PDF), python-docx (DOCX)
+- **PDF generation** — ReportLab (ATS-compliant single-column layout)
+- **Database** — SQLAlchemy ORM + SQLite (dev) / PostgreSQL (prod)
+- **Job scraping** — requests, feedparser, XML parsing across 9 sources
+
+### Frontend
+- **React + Vite** — TypeScript
+- **Styling** — Tailwind CSS
+- **State** — React hooks
+
+### Infrastructure
+- **Docker** — containerized backend and frontend
+- **GitHub Actions** — CI/CD pipeline (lint, test, build, deploy)
+- **AWS** — EC2, S3, RDS deployment target
+
+---
+
+## Architecture
+
+```
+frontend/          # React/Vite TypeScript UI
+backend/
+  app/
+    api/           # FastAPI route handlers
+    models/        # SQLAlchemy ORM models
+    utils/
+      ats_engine.py      # Text extraction + LLM ATS scoring + AI resume rewrite
+      optimizer.py       # Pipeline orchestrator — wires ats_engine → pdf_generator
+      pdf_generator.py   # ATS-compliant PDF rendering (ReportLab)
+      global_scraper.py  # Multi-source job aggregation (9 sources)
+    core/
+      config.py          # Settings — GROQ_API_KEY, DATABASE_URL, etc.
+    database.py          # SQLAlchemy session management
+```
+
+---
+
+## Key Engineering Decisions
+
+### LLM Inference Pipeline
+The AI rewrite pipeline (`optimizer.py → ats_engine.py → pdf_generator.py`) follows a strict 3-stage flow:
+
+1. `extract_text()` — converts uploaded file bytes to plain text
+2. `analyze_detailed_ats()` — scores resume against JD, returns missing keywords
+3. `rewrite_resume_for_job()` — AI rewrites resume, returns structured JSON dict
+
+The structured dict flows directly to `generate_optimized_resume()` which renders the PDF. If any stage fails, the pipeline falls back gracefully — never crashing, always returning a usable result.
+
+### ATS-Compliant PDF Design
+ReportLab is used instead of HTML-to-PDF conversion because ATS parsers fail on:
+- Multi-column layouts (columns parsed left-to-right as garbled text)
+- Tables (cells parsed out of order)
+- Images, text boxes, or non-standard fonts
+
+Every PDF output uses: single column, Helvetica, plain hyphen bullets, full-width section dividers, consistent left margin.
+
+### Job Aggregation
+`global_scraper.py` hits 9 sources concurrently using `ThreadPoolExecutor` — Remotive, Jobicy, Arbeitnow, WeWorkRemotely, Greenhouse, Lever, The Muse, Adzuna, and Stack Overflow Jobs (deprecated — removed). Deduplication by URL before DB insert.
+
+---
+
+## Known Bugs Fixed
+
+### Bug: Silent ImportError in optimizer.py → blank PDF output
+**Root cause:** `optimizer.py` imported non-existent function names from `ats_engine.py`:
+```python
+# BUGGY — these functions do not exist
+from backend.app.utils.ats_engine import analyze_resume, rewrite_resume
+
+# FIXED — correct names
+from backend.app.utils.ats_engine import analyze_detailed_ats, rewrite_resume_for_job
+```
+The `ImportError` was silently caught, causing `structured=None` to flow to `pdf_generator`, which rendered a PDF containing only `"Candidate"` as the name with all sections empty.
+
+**Fix:** Corrected import names + added `_validate_structured()` post-AI validation to enforce all required fields are populated from raw resume text if AI returns empty arrays.
+
+### Bug: `save_jobs_to_db()` — `if True:` always commits
+```python
+# BUGGY
+if True:
+    db.commit()
+
+# FIXED
+if saved > 0:
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+```
+
+### Bug: AI model drops education and certifications arrays
+**Fix:** Pre-extraction injection into prompt + `_enforce_education_and_certs()` post-AI enforcement — parses raw resume text directly if AI returns `[]`.
+
+---
+
+## Getting Started
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- Docker (optional)
+
+### Environment Variables
+```bash
+# backend/.env
+GROQ_API_KEY=your_groq_api_key   # Free at console.groq.com
+DATABASE_URL=sqlite:///./jobs.db
+```
+
+### Run with Docker
+```bash
+docker-compose up --build
+```
+
+### Run locally
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend
+cd frontend
 npm install
 npm run dev
+```
 
-📈 Future Roadmap
- * SSL/TLS: Automated certificate renewal via Certbot.
- * K8s Migration: Transitioning from Docker Compose to Kubernetes (EKS) for auto-scaling.
- * WebSockets: Real-time notification updates for background task completion.
-👨‍💻 Author
+### Run tests
+```bash
+cd backend
+pytest tests/ -v
+```
 
-Baalebos Cloud & DevOps Engineer Focused on building high-availability, production-ready systems.
-This project is for educational and professional portfolio purposes.
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/resume/analyze` | Upload CV + JD → ATS score + missing keywords |
+| POST | `/api/resume/optimize` | Upload CV + JD → AI-rewritten ATS-optimized PDF |
+| GET | `/api/jobs` | Browse aggregated job listings |
+| GET | `/api/jobs/scrape` | Trigger fresh job scrape (all 9 sources) |
+
+---
+
+## Job Sources
+
+| Source | Coverage |
+|--------|----------|
+| Remotive | Global remote |
+| Jobicy | Global remote |
+| Arbeitnow | Europe + global |
+| WeWorkRemotely | USA + global |
+| Greenhouse | Top tech companies |
+| Lever | Startups |
+| The Muse | USA companies |
+| Adzuna | 10 countries incl. Nigeria, South Africa |
+| Micro1 | Global remote |
+
+---
+
+## Author
+
+**Oluwadare Tobi Jayeola** — DevOps Engineer & Software Engineer
+- GitHub: [github.com/baalebos-cloud](https://github.com/baalebos-cloud)
+- LinkedIn: [linkedin.com/in/oluwadare-jayeola-6874591b4](https://linkedin.com/in/oluwadare-jayeola-6874591b4)
+- Email: jayeolaoluwadamilare@gmail.com
+
+---
+
+## License
+
+MIT
