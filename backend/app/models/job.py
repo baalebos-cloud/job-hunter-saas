@@ -17,6 +17,9 @@ class Job(Base):
     salary_range = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     scraped_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_checked_at = Column(DateTime, nullable=True)
+    published_at = Column(DateTime, nullable=True)
     work_type = Column(String, nullable=True)  # remote | hybrid | onsite
     posted_by_hr = Column(Boolean, default=False)  # True = HR posted, False = scraped
     hr_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # HR who posted

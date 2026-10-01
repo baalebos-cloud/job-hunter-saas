@@ -13,6 +13,7 @@ from collections import defaultdict
 from pydantic import BaseModel, EmailStr
 import time
 
+from backend.app.dependencies.roles import require_admin
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.services.auth_service import hash_password, verify_password, create_access_token
@@ -315,9 +316,8 @@ def hr_login(payload: HRLoginRequest, request: Request, db: Session = Depends(ge
                    "Please check your inbox for the verification link."
         )
 
-    # Check admin approval via is_admin flag or a dedicated hr_approved column
-    # For now: admin sets is_verified=True after review (can be extended)
-    # If account was flagged/banned by admin, is_hr would be set to False
+    if not user.hr_approved:
+        raise HTTPException(403, "Your employer account is awaiting administrator approval.")
 
     token = create_access_token({"sub": user.email})
     return {
@@ -336,6 +336,7 @@ def approve_hr_account(
     user_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    admin=Depends(require_admin),
 ):
     """
     Admin approves an HR account.
@@ -350,7 +351,9 @@ def approve_hr_account(
     if not user:
         raise HTTPException(status_code=404, detail="HR user not found.")
 
-    user.is_verified = True
+    if not user.is_verified:
+        raise HTTPException(400, "HR must verify their email before approval")
+    user.hr_approved = True
     db.commit()
 
     background_tasks.add_task(
@@ -365,11 +368,11 @@ def approve_hr_account(
 
 # ── GET /hr-auth/pending — Admin only ────────────────────────────────────────
 @router.get("/pending")
-def list_pending_hr(db: Session = Depends(get_db)):
+def list_pending_hr(db: Session = Depends(get_db), admin=Depends(require_admin)):
     """List all HR accounts awaiting approval."""
     pending = db.query(User).filter(
         User.is_hr == True,
-        User.is_verified == False
+        User.hr_approved == False
     ).order_by(User.created_at.desc()).all()
     return [
         {

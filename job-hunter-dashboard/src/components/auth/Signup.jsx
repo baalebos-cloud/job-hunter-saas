@@ -79,6 +79,7 @@ export default function Signup() {
             `${API_BASE_URL}/referral/track`,
             null,
             {
+              headers: { Authorization: `Bearer ${token}` },
               params: {
                 ref_code:       refCode,
                 referred_email: form.email,

@@ -18,10 +18,12 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://baalebo.xyz")
 router = APIRouter(tags=["Referral"])
 
 
-def _ref_code(user_id: int, username: str) -> str:
-    """Generate a deterministic referral code from user id + username."""
-    slug = (username or f"user{user_id}").lower().replace(" ", "")[:12]
-    return f"{slug}{user_id}"
+def referral_code(user, db):
+    import secrets
+    if not user.referral_code:
+        user.referral_code = secrets.token_urlsafe(12)
+        db.commit()
+    return user.referral_code
 
 
 # ── GET /referral/stats ───────────────────────────────────────────────────────
@@ -39,16 +41,16 @@ def get_referral_stats(
     paid_out   = sum(r.reward_amount for r in refs if r.paid_out)
     pending_earn = sum(r.reward_amount for r in refs if not r.paid_out and r.status == "converted")
 
-    tier       = get_tier(total)
-    next_tier  = next((t for t in TIER_CONFIG if t["min"] > total), None)
+    tier       = get_tier(len(converted))
+    next_tier  = next((t for t in TIER_CONFIG if t["min"] > len(converted)), None)
 
-    code       = _ref_code(current_user.id, current_user.full_name or current_user.email.split("@")[0])
+    code       = referral_code(current_user, db)
     ref_link   = f"{FRONTEND_URL}/?ref={code}"
 
     # Progress to next tier
     if next_tier:
         prev_min = tier["min"]
-        progress = round(((total - prev_min) / (next_tier["min"] - prev_min)) * 100)
+        progress = round(((len(converted) - prev_min) / (next_tier["min"] - prev_min)) * 100)
     else:
         progress = 100
 
@@ -82,73 +84,50 @@ def get_referral_stats(
 
 # ── POST /referral/track ──────────────────────────────────────────────────────
 @router.post("/track")
-def track_referral(
-    ref_code: str,
-    referred_email: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Called during signup when a ref code is detected in the URL.
-    Creates a pending referral record.
-    """
-    # Find referrer by code — match slug+id pattern
-    # Extract user_id from end of code (digits at end)
-    import re
-    m = re.search(r'(\d+)$', ref_code)
-    if not m:
-        raise HTTPException(status_code=400, detail="Invalid referral code")
-
-    user_id = int(m.group(1))
-    referrer = db.query(User).filter(User.id == user_id).first()
-    if not referrer:
-        raise HTTPException(status_code=404, detail="Referral code not found")
-
-    # Don't self-refer
-    if referrer.email == referred_email:
-        raise HTTPException(status_code=400, detail="Cannot refer yourself")
-
-    # Check duplicate
-    existing = db.query(Referral).filter(
-        Referral.referrer_id == user_id,
-        Referral.referred_email == referred_email
-    ).first()
-    if existing:
-        return {"message": "Referral already tracked", "referral_id": existing.id}
-
-    ref = Referral(
-        referrer_id=user_id,
-        referred_email=referred_email,
-        status="pending"
-    )
-    db.add(ref)
-    db.commit()
-    db.refresh(ref)
-    return {"message": "Referral tracked", "referral_id": ref.id}
+def track_referral(ref_code: str, referred_email: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    if referred_email.strip().lower() != current_user.email:
+        raise HTTPException(403, "Only your own registration can be attributed.")
+    from datetime import timedelta
+    if datetime.utcnow() - current_user.created_at > timedelta(hours=24):
+        raise HTTPException(400,"Referral attribution is available only within 24 hours of registration.")
+    referrer=db.query(User).filter(User.referral_code==ref_code).first()
+    if not referrer: raise HTTPException(400,"Invalid referral code")
+    if referrer.id==current_user.id: raise HTTPException(400,"Cannot refer yourself")
+    existing=db.query(Referral).filter(Referral.referred_email==current_user.email).first()
+    if existing: return {"message":"Referral already attributed","referral_id":existing.id}
+    record=Referral(referrer_id=referrer.id,referred_email=current_user.email,referred_user_id=current_user.id,status='pending')
+    db.add(record); db.commit()
+    return {"message":"Referral tracked","referral_id":record.id}
 
 
 # ── POST /referral/convert ────────────────────────────────────────────────────
-@router.post("/convert")
 def convert_referral(
     referred_user_id: int,
     plan: str,
-    db: Session = Depends(get_db)
+    db: Session
 ):
     """
-    Called from the Stripe webhook (billing.py) when a referred user
+    Internal helper called only after a verified paid Stripe event (billing.py) when a referred user
     subscribes to a paid plan. Marks referral as converted and sets reward.
     """
+    if plan not in ("pro", "enterprise"):
+        return {"message": "Non-qualifying plan"}
     referred_user = db.query(User).filter(User.id == referred_user_id).first()
+    if referred_user and not referred_user.is_verified:
+        return {"message": "Verify referred account before reward"}
     if not referred_user:
         return {"message": "User not found"}
 
     ref = db.query(Referral).filter(
         Referral.referred_email == referred_user.email,
         Referral.status == "pending"
-    ).first()
+    ).with_for_update().first()
 
     if not ref:
         return {"message": "No pending referral found for this user"}
 
+    if ref.referrer_id == referred_user.id:
+        return {"message":"Self referral blocked"}
     # Calculate reward based on referrer's current tier
     referrer_refs = db.query(func.count(Referral.id)).filter(
         Referral.referrer_id == ref.referrer_id,
@@ -163,7 +142,7 @@ def convert_referral(
     ref.reward_amount    = reward
     ref.referred_user_id = referred_user_id
     ref.converted_at     = datetime.utcnow()
-    db.commit()
+    db.flush()
 
     return {
         "message":  "Referral converted",

@@ -26,6 +26,8 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    if not settings.SECRET_KEY:
+        raise HTTPException(503, "Authentication is not configured")
     try:
         # Use the settings we fixed in backend/app/core/config.py
         payload = jwt.decode(

@@ -33,7 +33,7 @@ const ALL_JOB_TITLES = [
 ];
 
 const WORK_TYPES = [
-  { value: 'remote',  label: '🌍 Remote',   desc: 'Work from anywhere' },
+  { value: 'remote',  label: '🌍 Remote',   desc: 'Check employer location restrictions' },
   { value: 'hybrid',  label: '🏢 Hybrid',   desc: 'Mix of office & remote' },
   { value: 'onsite',  label: '📍 On-site',  desc: 'Full-time in office' },
 ];
@@ -48,6 +48,14 @@ export default function ResumeUpload({ onUploadSuccess }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef(null);
   const dropRef = useRef(null);
+
+  useEffect(() => {
+    const jobId = new URLSearchParams(window.location.search).get('job');
+    if (!jobId) return;
+    axios.get(`${API_BASE_URL}/jobs/detail/${jobId}`).then(({data})=>{
+      setJobTitle(data.title); setQuery(data.title); setJobDesc(data.description || '');
+    }).catch(()=>alert('Could not load the vacancy. Paste its job description manually.'));
+  }, []);
 
   // Filter suggestions based on query
   const suggestions = query.length >= 1
@@ -87,7 +95,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
     try {
       const res = await axios.post(`${API_BASE_URL}/resume/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` },
-        timeout: 120000  // 2 minutes — AI analysis takes time
+        timeout: 300000  // 2 minutes — AI analysis takes time
       });
       if (res.data.result) {
         // Direct result returned (Railway mode — no Celery)
@@ -117,7 +125,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
         <h2 className="text-3xl font-black text-slate-900 tracking-tight"
           style={{ fontFamily: "'Playfair Display', serif" }}>AI Resume Optimizer</h2>
         <p className="text-slate-500 font-medium mt-2 text-sm">
-          Our AI scores your resume against the job description and generates an interview-ready PDF.
+          Our AI scores your resume against the job description and generates an tailored PDF for your review.
         </p>
       </div>
 
@@ -228,7 +236,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
             onChange={e => setJobDesc(e.target.value)}
           />
           <p className="text-xs text-slate-400 mt-1.5 ml-1 font-medium">
-            The more complete the JD, the higher your ATS score will be.
+            A complete job description helps assess all requirements accurately.
           </p>
         </div>
 
@@ -238,7 +246,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
             Your Resume
           </label>
           <input type="file" id="resume-file" className="hidden"
-            onChange={e => setFile(e.target.files?.[0] || null)} accept=".pdf,.docx,.doc" />
+            onChange={e => setFile(e.target.files?.[0] || null)} accept=".pdf,.docx" />
           <label htmlFor="resume-file"
             className={`flex items-center gap-4 p-5 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
               file ? 'border-emerald-400 bg-emerald-50/40' : 'border-slate-200 bg-slate-50/50 hover:border-emerald-300 hover:bg-emerald-50/20'
@@ -255,7 +263,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
                 {file ? file.name : 'Click to upload your resume'}
               </p>
               <p className="text-xs font-medium text-slate-400 mt-0.5">
-                {file ? `${(file.size / 1024).toFixed(0)} KB · PDF, DOCX or DOC` : 'PDF, DOCX, or DOC · Max 10MB'}
+                {file ? `${(file.size / 1024).toFixed(0)} KB · PDF or DOCX` : 'PDF or DOCX · Max 10MB'}
               </p>
             </div>
           </label>
@@ -271,7 +279,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
               : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
           }`}
         >
-          {uploading ? '🚀 AI Analyzing Your Resume...' : 'Run AI Analysis & Get Interview-Ready PDF →'}
+          {uploading ? '🚀 AI Analyzing Your Resume...' : 'Run AI Analysis & Get Tailored PDF →'}
         </button>
 
         {(!file || !jobTitle || !jobDesc) && (

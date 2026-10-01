@@ -72,31 +72,31 @@ export default function ReferralDashboard() {
     : 0
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-center">
         <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Loading referral data...</p>
+        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Loading referral data...</p>
       </div>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-slate-950" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Inter', sans-serif" }}>
 
       {/* Navbar */}
-      <nav className="sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
+      <nav className="sticky top-0 z-40 border-b border-slate-200/60 bg-slate-50/90 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
           <a href="/" className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5 text-slate-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z"/>
               </svg>
             </div>
-            <span className="font-black text-white text-base tracking-tight">BAALEBOS CLOUD</span>
+            <span className="font-black text-slate-900 text-base tracking-tight">BAALEBOS CLOUD</span>
           </a>
           <div className="flex items-center gap-3">
-            <a href="/" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2">← Dashboard</a>
-            <a href="/pricing" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2">Pricing</a>
+            <a href="/" className="text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors px-4 py-2">← Dashboard</a>
+            <a href="/pricing" className="text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors px-4 py-2">Pricing</a>
           </div>
         </div>
       </nav>
@@ -107,12 +107,12 @@ export default function ReferralDashboard() {
         <div className="mb-10">
           <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-2 mb-4">
             <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-            <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">Earn $5–$12 per conversion</span>
+            <span className="text-emerald-700 text-xs font-bold uppercase tracking-widest">Earn $5–$12 per conversion</span>
           </div>
-          <h1 className="text-4xl md:text-5xl font-black text-white mb-3" style={{ fontFamily: "'Playfair Display', serif" }}>
+          <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-3" style={{ fontFamily: "'Playfair Display', serif" }}>
             Refer & Earn
           </h1>
-          <p className="text-slate-400 text-lg max-w-xl">
+          <p className="text-slate-500 text-lg max-w-xl">
             Share your link. Every friend who upgrades to Pro earns you cash — instantly tracked, paid monthly.
           </p>
         </div>
@@ -120,12 +120,12 @@ export default function ReferralDashboard() {
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'Total referred',    value: stats?.total ?? 0,                        color: 'text-white' },
-            { label: 'Converted',         value: stats?.converted ?? 0,                    color: 'text-emerald-400' },
+            { label: 'Total referred',    value: stats?.total ?? 0,                        color: 'text-slate-900' },
+            { label: 'Converted',         value: stats?.converted ?? 0,                    color: 'text-emerald-700' },
             { label: 'Conversion rate',   value: `${stats?.conversion_rate ?? 0}%`,        color: 'text-blue-400' },
-            { label: 'Total earned',      value: `$${stats?.total_earned ?? 0}`,           color: 'text-emerald-400' },
+            { label: 'Total earned',      value: `$${stats?.total_earned ?? 0}`,           color: 'text-emerald-700' },
           ].map(({ label, value, color }) => (
-            <div key={label} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <div key={label} className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">{label}</div>
               <div className={`text-3xl font-black ${color}`}>{value}</div>
             </div>
@@ -135,25 +135,25 @@ export default function ReferralDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 
           {/* Referral link card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-            <h2 className="text-base font-black text-white mb-4">Your referral link</h2>
-            <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 mb-4">
-              <span className="flex-1 text-sm text-emerald-400 font-mono overflow-hidden whitespace-nowrap text-ellipsis">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6">
+            <h2 className="text-base font-black text-slate-900 mb-4">Your referral link</h2>
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4">
+              <span className="flex-1 text-sm text-emerald-700 font-mono overflow-hidden whitespace-nowrap text-ellipsis">
                 {stats?.ref_link || 'Loading...'}
               </span>
               <button onClick={copyLink}
-                className="shrink-0 flex items-center gap-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-lg transition-all">
+                className="shrink-0 flex items-center gap-2 text-xs font-black text-slate-900 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-lg transition-all">
                 {copied ? '✓ Copied!' : 'Copy'}
               </button>
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { platform: 'twitter',  label: '𝕏 Twitter',   color: 'bg-slate-800 hover:bg-slate-700' },
+                { platform: 'twitter',  label: '𝕏 Twitter',   color: 'bg-slate-100 hover:bg-slate-700' },
                 { platform: 'whatsapp', label: '💬 WhatsApp',  color: 'bg-green-900/40 hover:bg-green-900/60 border border-green-700/30' },
                 { platform: 'linkedin', label: 'in LinkedIn',  color: 'bg-blue-900/40 hover:bg-blue-900/60 border border-blue-700/30' },
               ].map(({ platform, label, color }) => (
                 <button key={platform} onClick={() => share(platform)}
-                  className={`${color} text-white text-xs font-black py-2.5 rounded-xl transition-all text-center`}>
+                  className={`${color} text-slate-900 text-xs font-black py-2.5 rounded-xl transition-all text-center`}>
                   {label}
                 </button>
               ))}
@@ -161,10 +161,10 @@ export default function ReferralDashboard() {
           </div>
 
           {/* Tier + progress card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-black text-white">Reward tiers</h2>
-              <span className="text-xs font-black px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+              <h2 className="text-base font-black text-slate-900">Reward tiers</h2>
+              <span className="text-xs font-black px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-700">
                 {TIERS[tierIdx]?.name} tier
               </span>
             </div>
@@ -175,17 +175,17 @@ export default function ReferralDashboard() {
                     i === tierIdx
                       ? 'border-emerald-500/50 bg-emerald-500/10'
                       : i < tierIdx
-                      ? 'border-slate-700 bg-slate-800/50'
-                      : 'border-slate-800 bg-slate-950'
+                      ? 'border-slate-200 bg-slate-100/50'
+                      : 'border-slate-200 bg-slate-50'
                   }`}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${i === tierIdx ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${i === tierIdx ? 'text-emerald-700' : 'text-slate-500'}`}>
                       {tier.name}
                     </span>
-                    {i < tierIdx && <span className="text-emerald-400 text-xs">✓</span>}
+                    {i < tierIdx && <span className="text-emerald-700 text-xs">✓</span>}
                     {i === tierIdx && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
                   </div>
-                  <div className={`text-base font-black ${i === tierIdx ? 'text-white' : 'text-slate-500'}`}>{tier.reward}</div>
+                  <div className={`text-base font-black ${i === tierIdx ? 'text-slate-900' : 'text-slate-500'}`}>{tier.reward}</div>
                   <div className="text-[10px] text-slate-600 mt-0.5">
                     {tier.max ? `${tier.min}–${tier.max} refs` : `${tier.min}+ refs`}
                   </div>
@@ -196,14 +196,14 @@ export default function ReferralDashboard() {
             {/* Progress bar */}
             <div>
               <div className="flex justify-between text-xs font-bold mb-2">
-                <span className="text-slate-400">
+                <span className="text-slate-500">
                   {stats?.next_tier
-                    ? `${stats.total} of ${stats.next_tier.min} to reach ${stats.next_tier.name}`
+                    ? `${stats.converted} of ${stats.next_tier.min} to reach ${stats.next_tier.name}`
                     : '🏆 Elite tier — maximum rewards unlocked'}
                 </span>
-                <span className="text-emerald-400">{stats?.progress_pct ?? 0}%</span>
+                <span className="text-emerald-700">{stats?.progress_pct ?? 0}%</span>
               </div>
-              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-emerald-500 rounded-full transition-all duration-700"
                   style={{ width: `${stats?.progress_pct ?? 0}%` }}
@@ -216,11 +216,11 @@ export default function ReferralDashboard() {
         {/* Payout summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {[
-            { label: 'Pending payout',  value: `$${stats?.pending_payout ?? 0}`, sub: 'Will be paid next cycle', color: 'text-amber-400' },
-            { label: 'Total paid out',  value: `$${stats?.paid_out ?? 0}`,       sub: 'Sent to your account',    color: 'text-emerald-400' },
-            { label: 'Pending signups', value: stats?.pending ?? 0,              sub: 'Free users not yet paid', color: 'text-slate-300' },
+            { label: 'Pending payout',  value: `$${stats?.pending_payout ?? 0}`, sub: 'Awaiting payout review', color: 'text-amber-400' },
+            { label: 'Total paid out',  value: `$${stats?.paid_out ?? 0}`,       sub: 'Sent to your account',    color: 'text-emerald-700' },
+            { label: 'Pending signups', value: stats?.pending ?? 0,              sub: 'Free users not yet paid', color: 'text-slate-600' },
           ].map(({ label, value, sub, color }) => (
-            <div key={label} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <div key={label} className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">{label}</div>
               <div className={`text-2xl font-black ${color} mb-1`}>{value}</div>
               <div className="text-xs text-slate-600">{sub}</div>
@@ -231,19 +231,19 @@ export default function ReferralDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
           {/* Referrals table */}
-          <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6">
-            <h2 className="text-base font-black text-white mb-4">Referred users</h2>
+          <div className="md:col-span-2 bg-white border border-slate-200 rounded-3xl p-6">
+            <h2 className="text-base font-black text-slate-900 mb-4">Referred users</h2>
             {!stats?.referrals?.length ? (
               <div className="text-center py-12">
                 <div className="text-4xl mb-3">🔗</div>
-                <p className="text-slate-400 font-bold mb-1">No referrals yet</p>
+                <p className="text-slate-500 font-bold mb-1">No referrals yet</p>
                 <p className="text-slate-600 text-sm">Share your link above to start earning</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
                   <thead>
-                    <tr className="border-b border-slate-800">
+                    <tr className="border-b border-slate-200">
                       <th className="text-left py-3 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '35%' }}>User</th>
                       <th className="text-left py-3 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '18%' }}>Joined</th>
                       <th className="text-left py-3 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '15%' }}>Plan</th>
@@ -253,14 +253,14 @@ export default function ReferralDashboard() {
                   </thead>
                   <tbody>
                     {stats.referrals.map((ref) => (
-                      <tr key={ref.id} className="border-b border-slate-800/50 last:border-0">
-                        <td className="py-3 text-slate-300 overflow-hidden text-ellipsis whitespace-nowrap">{ref.email}</td>
+                      <tr key={ref.id} className="border-b border-slate-200/50 last:border-0">
+                        <td className="py-3 text-slate-600 overflow-hidden text-ellipsis whitespace-nowrap">{ref.email}</td>
                         <td className="py-3 text-slate-500 text-xs">{ref.created_at}</td>
-                        <td className="py-3 text-slate-400 text-xs">{ref.plan}</td>
+                        <td className="py-3 text-slate-500 text-xs">{ref.plan}</td>
                         <td className="py-3">
                           <span className={`text-xs font-black px-2 py-1 rounded-full ${
                             ref.status === 'converted'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20'
                               : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                           }`}>
                             {ref.status === 'converted' ? 'Converted' : 'Pending'}
@@ -268,7 +268,7 @@ export default function ReferralDashboard() {
                         </td>
                         <td className="py-3 text-right font-black">
                           {ref.status === 'converted'
-                            ? <span className="text-emerald-400">${ref.reward}</span>
+                            ? <span className="text-emerald-700">${ref.reward}</span>
                             : <span className="text-slate-600">—</span>}
                         </td>
                       </tr>
@@ -281,19 +281,19 @@ export default function ReferralDashboard() {
 
           {/* How it works + Leaderboard */}
           <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-              <h2 className="text-base font-black text-white mb-4">How it works</h2>
+            <div className="bg-white border border-slate-200 rounded-3xl p-6">
+              <h2 className="text-base font-black text-slate-900 mb-4">How it works</h2>
               <div className="space-y-3">
                 {[
                   { icon: '🔗', title: 'Share your link',      desc: 'Copy and share on WhatsApp, LinkedIn, or X' },
                   { icon: '👤', title: 'Friend signs up',       desc: 'Tracked automatically when they use your link' },
-                  { icon: '💳', title: 'They upgrade to Pro',   desc: 'Stripe fires — referral converts instantly' },
+                  { icon: '💳', title: 'They upgrade to Pro',   desc: 'A verified paid subscription qualifies for review' },
                   { icon: '💰', title: 'You get paid',          desc: '$5–$12 per conversion, paid monthly' },
                 ].map(({ icon, title, desc }) => (
                   <div key={title} className="flex gap-3">
                     <span className="text-xl shrink-0 mt-0.5">{icon}</span>
                     <div>
-                      <div className="text-sm font-black text-white">{title}</div>
+                      <div className="text-sm font-black text-slate-900">{title}</div>
                       <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
                     </div>
                   </div>
@@ -302,21 +302,21 @@ export default function ReferralDashboard() {
             </div>
 
             {leaderboard.length > 0 && (
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-                <h2 className="text-base font-black text-white mb-4">🏆 Top referrers</h2>
+              <div className="bg-white border border-slate-200 rounded-3xl p-6">
+                <h2 className="text-base font-black text-slate-900 mb-4">🏆 Top referrers</h2>
                 <div className="space-y-2">
                   {leaderboard.slice(0, 5).map((row) => (
                     <div key={row.rank} className="flex items-center justify-between py-1.5">
                       <div className="flex items-center gap-3">
-                        <span className={`text-sm font-black w-5 ${row.rank === 1 ? 'text-amber-400' : row.rank === 2 ? 'text-slate-300' : row.rank === 3 ? 'text-amber-700' : 'text-slate-600'}`}>
+                        <span className={`text-sm font-black w-5 ${row.rank === 1 ? 'text-amber-400' : row.rank === 2 ? 'text-slate-600' : row.rank === 3 ? 'text-amber-700' : 'text-slate-600'}`}>
                           #{row.rank}
                         </span>
                         <div>
-                          <div className="text-sm font-bold text-white">{row.name}</div>
+                          <div className="text-sm font-bold text-slate-900">{row.name}</div>
                           <div className="text-[10px] text-slate-500">{row.tier} · {row.converted} converted</div>
                         </div>
                       </div>
-                      <span className="text-sm font-black text-emerald-400">${row.earned}</span>
+                      <span className="text-sm font-black text-emerald-700">${row.earned}</span>
                     </div>
                   ))}
                 </div>

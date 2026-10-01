@@ -9,15 +9,14 @@ from backend.app.dependencies.auth import get_current_user
 from backend.app.models.user import User
 from backend.app.models.job import Job
 from backend.app.models.application import Application
+from backend.app.models.resume import Resume
+from fastapi.responses import Response
 from backend.app.services.notification_service import send_application_confirmation
 
 router = APIRouter(tags=["HR"])
 
 
-def require_hr(current_user: User = Depends(get_current_user)):
-    if not current_user.is_hr and not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR access required.")
-    return current_user
+from backend.app.dependencies.roles import require_hr, is_owner
 
 
 class HRJobPost(BaseModel):
@@ -98,6 +97,9 @@ def job_applications(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    if job.hr_user_id != hr_user.id and not is_owner(hr_user):
+        raise HTTPException(404, "Job not found")
+
     apps = db.query(Application).filter(
         Application.job_id == job_id
     ).order_by(Application.created_at.desc()).all()
@@ -105,6 +107,7 @@ def job_applications(
     return [
         {
             "application_id": a.id,
+            "resume_available": a.resume_id is not None and a.submission_method == "baalebos",
             "applicant_name": a.user.full_name if a.user else "Unknown",
             "applicant_email": a.user.email if a.user else "Unknown",
             "applicant_country": a.user.country if a.user else None,
@@ -115,6 +118,20 @@ def job_applications(
         }
         for a in apps
     ]
+
+
+@router.get('/applications/{application_id}/resume')
+def applicant_resume(application_id: int, db: Session = Depends(get_db), hr_user: User = Depends(require_hr)):
+    application = db.query(Application).filter(Application.id == application_id).first()
+    if (not application or not application.job or application.submission_method != 'baalebos'
+            or (application.job.hr_user_id != hr_user.id and not is_owner(hr_user))):
+        raise HTTPException(404, 'Application not found')
+    resume = db.query(Resume).filter(Resume.id == application.resume_id,
+                                     Resume.owner_id == application.user_id).first()
+    if not resume:
+        raise HTTPException(404, 'Resume not found')
+    return Response(resume.content, media_type='application/pdf', headers={
+        'Content-Disposition': 'inline; filename="Applicant_Resume.pdf"', 'Cache-Control': 'private, no-store'})
 
 
 @router.patch("/applications/{application_id}/status")
@@ -134,6 +151,8 @@ def update_application_status(
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
 
+    if not app.job or (app.job.hr_user_id != hr_user.id and not is_owner(hr_user)):
+        raise HTTPException(404, "Application not found")
     app.status = new_status
     db.commit()
 

@@ -105,6 +105,7 @@ def create_checkout_session(
         success_url=f"{FRONTEND_URL}/?upgraded=true",
         cancel_url=f"{FRONTEND_URL}/pricing",
         metadata={"user_id": str(current_user.id), "plan": plan},
+        subscription_data={"metadata": {"user_id": str(current_user.id), "plan": plan}},
     )
     return {"checkout_url": session.url}
 
@@ -136,30 +137,33 @@ async def stripe_webhook(
 ):
     """Handle Stripe webhook events — payment success, cancellation, past due."""
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    if not webhook_secret:
+        raise HTTPException(503, "Billing webhook is not configured")
     payload = await request.body()
 
     try:
         event = stripe.Webhook.construct_event(payload, stripe_signature, webhook_secret)
-    except stripe.error.SignatureVerificationError:
+    except (stripe.error.SignatureVerificationError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid Stripe webhook signature")
 
     data = event["data"]["object"]
 
-    # ── Payment succeeded / subscription activated ────────────────────────────
-    if event["type"] in ("checkout.session.completed", "invoice.payment_succeeded"):
-        user_id  = int(data.get("metadata", {}).get("user_id", 0))
-        plan     = data.get("metadata", {}).get("plan", "pro")
-        stripe_sub_id = data.get("subscription") or data.get("id")
-
-        if user_id:
-            sub = _get_or_create_sub(user_id, db)
-            sub.plan             = plan
-            sub.status           = "active"
-            sub.stripe_sub_id    = stripe_sub_id
-            sub.scans_this_month = 0
-            sub.reset_date       = datetime.utcnow()
+    # Only a signed, paid event qualifies. Replayed events do not reset scan usage.
+    if event["type"] in ("checkout.session.completed", "checkout.session.async_payment_succeeded", "invoice.payment_succeeded"):
+        paid = data.get('paid') is True if event['type']=='invoice.payment_succeeded' else data.get('payment_status')=='paid'
+        if not paid: return {"received":True}
+        stripe_sub_id = data.get('subscription')
+        user_id = int(data.get('metadata',{}).get('user_id',0))
+        sub = db.query(Subscription).filter(Subscription.stripe_sub_id==stripe_sub_id).first() if stripe_sub_id else None
+        if not sub and user_id:
+            sub = _get_or_create_sub(user_id,db)
+        if sub:
+            plan=data.get('metadata',{}).get('plan',sub.plan)
+            if plan not in PRICE_IDS: return {"received":True}
+            sub.plan=plan; sub.status='active'; sub.stripe_sub_id=stripe_sub_id
+            from backend.app.routes.referral import convert_referral
+            convert_referral(sub.user_id,plan,db)
             db.commit()
-            print(f"✅ User {user_id} upgraded to {plan}")
 
     # ── Subscription cancelled ────────────────────────────────────────────────
     elif event["type"] == "customer.subscription.deleted":

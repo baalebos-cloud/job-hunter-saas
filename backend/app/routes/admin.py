@@ -15,10 +15,7 @@ from backend.app.models.resume import Resume
 router = APIRouter(tags=["Admin"])
 
 
-def require_admin(current_user: User = Depends(get_current_user)):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    return current_user
+from backend.app.dependencies.roles import require_admin
 
 
 @router.get("/stats")
@@ -61,7 +58,10 @@ def make_hr(user_id: int, db: Session = Depends(get_db), admin: User = Depends(r
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if not user.is_verified:
+        raise HTTPException(400, "Verify the account email before approval")
     user.is_hr = True
+    user.hr_approved = True
     db.commit()
     return {"message": f"{user.email} is now an HR user"}
 
@@ -71,6 +71,8 @@ def make_admin(user_id: int, db: Session = Depends(get_db), admin: User = Depend
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.email.strip().lower() != admin.email.strip().lower():
+        raise HTTPException(403, "Only the owner may be an administrator")
     user.is_admin = True
     db.commit()
     return {"message": f"{user.email} is now an admin"}

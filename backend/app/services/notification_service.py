@@ -58,5 +58,6 @@ def send_application_confirmation(to_email: str, full_name: str, job_title: str,
 
 def send_email_notification(to_email: str, subject: str, body: str):
     """Generic plain-text notification (used by resume tasks)."""
-    html = f"<div style='font-family:Arial,sans-serif;padding:24px;'><p>{body}</p></div>"
+    from html import escape
+    html = f"<div style='font-family:Arial,sans-serif;padding:24px;'><p>{escape(body)}</p></div>"
     _send(to_email, subject, html)

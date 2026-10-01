@@ -5,7 +5,7 @@ import axios from 'axios'
 import SEO from './components/SEO'
 
 import DashboardLayout from './components/layout/DashboardLayout'
-import StatsGrid from './components/StatsGrid'
+import TalentOverview from './components/TalentOverview'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
 import ResumeUpload from './components/dashboard/ResumeUpload'
@@ -61,90 +61,7 @@ function RequireRole({ role, children }) {
 }
 
 // ── Overview page (/) ─────────────────────────────────────────────────────────
-function OverviewPage() {
-  const [data, setData]       = useState({ stats: null, apps: [] })
-  const [loading, setLoading] = useState(true)
-  const token = localStorage.getItem('token')
-
-  const fetchData = useCallback(async () => {
-    if (!token) { setLoading(false); return }
-    try {
-      const config = { headers: { Authorization: `Bearer ${token}` } }
-      const [statsRes, appsRes] = await Promise.allSettled([
-        axios.get(`${API_BASE_URL}/dashboard/stats`, config),
-        axios.get(`${API_BASE_URL}/dashboard/applied`, config),
-      ])
-      setData({
-        stats: statsRes.status === 'fulfilled' ? statsRes.value.data : null,
-        apps:  appsRes.status === 'fulfilled' && Array.isArray(appsRes.value.data) ? appsRes.value.data : [],
-      })
-    } catch (err) { console.error(err) }
-    finally { setLoading(false) }
-  }, [token])
-
-  const handleDelete = useCallback(async (appId) => {
-    if (!appId || !token) return
-    try {
-      await axios.delete(`${API_BASE_URL}/dashboard/applied/${appId}`, { headers: { Authorization: `Bearer ${token}` } })
-      fetchData()
-    } catch { alert('Failed to delete. Please try again.') }
-  }, [token, fetchData])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-32">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">Loading dashboard...</p>
-      </div>
-    </div>
-  )
-
-  const recentApps = (data.apps || []).slice(0, 5)
-
-  return (
-    <div className="space-y-10">
-      {/* Stats */}
-      {data.stats && <StatsGrid stats={data.stats} />}
-
-      {/* Quick action */}
-      <div className="bg-gradient-to-br from-emerald-900/30 to-slate-900 border border-emerald-800/30 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div>
-          <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-2">AI Engine</p>
-          <h3 className="text-2xl font-black text-white mb-1" style={{ fontFamily: "'Playfair Display', serif" }}>
-            Optimize a new resume
-          </h3>
-          <p className="text-slate-400 text-sm max-w-md">
-            Get an instant ATS score and AI-optimized PDF tailored for any job description.
-          </p>
-        </div>
-        <a href="/optimizer"
-          className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-600/20 text-sm uppercase tracking-widest whitespace-nowrap">
-          Start Analysis →
-        </a>
-      </div>
-
-      {/* Recent applications */}
-      <div>
-        <div className="flex items-end justify-between mb-5">
-          <h2 className="text-2xl font-black text-white flex items-center gap-3"
-            style={{ fontFamily: "'Playfair Display', serif" }}>
-            <span className="w-1.5 h-7 bg-emerald-500 rounded-full" />
-            Recent Applications
-          </h2>
-          {data.apps.length > 5 && (
-            <a href="/applications" className="text-xs font-black text-emerald-400 hover:text-emerald-300 transition-colors">
-              View all {data.apps.length} →
-            </a>
-          )}
-        </div>
-        <ApplicationsTable applications={recentApps} onDelete={handleDelete} token={token} />
-      </div>
-    </div>
-  )
-}
-
+function OverviewPage() { return <TalentOverview /> }
 
 // ── Resume Optimizer page (/optimizer) ────────────────────────────────────────
 function OptimizerPage() {
@@ -159,7 +76,7 @@ function OptimizerPage() {
       setIsAnalyzing(true)
       interval = setInterval(async () => {
         try {
-          const res = await axios.get(`${API_BASE_URL}/resume/status/${activeTaskId}`)
+          const res = await axios.get(`${API_BASE_URL}/resume/status/${activeTaskId}`, { headers: { Authorization: `Bearer ${token}` } })
           if (res.data.status === 'completed') {
             setAnalysisResult(res.data.result)
             setActiveTaskId(null)
@@ -181,10 +98,10 @@ function OptimizerPage() {
       <div className="flex items-end justify-between mb-6">
         <div>
           <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">AI Engine</p>
-          <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
+          <h2 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>
             Resume Optimizer
           </h2>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-500 text-sm mt-1">
             Upload your resume and get an instant ATS score with AI-optimized rewrites.
           </p>
         </div>
@@ -197,13 +114,13 @@ function OptimizerPage() {
       </div>
 
       {isAnalyzing ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-16 text-center">
+        <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center">
           <div className="w-14 h-14 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-5" />
-          <h3 className="text-xl font-black text-white mb-2">AI Engine Processing...</h3>
-          <p className="text-slate-400 text-sm">Calculating ATS scores, extracting keywords, generating your optimized PDF.</p>
+          <h3 className="text-xl font-black text-slate-900 mb-2">AI Engine Processing...</h3>
+          <p className="text-slate-500 text-sm">Calculating ATS scores, extracting keywords, generating your optimized PDF.</p>
         </div>
       ) : !analysisResult ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden">
           <ResumeUpload onUploadSuccess={(taskId, directResult) => {
             if (directResult) {
               setAnalysisResult(directResult)
@@ -264,26 +181,26 @@ function SettingsPage() {
     </div>
   )
 
-  const inputCls = 'w-full px-4 py-3 rounded-2xl border-2 border-slate-800 bg-slate-950 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600'
+  const inputCls = 'w-full px-4 py-3 rounded-2xl border-2 border-slate-200 bg-slate-50 outline-none focus:border-emerald-500 transition-all text-slate-900 font-semibold text-sm placeholder:text-slate-600'
   const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-500 mb-2'
 
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
         <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">Account</p>
-        <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
+        <h2 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>
           Settings
         </h2>
       </div>
 
       {/* Profile card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 mb-6">
-        <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-800">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-white text-lg font-black shadow-lg shadow-emerald-900/40">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 mb-6">
+        <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-200">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-slate-900 text-lg font-black shadow-lg shadow-emerald-900/40">
             {(profile?.full_name || profile?.email || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2)}
           </div>
           <div>
-            <p className="text-white font-black text-base">{profile?.full_name || profile?.email?.split('@')[0]}</p>
+            <p className="text-slate-900 font-black text-base">{profile?.full_name || profile?.email?.split('@')[0]}</p>
             <p className="text-slate-500 text-sm">{profile?.email}</p>
             <div className="flex gap-2 mt-1.5">
               {profile?.is_admin && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/20">ADMIN</span>}
@@ -312,7 +229,7 @@ function SettingsPage() {
 
           <div className="flex items-center gap-3 pt-2">
             <button type="submit" disabled={saving}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-3 rounded-2xl text-xs uppercase tracking-widest transition-all disabled:bg-slate-700 disabled:text-slate-500">
+              className="bg-emerald-600 hover:bg-emerald-500 text-slate-900 font-black px-6 py-3 rounded-2xl text-xs uppercase tracking-widest transition-all disabled:bg-slate-700 disabled:text-slate-500">
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
             {saved && <span className="text-emerald-400 text-xs font-bold">✓ Saved successfully</span>}
@@ -358,14 +275,13 @@ function JobsPage() {
 
   useEffect(() => { fetchJobs() }, [fetchJobs])
 
-  const handleApply = useCallback(async (jobId, jobUrl) => {
+  const handleApply = useCallback(async (jobId, jobUrl, resumeId) => {
     if (!token) { window.location.href = '/login'; return }
     try {
-      const res = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, {}, { headers: { Authorization: `Bearer ${token}` } })
-      const url = jobUrl || res.data?.job_url
-      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+      const res = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, { resume_id: resumeId || null }, { headers: { Authorization: `Bearer ${token}` } })
+      return res.data
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to apply.')
+      throw err
     }
   }, [token])
 
@@ -380,16 +296,16 @@ function JobsPage() {
           </svg>
           <input type="text" placeholder="Search title, company, skill..."
             value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-slate-800 bg-slate-900 text-sm font-semibold text-white outline-none focus:border-emerald-500 transition-all placeholder:text-slate-600" />
+            className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-slate-200 bg-white text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 transition-all placeholder:text-slate-600" />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white font-black text-lg">×</button>
+            <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 font-black text-lg">×</button>
           )}
         </div>
 
         {/* Country */}
         <div className="relative">
           <select value={countryFilter} onChange={e => setCountry(e.target.value)}
-            className="pl-4 pr-8 py-3 rounded-2xl border-2 border-slate-800 bg-slate-900 text-sm font-bold text-slate-300 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer min-w-[160px]">
+            className="pl-4 pr-8 py-3 rounded-2xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-600 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer min-w-[160px]">
             <option value="">🌍 All Countries</option>
             {['Nigeria','Ghana','Kenya','South Africa','United States','United Kingdom','Canada','Germany','France','Netherlands','India','Australia','Singapore','UAE','Brazil','Remote','Worldwide'].map(c => (
               <option key={c} value={c} style={{ background: '#0f172a' }}>{c}</option>
@@ -405,8 +321,8 @@ function JobsPage() {
           <button key={v} onClick={() => setWorkType(v)}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border-2 ${
               workType === v
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-600/20'
-                : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-600 hover:text-white'
+                ? 'bg-emerald-600 text-slate-900 border-emerald-600 shadow-lg shadow-emerald-600/20'
+                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-600 hover:text-slate-900'
             }`}>
             {l}
           </button>
@@ -465,7 +381,7 @@ function LandingPage() {
             <div>
               <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-2 mb-6">
                 <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">AI-Powered · Live Jobs Every 6 Hours</span>
+                <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">AI-assisted application preparation</span>
               </div>
               <h1 className="text-5xl md:text-6xl font-black text-white leading-[1.05] mb-6"
                 style={{ fontFamily: "'Playfair Display', serif" }}>
@@ -474,7 +390,7 @@ function LandingPage() {
                 Worldwide.
               </h1>
               <p className="text-slate-400 text-lg leading-relaxed mb-8 max-w-xl">
-                Upload your resume, get an instant ATS score, and receive an AI-optimized PDF designed to pass every filter — from Nigeria to Silicon Valley.
+                Upload your resume, get an instant ATS score, and receive an AI-optimized PDF tailored to the job description using your documented experience — from Nigeria to Silicon Valley.
               </p>
               <div className="flex flex-wrap gap-4 mb-12">
                 <a href="/signup" className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-600/25 text-sm uppercase tracking-widest active:scale-[0.98]">
@@ -485,7 +401,7 @@ function LandingPage() {
                 </a>
               </div>
               <div className="flex flex-wrap gap-8">
-                {[['94%','Avg ATS Score'],['6 hrs','Job Refresh Rate'],['80+','Countries Covered'],['Free','Always']].map(([v,l]) => (
+                {[['Tailored','Resume preparation'],['Tracked','Applications'],['Clear','Requirement evidence'],['Free','Starter plan']].map(([v,l]) => (
                   <div key={l}><div className="text-2xl font-black text-white">{v}</div><div className="text-xs text-slate-500 font-semibold mt-0.5">{l}</div></div>
                 ))}
               </div>
@@ -507,7 +423,7 @@ function LandingPage() {
                   <div className="text-slate-400">{'{'}</div>
                   <div className="pl-4"><span className="text-blue-400">"ats_score"</span><span className="text-slate-500">: </span><span className="text-emerald-400">94</span><span className="text-slate-500">,</span></div>
                   <div className="pl-4"><span className="text-blue-400">"keywords_matched"</span><span className="text-slate-500">: </span><span className="text-emerald-400">28/30</span><span className="text-slate-500">,</span></div>
-                  <div className="pl-4"><span className="text-blue-400">"status"</span><span className="text-slate-500">: </span><span className="text-amber-400">"interview_ready"</span></div>
+                  <div className="pl-4"><span className="text-blue-400">"status"</span><span className="text-slate-500">: </span><span className="text-amber-400">"review_required"</span></div>
                   <div className="text-slate-400">{'}'}</div>
                 </div>
               </div>
@@ -526,7 +442,7 @@ function LandingPage() {
 
               {/* Floating badge */}
               <div className="absolute -top-6 -right-4 bg-emerald-500 text-white text-xs font-black px-4 py-2 rounded-full shadow-xl shadow-emerald-500/30 rotate-3">
-                ✓ Live scoring
+                Illustrative assessment
               </div>
             </div>
 

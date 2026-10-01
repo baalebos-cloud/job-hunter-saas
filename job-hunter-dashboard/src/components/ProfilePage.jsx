@@ -22,11 +22,11 @@ function ChevronIcon({ open }) {
 function SectionCard({ title, badge, defaultOpen = true, actions, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
       <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-800/40 transition-colors">
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-100/40 transition-colors">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-black text-white">{title}</span>
+          <span className="text-sm font-black text-slate-900">{title}</span>
           {badge}
         </div>
         <div className="flex items-center gap-3">
@@ -155,7 +155,7 @@ export default function ProfilePage() {
   );
 
   if (!profile) return (
-    <div className="text-center py-32 text-slate-400">Could not load profile. Please login again.</div>
+    <div className="text-center py-32 text-slate-500">Could not load profile. Please login again.</div>
   );
 
   const initials = (profile.full_name || profile.email || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -168,28 +168,28 @@ export default function ProfilePage() {
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>My Profile</h1>
+        <h1 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>My Profile</h1>
         <span className="text-xs text-slate-500">Account created on {createdDate}</span>
       </div>
 
       {/* ── Profile header card ── */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="flex items-start gap-4">
             {/* Avatar */}
             <div className="relative shrink-0">
-              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
                 {profile.photo_url ? (
                   <img src={profile.photo_url} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-2xl font-black text-emerald-400 bg-emerald-500/10">
+                  <div className="w-full h-full flex items-center justify-center text-2xl font-black text-emerald-700 bg-emerald-500/10">
                     {initials}
                   </div>
                 )}
               </div>
               <button onClick={() => photoInputRef.current?.click()}
                 className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-500 border-2 border-slate-900 flex items-center justify-center transition-all">
-                <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-3.5 h-3.5 text-slate-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
@@ -200,14 +200,14 @@ export default function ProfilePage() {
             {/* Name + meta */}
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black text-white">{profile.full_name || 'Unnamed User'}</h2>
+                <h2 className="text-lg font-black text-slate-900">{profile.full_name || 'Unnamed User'}</h2>
                 {profile.is_verified && (
-                  <svg className="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
                   </svg>
                 )}
               </div>
-              <p className="text-slate-400 text-sm font-medium mt-0.5">{profile.career_track || 'Add your career track'}</p>
+              <p className="text-slate-500 text-sm font-medium mt-0.5">{profile.career_track || 'Add your career track'}</p>
               {profile.linkedin_url && (
                 <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-bold mt-1">
@@ -232,8 +232,8 @@ export default function ProfilePage() {
               <button onClick={() => patchProfile({ available_for_work: !profile.available_for_work })}
                 className={`text-xs font-black px-3 py-1 rounded-full border transition-all ${
                   profile.available_for_work
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-slate-800 border-slate-700 text-slate-400'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700'
+                    : 'bg-slate-100 border-slate-200 text-slate-500'
                 }`}>
                 {profile.available_for_work ? 'Yes' : 'No'}
               </button>
@@ -241,13 +241,13 @@ export default function ProfilePage() {
             <div className="text-right">
               <p className="text-xs text-slate-500">Expected pay</p>
               <div className="flex items-center gap-1.5">
-                <span className="text-white font-black text-sm">
+                <span className="text-slate-900 font-black text-sm">
                   {profile.expected_pay_hourly ? `$${profile.expected_pay_hourly}/hour` : 'Not set'}
                 </span>
                 <button onClick={() => {
                   const val = prompt('Expected hourly rate (USD)', profile.expected_pay_hourly || '');
                   if (val !== null && !isNaN(parseFloat(val))) patchProfile({ expected_pay_hourly: parseFloat(val) });
-                }} className="text-slate-500 hover:text-emerald-400 transition-colors">
+                }} className="text-slate-500 hover:text-emerald-700 transition-colors">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                   </svg>
@@ -260,17 +260,17 @@ export default function ProfilePage() {
 
       {/* ── Certified skills ── */}
       <SectionCard title="Certified skills" badge={
-        <span className="text-slate-600" title="Auto-verified based on your ATS scans and platform activity">ⓘ</span>
+        <span className="text-slate-600" title="Verified credentials require a documented assessment or administrator review">ⓘ</span>
       }>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {(profile.certified_skills || []).map(skill => (
             <div key={skill.id} className="flex items-center gap-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3">
               <span className="w-6 h-6 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
-                <svg className="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-3.5 h-3.5 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
                 </svg>
               </span>
-              <span className="text-sm font-bold text-slate-200">{skill.name}</span>
+              <span className="text-sm font-bold text-slate-700">{skill.name}</span>
             </div>
           ))}
         </div>
@@ -280,7 +280,7 @@ export default function ProfilePage() {
       <SectionCard title="Other Skills" defaultOpen={false}>
         <div className="flex flex-wrap gap-2 mb-3">
           {(profile.other_skills || []).map(skill => (
-            <span key={skill.id} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+            <span key={skill.id} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
               {skill.name}
               <button onClick={() => removeOtherSkill(skill.id)} className="text-slate-500 hover:text-rose-400 transition-colors">×</button>
             </span>
@@ -293,15 +293,15 @@ export default function ProfilePage() {
           <input value={newSkill} onChange={e => setNewSkill(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addOtherSkill()}
             placeholder="e.g. Docker, Terraform, Kubernetes"
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
-          <button onClick={addOtherSkill} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all">Add</button>
+            className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500 transition-all" />
+          <button onClick={addOtherSkill} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all">Add</button>
         </div>
       </SectionCard>
 
       {/* ── About ── */}
       <SectionCard title="About" actions={
         !editingAbout && (
-          <button onClick={(e) => { e.stopPropagation(); setEditingAbout(true); }} className="text-slate-500 hover:text-emerald-400 transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); setEditingAbout(true); }} className="text-slate-500 hover:text-emerald-700 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
             </svg>
@@ -311,30 +311,30 @@ export default function ProfilePage() {
         {editingAbout ? (
           <div>
             <textarea value={aboutDraft} onChange={e => setAboutDraft(e.target.value)} rows={4}
-              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500 transition-all resize-none"
+              className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500 transition-all resize-none"
               placeholder="Tell recruiters about your experience, focus areas, and what you're looking for..." />
             <div className="flex gap-2 mt-3">
               <button onClick={saveAbout} disabled={saving}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all">
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all">
                 {saving ? 'Saving...' : 'Save'}
               </button>
               <button onClick={() => { setEditingAbout(false); setAboutDraft(profile.about || ''); }}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black transition-all">
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-700 text-slate-600 text-xs font-black transition-all">
                 Cancel
               </button>
             </div>
           </div>
         ) : (
           <>
-            <p className="text-sm text-slate-400 leading-relaxed mb-3">
+            <p className="text-sm text-slate-500 leading-relaxed mb-3">
               {profile.about || 'No bio added yet. Click the edit icon to introduce yourself.'}
             </p>
             {profile.id_verified && (
               <div className="flex items-center gap-1.5 mb-3">
-                <svg className="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-3.5 h-3.5 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
                 </svg>
-                <span className="text-xs font-bold text-emerald-400">ID Verified</span>
+                <span className="text-xs font-bold text-emerald-700">ID Verified</span>
               </div>
             )}
             <div className="flex flex-wrap gap-2">
@@ -344,17 +344,17 @@ export default function ProfilePage() {
                 </span>
               )}
               {profile.notice_period_days != null && (
-                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
                   Notice period: {profile.notice_period_days} days
                 </span>
               )}
               {profile.city && (
-                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
                   City: {profile.city}
                 </span>
               )}
               {profile.timezone && (
-                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
                   Timezone: {profile.timezone}
                 </span>
               )}
@@ -370,10 +370,10 @@ export default function ProfilePage() {
         ) : (
           <div className="space-y-3">
             {profile.experience.map(exp => (
-              <div key={exp.id} className="flex items-start justify-between bg-slate-950 border border-slate-800 rounded-xl p-4">
+              <div key={exp.id} className="flex items-start justify-between bg-slate-50 border border-slate-200 rounded-xl p-4">
                 <div>
-                  <p className="text-sm font-black text-white">{exp.title}</p>
-                  <p className="text-xs text-emerald-400 font-bold">{exp.company}</p>
+                  <p className="text-sm font-black text-slate-900">{exp.title}</p>
+                  <p className="text-xs text-emerald-700 font-bold">{exp.company}</p>
                   <p className="text-[10px] text-slate-500 mt-0.5">{exp.start_date} – {exp.end_date || 'Present'}</p>
                 </div>
               </div>
@@ -386,14 +386,14 @@ export default function ProfilePage() {
       <SectionCard title="Education">
         <div className="space-y-3">
           {(profile.education || []).map(edu => (
-            <div key={edu.id} className="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-xl p-4">
+            <div key={edu.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
                   🎓
                 </div>
                 <div>
-                  <p className="text-sm font-black text-white">{edu.degree}</p>
-                  <p className="text-xs text-emerald-400 font-bold">{edu.institution}</p>
+                  <p className="text-sm font-black text-slate-900">{edu.degree}</p>
+                  <p className="text-xs text-emerald-700 font-bold">{edu.institution}</p>
                   <p className="text-[10px] text-slate-500 mt-0.5">{edu.start_date} – {edu.end_date || 'Present'}</p>
                 </div>
               </div>
@@ -406,29 +406,29 @@ export default function ProfilePage() {
           ))}
 
           {showEduForm ? (
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
               <input value={eduForm.degree} onChange={e => setEduForm(f => ({ ...f, degree: e.target.value }))}
                 placeholder="Degree — e.g. B.Sc Computer Science"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500" />
+                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
               <input value={eduForm.institution} onChange={e => setEduForm(f => ({ ...f, institution: e.target.value }))}
                 placeholder="Institution"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500" />
+                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
               <div className="grid grid-cols-2 gap-2">
                 <input value={eduForm.start_date} onChange={e => setEduForm(f => ({ ...f, start_date: e.target.value }))}
                   placeholder="Start (e.g. Jan 2020)"
-                  className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500" />
+                  className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
                 <input value={eduForm.end_date} onChange={e => setEduForm(f => ({ ...f, end_date: e.target.value }))}
                   placeholder="End (e.g. Dec 2023)"
-                  className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500" />
+                  className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
               </div>
               <div className="flex gap-2">
-                <button onClick={submitEducation} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all">Save</button>
-                <button onClick={() => setShowEduForm(false)} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black transition-all">Cancel</button>
+                <button onClick={submitEducation} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all">Save</button>
+                <button onClick={() => setShowEduForm(false)} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-700 text-slate-600 text-xs font-black transition-all">Cancel</button>
               </div>
             </div>
           ) : (
             <button onClick={() => setShowEduForm(true)}
-              className="w-full py-3 rounded-xl bg-slate-800/50 hover:bg-slate-800 border border-dashed border-slate-700 text-slate-400 hover:text-white text-xs font-black transition-all flex items-center justify-center gap-1.5">
+              className="w-full py-3 rounded-xl bg-slate-100/50 hover:bg-slate-100 border border-dashed border-slate-200 text-slate-500 hover:text-slate-900 text-xs font-black transition-all flex items-center justify-center gap-1.5">
               + Add more
             </button>
           )}
@@ -439,8 +439,8 @@ export default function ProfilePage() {
       <SectionCard title="Languages">
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {(profile.languages || []).map(lang => (
-            <span key={lang.id} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
-              {lang.name} <span className="text-emerald-400">· {lang.proficiency}</span>
+            <span key={lang.id} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
+              {lang.name} <span className="text-emerald-700">· {lang.proficiency}</span>
               <button onClick={() => removeLanguage(lang.id)} className="text-slate-500 hover:text-rose-400 transition-colors ml-1">×</button>
             </span>
           ))}
@@ -448,12 +448,12 @@ export default function ProfilePage() {
         <div className="flex gap-2">
           <input value={newLang} onChange={e => setNewLang(e.target.value)}
             placeholder="Language — e.g. French"
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
+            className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500 transition-all" />
           <select value={newLangProf} onChange={e => setNewLangProf(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white outline-none focus:border-emerald-500">
+            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500">
             {PROFICIENCIES.map(p => <option key={p} value={p} style={{ background: '#0f172a' }}>{p}</option>)}
           </select>
-          <button onClick={addLanguage} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all shrink-0">+ Add more</button>
+          <button onClick={addLanguage} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all shrink-0">+ Add more</button>
         </div>
       </SectionCard>
 
@@ -466,8 +466,8 @@ export default function ProfilePage() {
         ) : (
           <div className="inline-flex items-center gap-3 bg-rose-950/30 border border-rose-900/40 rounded-2xl px-5 py-3">
             <span className="text-xs font-bold text-rose-300">Are you sure? This cannot be undone.</span>
-            <button onClick={deleteAccount} className="text-xs font-black px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-all">Yes, delete</button>
-            <button onClick={() => setDeleteConfirm(false)} className="text-xs font-black px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all">Cancel</button>
+            <button onClick={deleteAccount} className="text-xs font-black px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-slate-900 transition-all">Yes, delete</button>
+            <button onClick={() => setDeleteConfirm(false)} className="text-xs font-black px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-700 text-slate-600 transition-all">Cancel</button>
           </div>
         )}
       </div>

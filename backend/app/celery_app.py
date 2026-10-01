@@ -25,7 +25,7 @@ celery_app.conf.update(
     beat_schedule={
         # Scrape jobs every 6 hours — 5 mins was too aggressive for free-tier Railway
         "scrape-jobs-every-6-hours": {
-            "task": "backend.app.tasks.scrape_task.scrape_jobs",
+            "task": "backend.app.tasks.scrape_jobs",
             "schedule": 21600.0,  # 6 hours
         },
     },

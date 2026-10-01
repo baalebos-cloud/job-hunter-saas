@@ -91,7 +91,7 @@ def _serialize_profile(user: User) -> dict:
         "id_verified":         user.id_verified,
         "is_verified":         user.is_verified,
         "created_at":          user.created_at,
-        "certified_skills":    [{"id": s.id, "name": s.name} for s in user.certified_skills],
+        "certified_skills":    [{"id": s.id, "name": s.name} for s in user.certified_skills if s.verified and s.name not in DEFAULT_CERTIFIED_SKILLS],
         "other_skills":        [{"id": s.id, "name": s.name} for s in user.other_skills],
         "education":           [
             {"id": e.id, "degree": e.degree, "institution": e.institution,
@@ -117,17 +117,6 @@ def get_my_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Seed default certified skills + default language on first visit
-    if not current_user.certified_skills:
-        for skill_name in DEFAULT_CERTIFIED_SKILLS:
-            db.add(CertifiedSkill(user_id=current_user.id, name=skill_name, verified=True))
-        db.commit()
-        db.refresh(current_user)
-    if not current_user.languages:
-        db.add(UserLanguage(user_id=current_user.id, name="English", proficiency="Advanced"))
-        db.commit()
-        db.refresh(current_user)
-
     return _serialize_profile(current_user)
 
 
