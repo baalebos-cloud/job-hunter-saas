@@ -21,7 +21,8 @@ def dashboard_stats(
     current_user: User = Depends(get_current_user)
 ):
     try:
-        stats = get_dashboard_stats(db)
+        apps = db.query(Application).filter(Application.user_id == current_user.id).all()
+        stats = {"active_applications": len(apps), "interviews": sum(a.status == "interview" for a in apps), "offers": sum(a.status == "offer" for a in apps)}
         if not stats:
             return {"active_applications": 0, "interviews": 0, "offers": 0}
         return stats
@@ -65,6 +66,8 @@ def list_applied_jobs(
             "status": app.status,
             "ats_score": app.ats_score,
             "created_at": app.created_at,
+            "submission_method": app.submission_method,
+            "job_snapshot": app.job_snapshot,
             "job": {
                 "id": app.job.id,
                 "title": app.job.title,
@@ -111,8 +114,12 @@ def delete_application(
 def set_application_status(
     job_id: int,
     status_update: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
+    app = db.query(Application).filter(Application.id == job_id, Application.user_id == current_user.id).first()
+    if not app or app.submission_method != "external_handoff" or status_update != "submitted_external":
+        raise HTTPException(400, "Only your external submission can be confirmed")
     result = update_application_status(db, job_id, status_update)
     if not result:
         raise HTTPException(status_code=400, detail="Failed to update status")

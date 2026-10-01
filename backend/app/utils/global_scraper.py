@@ -143,17 +143,19 @@ WWR_CATEGORIES = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _clean(html: str, limit: int = 4000) -> str:
-    text = re.sub(r'<[^>]+>', ' ', html or '')
-    text = re.sub(r'&[a-z]+;', ' ', text)
-    text = re.sub(r'&#\d+;', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text[:limit]
+def _clean(html: str, limit=None) -> str:
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html or '', 'html.parser')
+    for element in soup(['script','style']): element.decompose()
+    for element in soup.find_all('li'): element.insert_before('- ')
+    for element in soup.find_all(['p','li','div','h1','h2','h3','h4','br']): element.insert_after('\n')
+    lines = [re.sub(r'[ \t]+',' ',line).strip() for line in soup.get_text().splitlines()]
+    return '\n'.join(line for line in lines if line)
 
 
 def _work_type(location: str, title: str, description: str) -> str:
     combined = f"{location} {title} {description}".lower()
-    if any(k in combined for k in ["hybrid", "partially remote", "flexible"]):
+    if any(k in combined for k in ["hybrid", "partially remote"]):
         return "hybrid"
     if any(k in combined for k in ["on-site", "onsite", "in-office", "in office", "on site"]):
         return "onsite"
@@ -161,7 +163,7 @@ def _work_type(location: str, title: str, description: str) -> str:
         return "remote"
     if location and not any(k in location.lower() for k in ["remote", "worldwide", "global", "anywhere"]):
         return "onsite"
-    return "remote"
+    return "unknown"
 
 
 def _salary(text: str) -> str | None:
@@ -725,14 +727,19 @@ def save_jobs_to_db(jobs: list, db: Session) -> int:
                 continue
             existing = db.query(Job).filter(Job.url == jd["url"]).first()
             if existing:
+                for field in ("title","company","location","description","salary_range","category"):
+                    if jd.get(field) is not None: setattr(existing,field,jd[field])
+                existing.last_checked_at = now
                 existing.scraped_at = now
+                existing.is_active = True
+                existing.work_type = jd.get("work_type") or _work_type(jd.get("location",""),jd.get("title",""),jd.get("description",""))
                 continue
             db.add(Job(
                 title=jd["title"], company=jd.get("company", ""),
                 location=jd["location"], description=jd.get("description"),
                 url=jd["url"], source=jd["source"],
                 category=jd["category"], salary_range=jd.get("salary_range"),
-                scraped_at=now,
+                scraped_at=now, last_checked_at=now, is_active=True,
                 work_type=jd.get("work_type") or _work_type(
                     jd.get("location", ""), jd.get("title", ""), jd.get("description", "")
                 ),
@@ -742,12 +749,13 @@ def save_jobs_to_db(jobs: list, db: Session) -> int:
             logger.warning(f"[DB] '{jd.get('title')}': {e}")
             db.rollback()
 
-    if saved > 0:
+    if jobs:
         try:
             db.commit()
         except Exception as e:
             logger.error(f"[DB] Commit failed: {e}")
             db.rollback()
+            return 0
 
     return saved
 

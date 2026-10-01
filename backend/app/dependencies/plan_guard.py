@@ -37,7 +37,7 @@ def require_scan_quota(
         async def upload_resume(..., _=Depends(require_scan_quota)):
     """
     sub = _get_or_create_sub(current_user.id, db)
-    plan_info = PLANS.get(sub.plan, PLANS["free"])
+    plan_info = PLANS.get(sub.plan if sub.status == "active" else "free", PLANS["free"])
 
     # Reset count at the start of a new month
     now = datetime.utcnow()
@@ -62,9 +62,7 @@ def require_scan_quota(
             }
         )
 
-    # Increment scan counter and save
-    sub.scans_this_month += 1
-    db.commit()
+    # Usage is charged only when a complete resume is saved.
 
     return current_user
 
@@ -80,7 +78,7 @@ def require_pro(
         def export_all(..., _=Depends(require_pro)):
     """
     sub = _get_or_create_sub(current_user.id, db)
-    if sub.plan not in ("pro", "enterprise"):
+    if sub.status != 'active' or sub.plan not in ("pro", "enterprise"):
         raise HTTPException(
             status_code=403,
             detail={
@@ -91,3 +89,12 @@ def require_pro(
             }
         )
     return current_user
+
+
+def consume_scan(user_id, db):
+    sub = db.query(Subscription).filter(Subscription.user_id == user_id).with_for_update().first()
+    if not sub: raise HTTPException(409, "Subscription not initialized")
+    limit = PLANS.get(sub.plan if sub.status == 'active' else 'free', PLANS['free'])['scans_per_month']
+    if limit != -1 and sub.scans_this_month >= limit:
+        raise HTTPException(403, "Monthly scan limit reached")
+    sub.scans_this_month += 1

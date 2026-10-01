@@ -102,8 +102,16 @@ async def startup_event():
         from sqlalchemy import text
         with engine.connect() as conn:
             migrations = [
+                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS resume_id INTEGER REFERENCES resumes(id)",
+                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS job_snapshot JSON",
+                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS submission_method VARCHAR",
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP",
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR UNIQUE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_hr BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS hr_approved BOOLEAN NOT NULL DEFAULT FALSE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR",
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS posted_by_hr BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_user_id INTEGER",
@@ -188,7 +196,7 @@ app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Pr
 
 # --- AI ANALYZE ENDPOINT ---
 @app.post("/api/v1/ai/analyze", tags=["AI Engine"])
-async def analyze_resume_against_job(payload: AnalysisRequest):
+async def analyze_resume_against_job(payload: AnalysisRequest, current_user=Depends(auth.get_current_user)):
     try:
         result = await ai_engine.analyze_resume(payload.resume_text, payload.job_description)
         return result
@@ -201,19 +209,6 @@ async def analyze_resume_against_job(payload: AnalysisRequest):
 @app.get("/api/v1/health")
 async def health_check():
     return {"status": "healthy", "service": "baalebos-cloud"}
-
-
-@app.post("/api/v1/admin/scrape")
-async def trigger_scrape(request: Request):
-    """Admin-only scrape trigger — protected by secret key."""
-    admin_key = request.headers.get("X-Admin-Key", "")
-    expected  = os.getenv("ADMIN_SECRET_KEY", "")
-    if not expected or admin_key != expected:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    from fastapi.concurrency import run_in_threadpool
-    from backend.app.utils.global_scraper import scrape_global_jobs
-    result = await run_in_threadpool(scrape_global_jobs)
-    return result
 
 
 @app.post("/api/v1/cron/scrape")

@@ -76,7 +76,7 @@ def signup(
         hashed_password=hash_password(user.password),
         career_track=user.career_track,
         country=user.country,
-        is_hr=user.is_hr or False,
+        is_hr=False,
         company_name=user.company_name,
         is_verified=False,                  # not verified yet
         verification_token=verification_token,
@@ -230,7 +230,11 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
 # ── GET /auth/me ──────────────────────────────────────────────────────────────
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    from backend.app.dependencies.roles import is_owner
+    return {"id": current_user.id, "email": current_user.email,
+            "full_name": current_user.full_name, "career_track": current_user.career_track,
+            "country": current_user.country, "is_admin": is_owner(current_user),
+            "is_hr": bool(current_user.is_hr and current_user.is_verified and current_user.hr_approved)}
 
 
 # ── POST /auth/admin/login ────────────────────────────────────────────────────
@@ -244,7 +248,8 @@ def admin_login(user: UserLogin, request: Request, db: Session = Depends(get_db)
         _record_failure(ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    if not db_user.is_admin:
+    from backend.app.dependencies.roles import is_owner
+    if not is_owner(db_user):
         _record_failure(ip)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Admin account required.")
 
@@ -256,5 +261,5 @@ def admin_login(user: UserLogin, request: Request, db: Session = Depends(get_db)
         "is_admin":     True,
         "email":        db_user.email,
         "full_name":    db_user.full_name,
-        "redirect":     "/admin/dashboard"
+        "redirect":     "/admin"
     }

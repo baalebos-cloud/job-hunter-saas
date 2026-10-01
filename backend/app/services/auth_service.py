@@ -11,7 +11,8 @@ from backend.app.models.user import User
 
 # --- CONFIGURATION ---
 # In production, use os.getenv to pull these from your RDS/EC2 environment
-SECRET_KEY = os.getenv("SECRET_KEY", "BAALEBOS_SUPER_SECRET_KEY_2026_CLOUD_TALENT")
+from backend.app.core.config import settings
+SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 Days
 
@@ -45,6 +46,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
+    if not SECRET_KEY:
+        raise HTTPException(503, "Authentication is not configured")
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # --- THE GATEKEEPER ---

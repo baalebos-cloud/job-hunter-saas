@@ -124,7 +124,7 @@ function JobCard({ job, onApply }) {
           : 'bg-slate-900 text-white hover:bg-emerald-600 active:scale-[0.98]'
         }`}
       >
-        {applied ? '✓ Applied' : applying ? 'Applying...' : 'Quick Apply →'}
+        {applied ? '✓ Tracked' : applying ? 'Preparing...' : 'Review application →'}
       </button>
     </div>
   );
@@ -133,11 +133,11 @@ function JobCard({ job, onApply }) {
 function FaqSection() {
   const [open, setOpen] = useState(null);
   const faqs = [
-    { q: 'What is an ATS and why does it matter?', a: 'An Applicant Tracking System filters resumes automatically before a human sees them. If your resume lacks the right keywords, it gets rejected instantly — regardless of your qualifications.' },
+    { q: 'What is an ATS and why does it matter?', a: 'An applicant tracking system organizes recruitment. Employer screening rules and recruiter decisions vary. Baalebos cannot predict an employer’s outcome.' },
     { q: 'How does Baalebos scan my resume?', a: 'Our AI extracts text from your resume, compares it against the job description you provided, and scores it across action verbs, technical skills, and soft skills using NLP keyword matching.' },
-    { q: 'Is Baalebos free?', a: 'Yes — the ATS analysis and PDF download are completely free. Premium features like unlimited scans, cover letter generation, and direct recruiter outreach will be available in future plans.' },
-    { q: 'Is my resume stored or shared?', a: 'Your resume is processed securely and only used to generate your analysis. We do not share your data with third parties.' },
-    { q: 'What file formats are supported?', a: 'We support PDF, DOCX, and DOC file formats. For best results, use a clean single-column PDF.' },
+    { q: 'Is Baalebos free?', a: 'The free plan includes two resume scans per month. Your completed resume includes a PDF preview and download. See Plans for current limits.' },
+    { q: 'Is my resume stored or shared?', a: 'Your resume is processed securely and only used to generate your analysis. Resume text is sent to the configured AI provider for processing. Generated documents are stored in your account.' },
+    { q: 'What file formats are supported?', a: 'We support PDF and DOCX file formats. For best results, use a clean single-column PDF.' },
     { q: 'How do I improve my ATS score?', a: 'Add the missing keywords naturally into your resume, quantify achievements with numbers, use strong action verbs, and mirror the exact language from the job description.' },
   ];
   return (
@@ -162,117 +162,17 @@ function FaqSection() {
 }
 
 // NEW: Resume Download Modal
-function ResumeDownloadModal({ isOpen, onClose, onDownload, job_title, downloading, resume_id }) {
-  const [selectedFormat, setSelectedFormat] = useState('ats');
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState(null);
-
-  const handlePreview = async () => {
-    if (!resume_id) {
-      alert('Resume ID not found. Please try refreshing the page.');
-      return;
-    }
-
-    setPreviewLoading(true);
-    try {
-      // Fetch preview from backend using the correct endpoint with resume_id
-      const token = localStorage.getItem("token");
-      const res = await axios.get(`${API_BASE_URL}/resume/download/${resume_id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: 'blob'
-      });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      setPreviewUrl(url);
-    } catch (err) {
-      console.error('Preview error:', err);
-      alert('Could not load preview. Try downloading directly.');
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-100 p-6 flex justify-between items-center">
-          <h2 className="text-xl font-black text-slate-900">Download Your Resume</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Format Selection */}
-          <div>
-            <h3 className="font-bold text-slate-900 mb-3">Choose Format</h3>
-            <div className="space-y-3">
-              <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
-                style={{ borderColor: selectedFormat === 'ats' ? '#10b981' : '', backgroundColor: selectedFormat === 'ats' ? '#f0fdf4' : '' }}>
-                <input type="radio" name="format" value="ats" checked={selectedFormat === 'ats'} 
-                  onChange={(e) => setSelectedFormat(e.target.value)} className="mt-1" />
-                <div>
-                  <p className="font-bold text-slate-900">ATS-Optimized (Recommended)</p>
-                  <p className="text-xs text-slate-500 mt-1">Clean, keyword-rich format. Passes through Applicant Tracking Systems without any formatting issues.</p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
-                style={{ borderColor: selectedFormat === 'formatted' ? '#3b82f6' : '', backgroundColor: selectedFormat === 'formatted' ? '#f0f9ff' : '' }}>
-                <input type="radio" name="format" value="formatted" checked={selectedFormat === 'formatted'} 
-                  onChange={(e) => setSelectedFormat(e.target.value)} className="mt-1" />
-                <div>
-                  <p className="font-bold text-slate-900">Formatted (Visually Enhanced)</p>
-                  <p className="text-xs text-slate-500 mt-1">Professional design with colors and layout. Great for manual reviews and recruiter impressions.</p>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Preview Section */}
-          <div>
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-slate-900">Preview</h3>
-              <button onClick={handlePreview} disabled={previewLoading} 
-                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 disabled:text-slate-400">
-                {previewLoading ? 'Loading...' : 'View Preview'}
-              </button>
-            </div>
-            {previewUrl ? (
-              <iframe src={previewUrl} className="w-full h-96 border border-slate-200 rounded-xl" />
-            ) : (
-              <div className="bg-slate-50 h-96 rounded-xl flex items-center justify-center text-slate-400">
-                <p className="text-center">
-                  <span className="block mb-2">📄</span>
-                  Click "View Preview" to see your resume before downloading
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-            <p className="text-xs text-emerald-800">
-              <span className="font-bold">💡 Tip:</span> We recommend the <strong>ATS-Optimized format</strong> for most submissions. Use the <strong>Formatted version</strong> only when explicitly requested by a recruiter.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-slate-100 p-6 flex gap-3">
-          <button onClick={onClose} 
-            className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-900 hover:bg-slate-50 transition-all">
-            Cancel
-          </button>
-          <button onClick={() => onDownload(selectedFormat)} disabled={downloading}
-            className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all disabled:bg-slate-400">
-            {downloading ? '⏳ Downloading...' : '📥 Download PDF'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function ResumeDownloadModal({isOpen,onClose,onDownload,downloading,resume_id}) {
+ const [url,setUrl]=useState(null);const [error,setError]=useState('');
+ useEffect(()=>{if(!isOpen||!resume_id)return;let active=true;let objectUrl;
+ setUrl(null);setError('');
+ axios.get(`${API_BASE_URL}/resume/preview/${resume_id}`,{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`},responseType:'blob'})
+ .then(r=>{if(!r.headers['content-type']?.includes('application/pdf'))throw new Error('Invalid preview');objectUrl=URL.createObjectURL(new Blob([r.data],{type:'application/pdf'}));if(active)setUrl(objectUrl);else URL.revokeObjectURL(objectUrl)})
+ .catch(()=>{if(active)setError('Preview could not load. Please close and retry.')});
+ return()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
+ },[isOpen,resume_id]);
+ if(!isOpen)return null;
+ return <div className="fixed inset-0 bg-black/40 z-50 p-4 flex items-center justify-center"><section role="dialog" aria-modal="true" aria-label="Resume preview" className="bg-white rounded-2xl w-full max-w-4xl p-5"><div className="flex justify-between items-center mb-4"><h2 className="font-semibold text-xl">Review your tailored resume</h2><button aria-label="Close preview" onClick={onClose}>✕</button></div><p className="text-sm text-slate-500 mb-4">Check all facts and qualifications. This is the same PDF that downloads.</p>{error?<p role="alert">{error}</p>:url?<object data={url} type="application/pdf" className="w-full h-[60vh]"><a href={url} target="_blank" rel="noopener noreferrer">Open the PDF preview</a></object>:<p role="status" className="py-20 text-center">Loading document preview…</p>}<div className="flex justify-end gap-3 mt-4"><button onClick={onClose} className="border rounded-xl px-4 py-3">Close</button><button disabled={downloading||!url} onClick={()=>onDownload('ats')} className="bg-emerald-700 text-white rounded-xl px-5 py-3 disabled:opacity-50">{downloading?'Downloading…':'Download PDF'}</button></div></section></div>
 }
 
 export default function AtsResultView({ data }) {
@@ -315,9 +215,10 @@ export default function AtsResultView({ data }) {
 
   const handleApply = async (jobId) => {
     if (!token) { window.location.href = '/login'; return; }
-    await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, {}, {
+    const response = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     });
+    if (response.data.job_url) window.location.assign(response.data.job_url);
   };
 
   const handleOpenDownload = () => {
@@ -338,7 +239,7 @@ export default function AtsResultView({ data }) {
         headers: { Authorization: `Bearer ${token}` },
         responseType: 'blob'
       });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `Baalebos_${format === 'ats' ? 'ATS_' : 'Formatted_'}Optimized_${job_title}.pdf`);
@@ -358,7 +259,7 @@ export default function AtsResultView({ data }) {
   const scoreTip = overall_score >= 80
     ? 'Your resume matches well. Focus on quantifying achievements to stand out further.'
     : overall_score >= 60
-    ? 'Good foundation. Adding the missing keywords below will significantly boost your score.'
+    ? 'Review the missing requirements and confirm any relevant experience.'
     : 'Your resume needs more alignment with the job requirements. Use the Quick Wins below.';
 
   if (!data) return null;
@@ -370,7 +271,7 @@ export default function AtsResultView({ data }) {
 
       {/* ATS Score */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-        <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Your ATS Match Score</h2>
+        <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Documented requirement coverage</h2>
         <div className="flex flex-col md:flex-row items-center gap-8">
           <ScoreCircle score={overall_score} />
           <div className="flex-1 space-y-4">
@@ -392,13 +293,7 @@ export default function AtsResultView({ data }) {
                   style={{ width: `${overall_score}%`, backgroundColor: overall_score >= 80 ? '#10b981' : overall_score >= 60 ? '#f59e0b' : '#ef4444' }} />
               </div>
             </div>
-            <div className="flex items-start gap-2 bg-emerald-50 rounded-xl p-3">
-              <span className="text-emerald-500 text-sm mt-0.5">💡</span>
-              <p className="text-emerald-700 text-xs font-medium">
-                <span className="font-black">Tip:</span> Adding the missing keywords below could improve your ATS score by up to{' '}
-                <span className="font-black">{Math.min(30, Math.round((keywords_missing / Math.max(total_keywords, 1)) * 100))}%</span>.
-              </p>
-            </div>
+            <p className="text-xs text-slate-500">{data.score_notice} {data.scoring_method}</p>
           </div>
         </div>
       </div>
@@ -406,8 +301,8 @@ export default function AtsResultView({ data }) {
       {/* Top Keywords */}
       {missing_list?.length > 0 && (
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Top Keywords to Add</h3>
-          <p className="text-slate-500 text-xs mb-5">These missing keywords are hurting your score — adding them could significantly improve your ATS match.</p>
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Qualifications to confirm</h3>
+          <p className="text-slate-500 text-xs mb-5">These requirements lack exact phrase evidence in your resume. Confirm relevant experience before including them.</p>
           <div className="flex flex-wrap gap-2">
             {missing_list.slice(0, 12).map((kw, i) => (
               <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-bold border"
@@ -421,13 +316,36 @@ export default function AtsResultView({ data }) {
       )}
 
       {/* Quick Wins */}
+      {data.confirmation_questions?.length > 0 && (
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+          <h3 className="font-bold text-slate-900 mb-3">Confirm your experience</h3>
+          <p className="text-sm text-slate-500 mb-3">These questions are suggestions for your review. They have not been added as claims to your resume.</p>
+          <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">
+            {data.confirmation_questions.map((question, index) => <li key={index}>{String(question)}</li>)}
+          </ul>
+        </div>
+      )}
+      {data.requirements?.length > 0 && (
+        <details className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+          <summary className="font-bold text-slate-900 cursor-pointer">See requirement evidence</summary>
+          <p className="text-sm text-slate-500 my-3">Coverage uses exact phrases from the exported PDF. Equivalent wording can be missed; review qualifications and eligibility yourself.</p>
+          <div className="space-y-3">
+            {data.requirements.map((item, index) => (
+              <div key={index} className="border-t border-slate-100 pt-3 text-sm">
+                <p className="font-semibold text-slate-800">{item.requirement} · {item.priority} · {item.matched ? 'Evidence found' : 'No exact phrase found'}</p>
+                {item.evidence && <p className="text-slate-500 mt-1">{item.evidence}</p>}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
       {breakdown && Object.keys(breakdown).length > 0 && (
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
           <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Quick Wins</h3>
           <p className="text-slate-500 text-xs mb-5">These are the fastest changes you can make right now to improve your resume.</p>
           <div className="space-y-3">
             {breakdown.action_verbs && <QuickWin number={1} color="emerald" text={`Strengthen action verbs — your resume scores ${breakdown.action_verbs.score}% here. Aim for 80%+ by replacing weak verbs.`} />}
-            {missing_list?.[0] && <QuickWin number={2} color="blue" text={`Add "${missing_list[0]}" and "${missing_list[1] || 'related skills'}" to your skills section.`} />}
+            {missing_list?.[0] && <QuickWin number={2} color="blue" text={`Confirm whether you have evidence for "${missing_list[0]}" before adding it.`} />}
             {breakdown.soft_skills && <QuickWin number={3} color="purple" text={`Quantify impact: add specific numbers to your achievements (e.g. "led team of 12", "reduced processing time by 40%").`} />}
             {job_title && <QuickWin number={4} color="amber" text={`Mirror the job title "${job_title}" in your resume summary/headline.`} />}
           </div>
@@ -453,11 +371,11 @@ export default function AtsResultView({ data }) {
             <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Free Download</p>
             <h3 className="text-xl font-black tracking-tight">Download Your Optimized Resume PDF</h3>
             <p className="text-slate-400 text-sm mt-1">
-              {token ? 'Choose between ATS-optimized or formatted resume. View preview before downloading.'
+              {token ? 'Review the generated PDF before downloading.'
                 : 'Create a free account to download your AI-optimized resume instantly.'}
             </p>
           </div>
-          <button onClick={handleOpenDownload} disabled={downloading || downloaded}
+          <button onClick={handleOpenDownload} disabled={downloading}
             className={`shrink-0 px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all ${
               downloaded ? 'bg-emerald-500 text-white cursor-default'
               : 'bg-emerald-500 hover:bg-emerald-400 text-white active:scale-[0.98] shadow-xl shadow-emerald-900/30'
@@ -470,10 +388,10 @@ export default function AtsResultView({ data }) {
       {/* AI-Matched Jobs */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
         <div className="mb-6">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">AI-Matched Jobs For You</h3>
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Suggested roles for your career track</h3>
           <p className="text-slate-500 text-sm">
             Based on your <span className="font-bold text-slate-700">{job_title}</span> track and resume analysis —
-            the AI has found roles that match your profile. Apply directly with one click.
+            the AI has found roles that match your profile. Review each vacancy and complete its application process.
           </p>
         </div>
 

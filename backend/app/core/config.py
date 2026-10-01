@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # --- Security ---
     SECRET_KEY: str = Field(
-        default="BAALEBOS_SUPER_SECRET_KEY_2026_CLOUD_TALENT",
+        default="",
         env="SECRET_KEY"
     )
     ALGORITHM: str = "HS256"
