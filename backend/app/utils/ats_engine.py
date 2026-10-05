@@ -23,7 +23,7 @@ def extract_text(file_content: bytes, filename='resume.pdf'):
 
 def get_client():
     if settings.GROQ_API_KEY:
-        return OpenAI(api_key=settings.GROQ_API_KEY, base_url='https://api.groq.com/openai/v1', timeout=60, max_retries=1), 'llama-3.1-8b-instant'
+        return OpenAI(api_key=settings.GROQ_API_KEY, base_url='https://api.groq.com/openai/v1', timeout=60, max_retries=1), settings.GROQ_MODEL
     if settings.OPENROUTER_API_KEY:
         return OpenAI(api_key=settings.OPENROUTER_API_KEY, base_url='https://openrouter.ai/api/v1', timeout=60, max_retries=1), 'anthropic/claude-3-haiku'
     if settings.OPENAI_API_KEY:
