@@ -65,14 +65,29 @@ def _json(prompt, contract=None):
             raise
         logger.warning('resume_ai_schema_generation_retry contract=%s format=json_object', contract.__name__)
         retry_options = {**options, 'response_format': {'type': 'json_object'}}
-        response = client.chat.completions.create(model=model, messages=messages, temperature=0, **retry_options)
+        try:
+            response = client.chat.completions.create(model=model, messages=messages, temperature=0, **retry_options)
+        except BadRequestError as retry_exc:
+            if retry_exc.code != 'json_validate_failed':
+                raise
+            # JSON object mode can also fail provider-side validation. Request
+            # a fresh final answer in text mode, then validate it locally below.
+            # Never repair or reuse the provider's failed_generation payload.
+            logger.warning('resume_ai_schema_generation_retry contract=%s format=text', contract.__name__)
+            text_options = {**options, 'response_format': {'type': 'text'},
+                            'extra_body': {**options['extra_body'], 'include_reasoning': False}}
+            response = client.chat.completions.create(model=model, messages=messages, temperature=0, **text_options)
     if response.choices[0].finish_reason == 'length':
         logger.warning('resume_ai_output_incomplete model=%s completion_tokens=%s',
                        model, getattr(response.usage, 'completion_tokens', None))
         raise ValueError('AI response was incomplete. Please retry.')
     raw = response.choices[0].message.content or ''
     raw = raw.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip()
-    result = json.loads(raw)
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # Do not surface parser excerpts or provider content to users/logs.
+        raise ValueError('AI response was not valid JSON. No resume was saved. Please retry.') from exc
     if not isinstance(result, dict):
         raise ValueError('Invalid AI response.')
     if contract is not None:
