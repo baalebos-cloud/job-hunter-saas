@@ -1,0 +1,58 @@
+"""Provider output must match the exporter and validator's typed contract."""
+import json
+from types import SimpleNamespace
+import pytest
+from pydantic import ValidationError
+from backend.app.utils import ats_engine
+from backend.app.utils.resume_contracts import ResumeRewrite, ExtractedResume, Requirements
+
+
+def valid_rewrite():
+    return {'optimized_summary': 'Python developer',
+            'optimized_experience': [{'role': 'Engineer', 'company': 'Example', 'dates': '2025', 'bullets': ['Built Python tools.']}],
+            'optimized_skills': {'Skills': ['Python', 'Terraform']},
+            'confirmation_questions': [], 'suggestions_applied': []}
+
+
+@pytest.mark.parametrize('skills', [['Python'], 'Python', {'Skills': 'Python'}, {'Skills': [123]}, None])
+def test_invalid_skill_shapes_are_rejected(skills):
+    with pytest.raises(ValidationError):
+        ResumeRewrite.model_validate({**valid_rewrite(), 'optimized_skills': skills})
+
+
+def test_all_contract_objects_are_closed_and_required():
+    def inspect(value):
+        if isinstance(value, dict):
+            if value.get('type') == 'object':
+                assert value['additionalProperties'] is False
+                assert set(value['required']) == set(value['properties'])
+            for item in value.values(): inspect(item)
+        elif isinstance(value, list):
+            for item in value: inspect(item)
+    for contract in (ResumeRewrite, ExtractedResume, Requirements):
+        inspect(contract.model_json_schema())
+
+
+def test_font_damage_is_identified_before_ai_analysis():
+    with pytest.raises(ValueError, match='unreadable font characters'):
+        ats_engine._text('Candidate resume with GitHubAc(cid:415)ons and Terraform experience.')
+
+
+def test_provider_gets_strict_schema_and_safe_shape_diagnostics(monkeypatch, caplog):
+    calls = []
+    body = valid_rewrite()
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content=json.dumps(body)))])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(ats_engine, 'get_client', lambda: (client, 'openai/gpt-oss-20b'))
+    monkeypatch.setattr(ats_engine.settings, 'GROQ_API_KEY', 'synthetic-test-key')
+    assert ats_engine._json('Return JSON.', contract=ResumeRewrite) == body
+    format = calls[0]['response_format']
+    assert format['type'] == 'json_schema' and format['json_schema']['strict'] is True
+    assert format['json_schema']['schema'] == ResumeRewrite.model_json_schema()
+    body['optimized_skills'] = {'Skills': 'private-candidate-text'}
+    with pytest.raises(ValueError, match='required resume structure'):
+        ats_engine._json('Return JSON.', contract=ResumeRewrite)
+    assert 'skill_type=dict' in caplog.text and "['str']" in caplog.text
+    assert 'private-candidate-text' not in caplog.text
