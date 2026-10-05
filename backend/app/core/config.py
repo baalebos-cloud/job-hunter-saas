@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # --- AI ---
     GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
     OPENROUTER_API_KEY: str = Field(default="", env="OPENROUTER_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
 
