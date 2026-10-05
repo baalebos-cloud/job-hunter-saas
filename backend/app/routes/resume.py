@@ -14,6 +14,20 @@ router = APIRouter(tags=['Resume'])
 logger = logging.getLogger(__name__)
 
 
+def provider_diagnostics(exc):
+    """Allowlisted metadata only; provider messages can contain candidate data."""
+    allowed = {
+        'code': {'json_validate_failed', 'invalid_api_key', 'model_not_found', 'rate_limit_exceeded', 'context_length_exceeded', 'invalid_request_error'},
+        'type': {'invalid_request_error', 'authentication_error', 'rate_limit_error'},
+        'param': {'response_format', 'response_format.json_schema', 'model', 'reasoning_effort', 'max_completion_tokens', 'temperature'},
+    }
+    result = {}
+    for field, values in allowed.items():
+        value = getattr(exc, field, None)
+        result[field] = value if isinstance(value, str) and value in values else ('other' if value is not None else 'none')
+    return result
+
+
 def owned_resume(identifier, db, user):
     record = db.query(Resume).filter(Resume.filename == f'optimized_{identifier}.pdf', Resume.owner_id == user.id).first()
     if not record:
@@ -70,8 +84,10 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
     except Exception as exc:
         # Do not log exception bodies: provider errors may echo candidate data.
         provider_status = getattr(exc, 'status_code', None)
-        logger.error('resume_preparation_failed reference=%s stage=%s error_type=%s provider_status=%s',
-                     task_id, stage, type(exc).__name__, provider_status)
+        diagnostic = provider_diagnostics(exc)
+        logger.error('resume_preparation_failed reference=%s stage=%s error_type=%s provider_status=%s provider_code=%s provider_type=%s provider_param=%s',
+                     task_id, stage, type(exc).__name__, provider_status,
+                     diagnostic['code'], diagnostic['type'], diagnostic['param'])
         from openai import AuthenticationError, PermissionDeniedError, RateLimitError, APITimeoutError, APIConnectionError, BadRequestError, NotFoundError
         if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
             message = 'The AI provider rejected this service’s credentials or permissions. Please contact support.'
