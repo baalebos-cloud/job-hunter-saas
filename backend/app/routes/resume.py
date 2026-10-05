@@ -1,5 +1,6 @@
 import uuid
 import json
+import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import Response
 from fastapi.concurrency import run_in_threadpool
@@ -10,6 +11,7 @@ from backend.app.dependencies.plan_guard import require_scan_quota
 from backend.app.models.resume import Resume
 
 router = APIRouter(tags=['Resume'])
+logger = logging.getLogger(__name__)
 
 
 def owned_resume(identifier, db, user):
@@ -33,18 +35,29 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
         raise HTTPException(400, 'Invalid DOCX.')
     if not job_title.strip() or len(job_title)>200: raise HTTPException(400, 'Provide a target job title up to 200 characters.')
     task_id = str(uuid.uuid4())
+    stage = 'load_pipeline'
     def prepare():
+        nonlocal stage
         from backend.app.utils.ats_engine import extract_text, extract_resume_data, extract_requirements, rewrite_resume_for_job
         from backend.app.utils.resume_quality import merge_rewrite, score_requirements
         from backend.app.utils.pdf_generator import generate_optimized_resume
+        stage = 'extract_text'
         text = extract_text(content, filename)
+        stage = 'extract_resume_data'
         original = extract_resume_data(text)
+        stage = 'extract_requirements'
         requirements = extract_requirements(job_description)
+        stage = 'score_original'
         before = score_requirements(text, job_description, requirements)
+        stage = 'rewrite_resume'
         rewrite = rewrite_resume_for_job(resume_text=text, resume_data=original, job_description=job_description, job_title=job_title)
+        stage = 'validate_rewrite'
         tailored = merge_rewrite(original, rewrite, text)
+        stage = 'export_pdf'
         pdf = generate_optimized_resume(filename, resume_data=tailored).getvalue()
+        stage = 'read_exported_pdf'
         exported = extract_text(pdf, 'resume.pdf')
+        stage = 'score_exported_pdf'
         analysis = score_requirements(exported, job_description, requirements)
         analysis.update(original_score=before['overall_score'], confirmation_questions=rewrite.get('confirmation_questions',[]),
                         suggestions_applied=rewrite.get('suggestions_applied',[]), job_title=job_title, job_description=job_description,
@@ -55,7 +68,22 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(503, 'Resume preparation is unavailable. Please retry; no completed resume was saved.') from exc
+        # Do not log exception bodies: provider errors may echo candidate data.
+        provider_status = getattr(exc, 'status_code', None)
+        logger.error('resume_preparation_failed reference=%s stage=%s error_type=%s provider_status=%s',
+                     task_id, stage, type(exc).__name__, provider_status)
+        from openai import AuthenticationError, PermissionDeniedError, RateLimitError, APITimeoutError, APIConnectionError, BadRequestError, NotFoundError
+        if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
+            message = 'The AI provider rejected this service’s credentials or permissions. Please contact support.'
+        elif isinstance(exc, RateLimitError):
+            message = 'The AI provider’s usage limit has been reached. Please retry later or contact support.'
+        elif isinstance(exc, (APITimeoutError, APIConnectionError)):
+            message = 'The AI provider could not be reached in time. Please retry later.'
+        elif isinstance(exc, (BadRequestError, NotFoundError)):
+            message = 'The AI provider could not accept this request or model configuration. Please contact support.'
+        else:
+            message = 'Resume preparation is unavailable. Please retry.'
+        raise HTTPException(503, f'{message} No completed resume was saved. Reference: {task_id}') from exc
     record = Resume(owner_id=current_user.id, filename=f'optimized_{task_id}.pdf', content=pdf,
                     parsed_data=json.dumps(tailored), ats_score=analysis['overall_score'], analysis_data=analysis)
     from backend.app.dependencies.plan_guard import consume_scan
