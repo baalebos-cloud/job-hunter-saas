@@ -133,7 +133,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
 
         {/* Job Title — searchable autocomplete */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+          <label htmlFor="resume-job-title" className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
             Target Job Title
           </label>
           <div className="relative" ref={dropRef}>
@@ -145,6 +145,8 @@ export default function ResumeUpload({ onUploadSuccess }) {
               </svg>
               <input
                 ref={inputRef}
+                id="resume-job-title"
+                name="job_title"
                 type="text"
                 placeholder="Search or type any job title... e.g. Senior DevOps Engineer"
                 className={`${inputCls} pl-11 pr-10`}
@@ -192,13 +194,14 @@ export default function ResumeUpload({ onUploadSuccess }) {
 
         {/* Work Type */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
+          <p id="resume-work-type-label" className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
             Preferred Work Type
-          </label>
-          <div className="grid grid-cols-3 gap-3">
+          </p>
+          <div role="group" aria-labelledby="resume-work-type-label" className="grid grid-cols-3 gap-3">
             {WORK_TYPES.map(wt => (
               <button
                 key={wt.value}
+                aria-pressed={workType === wt.value}
                 type="button"
                 onClick={() => setWorkType(wt.value)}
                 className={`p-4 rounded-2xl border-2 text-left transition-all ${
@@ -224,10 +227,12 @@ export default function ResumeUpload({ onUploadSuccess }) {
 
         {/* Job Description */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+          <label htmlFor="resume-job-description" className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
             Job Description
           </label>
           <textarea
+            id="resume-job-description"
+            name="job_description"
             rows={5}
             required
             placeholder="Paste the full job description here — the AI will extract every keyword and score your resume against it for maximum ATS match..."
@@ -242,10 +247,10 @@ export default function ResumeUpload({ onUploadSuccess }) {
 
         {/* File Upload */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+          <label htmlFor="resume-file" className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
             Your Resume
           </label>
-          <input type="file" id="resume-file" className="hidden"
+          <input type="file" id="resume-file" name="file" className="hidden"
             onChange={e => setFile(e.target.files?.[0] || null)} accept=".pdf,.docx" />
           <label htmlFor="resume-file"
             className={`flex items-center gap-4 p-5 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
