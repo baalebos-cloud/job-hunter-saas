@@ -103,7 +103,8 @@ def test_successful_upload_scores_exported_pdf_and_charges_once(client, db, monk
     monkeypatch.setattr(engine, 'extract_resume_data', lambda text: base)
     monkeypatch.setattr(engine, 'extract_requirements', lambda jd: [{'phrase': 'Python'}, {'phrase': 'Terraform'}])
     monkeypatch.setattr(engine, 'rewrite_resume_for_job', lambda **kw: {
-        'optimized_summary': base['summary'], 'optimized_experience': base['experience'], 'optimized_skills': base['skills']})
+        'optimized_summary': base['summary'], 'optimized_experience': base['experience'],
+        'optimized_skills': {'Tools': ['Python', 'Terraform']}})
     input_pdf = generate_optimized_resume('input.pdf', resume_data=base).getvalue()
     response = client.post('/api/v1/resume/upload', headers=headers(),
         files={'file': ('input.pdf', input_pdf, 'application/pdf')},
@@ -111,8 +112,10 @@ def test_successful_upload_scores_exported_pdf_and_charges_once(client, db, monk
     assert response.status_code == 200, response.text
     result = response.json()['result']
     assert result['overall_score'] == 50
+    assert 'Terraform' in result['confirmation_questions'][0]
     record = db.query(Resume).first()
     assert json.loads(record.parsed_data)['projects'] == base['projects']
+    assert 'Terraform' not in extract_text(record.content, 'output.pdf')
     assert db.query(Subscription).first().scans_this_month == 1
     assert client.get('/api/v1/resume/preview/' + response.json()['task_id'], headers=headers()).content == record.content
 
@@ -177,12 +180,21 @@ def original():
     return {'name':'Candidate','contact':'candidate@example.com','summary':'Python developer','experience':[{'role':'Engineer','company':'Example','dates':'2025','bullets':['Built Python tools.']}], 'projects':[{'title':'Project','bullets':['Built a tool.']}],'skills':{'Tools':['Python']},'education':[{'degree':'BSc','institution':'School','year':'2025'}],'certifications':['AWS certification - In progress']}
 
 
-def test_rewrite_rejects_missing_history_new_skills_and_metrics():
+def test_rewrite_preserves_history_filters_new_skills_and_rejects_metrics():
     base=original(); rewrite={'optimized_summary':'Python developer','optimized_experience':base['experience'],'optimized_skills':base['skills']}
     source='Candidate candidate@example.com Engineer Example 2025 Python developer'
     assert merge_rewrite(base,rewrite,source)['education']==base['education']
     with pytest.raises(ValueError):merge_rewrite(base,{**rewrite,'optimized_experience':[]},source)
-    with pytest.raises(ValueError):merge_rewrite(base,{**rewrite,'optimized_skills':{'Tools':['Terraform']}},source)
+    unsupported = {**rewrite, 'optimized_skills': {'Tools': ['Terraform']},
+                   'optimized_summary': 'Terraform developer',
+                   'optimized_experience': [{**base['experience'][0], 'bullets': ['Built Terraform tools.']}]}
+    safe = merge_rewrite(base, unsupported, source)
+    assert safe['skills'] == {'Tools': ['Python']}
+    assert safe['summary'] == base['summary']
+    assert safe['experience'] == base['experience']
+    assert 'Terraform' in unsupported['confirmation_questions'][0]
+    pdf_text = extract_text(generate_optimized_resume('input.pdf', resume_data=safe).getvalue(), 'output.pdf')
+    assert 'Terraform' not in pdf_text
     with pytest.raises(ValueError):merge_rewrite(base,{**rewrite,'optimized_summary':'Improved output by 90%'},source)
 
 

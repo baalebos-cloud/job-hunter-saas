@@ -22,7 +22,10 @@ def validate_resume(data):
 
 
 def merge_rewrite(original, rewritten, source):
-    """Keep identity and complete history; reject unsupported skills and new numbers."""
+    """Keep history, omit unsupported skill additions, reject invented numbers.
+
+    Removed additions become review questions in the rewrite metadata.
+    """
     result = dict(original)
     experiences = rewritten.get('optimized_experience')
     if not isinstance(experiences, list) or len(experiences) != len(original['experience']):
@@ -42,10 +45,17 @@ def merge_rewrite(original, rewritten, source):
     skills = rewritten.get('optimized_skills', original['skills'])
     if not isinstance(skills, dict) or any(not isinstance(v, list) for v in skills.values()):
         raise ValueError('Invalid rewritten skills.')
-    for values in skills.values():
+    filtered = {}; excluded = []
+    for category, values in skills.items():
+        filtered[category] = []
         for skill in values:
-            if not isinstance(skill, str) or not contains(source, skill):
-                raise ValueError('Rewrite introduced a skill not evidenced in the source.')
+            if not isinstance(skill, str) or not skill.strip():
+                raise ValueError('Invalid rewritten skill.')
+            if contains(source, skill):
+                filtered[category].append(skill)
+            elif normalize(skill) not in {normalize(item) for item in excluded}:
+                excluded.append(skill)
+    skills = filtered
     # Tailoring can reorder skills; it must not silently delete documented skills.
     retained = {normalize(skill) for values in skills.values() for skill in values}
     for category, values in original['skills'].items():
@@ -56,6 +66,19 @@ def merge_rewrite(original, rewritten, source):
                 skills.setdefault(category, []).append(skill)
                 retained.add(normalize(skill))
     summary = rewritten.get('optimized_summary', original.get('summary', ''))
+    if excluded:
+        questions = rewritten.get('confirmation_questions', [])
+        questions = list(questions) if isinstance(questions, list) else []
+        questions.extend(f'"{skill}" was omitted because no exact evidence was found in the source. Can you confirm relevant experience?' for skill in excluded)
+        rewritten['confirmation_questions'] = questions
+        # An omitted skill must not survive as a claim in the summary or bullets.
+        if any(contains(summary, skill) for skill in excluded):
+            summary = original.get('summary', '')
+        experiences = [
+            {**new, 'bullets': list(old.get('bullets', []))}
+            if any(contains(' '.join(new['bullets']), skill) for skill in excluded) else new
+            for old, new in zip(original['experience'], experiences)
+        ]
     generated = str(summary) + ' ' + ' '.join(' '.join(e['bullets']) for e in experiences)
     for number in re.findall(r'\d+(?:[.,]\d+)*(?:\s*%)?', generated):
         if normalize(number) not in source_numbers:
