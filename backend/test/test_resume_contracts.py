@@ -59,7 +59,7 @@ def test_provider_gets_strict_schema_and_safe_shape_diagnostics(monkeypatch, cap
 
 
 @pytest.mark.parametrize('mode', ['valid', 'invalid', 'second_failure', 'other_error'])
-def test_groq_validation_failure_has_one_validated_retry(monkeypatch, caplog, mode):
+def test_groq_validation_failure_has_bounded_validated_retries(monkeypatch, caplog, mode):
     import httpx
     from openai import BadRequestError
     calls = []
@@ -80,9 +80,41 @@ def test_groq_validation_failure_has_one_validated_retry(monkeypatch, caplog, mo
     else:
         with pytest.raises(ValueError if mode == 'invalid' else BadRequestError):
             ats_engine._json('Return JSON.', ResumeRewrite)
-    assert len(calls) == (1 if mode == 'other_error' else 2)
+    assert len(calls) == (1 if mode == 'other_error' else 3 if mode == 'second_failure' else 2)
     if len(calls) == 2:
         assert calls[1]['response_format'] == {'type': 'json_object'}
         assert calls[1]['messages'] == calls[0]['messages']
         assert calls[1]['extra_body'] == calls[0]['extra_body']
     assert 'private-candidate-text' not in caplog.text
+
+
+@pytest.mark.parametrize('outcome', ['valid', 'invalid_shape', 'invalid_json', 'truncated', 'unrelated_error'])
+def test_text_recovery_preserves_validation_and_retry_bound(monkeypatch, caplog, outcome):
+    import httpx
+    from openai import BadRequestError
+    calls = []
+    def error(code):
+        return BadRequestError('private-source-content', response=httpx.Response(400, request=httpx.Request('POST', 'https://api.groq.com/openai/v1/chat/completions')),
+                               body={'code': code, 'failed_generation': 'private-source-content'})
+    body = valid_rewrite()
+    if outcome == 'invalid_shape': body['optimized_skills'] = {'Skills': 'private-source-content'}
+    raw = 'private-source-content' if outcome == 'invalid_json' else json.dumps(body)
+    def create(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1: raise error('json_validate_failed')
+        if len(calls) == 2: raise error('invalid_request_error' if outcome == 'unrelated_error' else 'json_validate_failed')
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason='length' if outcome == 'truncated' else 'stop', message=SimpleNamespace(content=raw))], usage=None)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(ats_engine, 'get_client', lambda: (client, 'openai/gpt-oss-20b'))
+    monkeypatch.setattr(ats_engine.settings, 'GROQ_API_KEY', 'synthetic-test-key')
+    if outcome == 'valid': assert ats_engine._json('Return JSON.', ResumeRewrite) == body
+    else:
+        with pytest.raises(BadRequestError if outcome == 'unrelated_error' else ValueError):
+            ats_engine._json('Return JSON.', ResumeRewrite)
+    assert len(calls) == (2 if outcome == 'unrelated_error' else 3)
+    if len(calls) == 3:
+        assert calls[2]['response_format'] == {'type': 'text'}
+        assert calls[2]['extra_body']['include_reasoning'] is False
+        assert calls[2]['messages'] == calls[0]['messages']
+        assert calls[2]['extra_body']['max_completion_tokens'] == calls[0]['extra_body']['max_completion_tokens']
+    assert 'private-source-content' not in caplog.text
