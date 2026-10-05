@@ -56,3 +56,33 @@ def test_provider_gets_strict_schema_and_safe_shape_diagnostics(monkeypatch, cap
         ats_engine._json('Return JSON.', contract=ResumeRewrite)
     assert 'skill_type=dict' in caplog.text and "['str']" in caplog.text
     assert 'private-candidate-text' not in caplog.text
+
+
+@pytest.mark.parametrize('mode', ['valid', 'invalid', 'second_failure', 'other_error'])
+def test_groq_validation_failure_has_one_validated_retry(monkeypatch, caplog, mode):
+    import httpx
+    from openai import BadRequestError
+    calls = []
+    code = 'invalid_request_error' if mode == 'other_error' else 'json_validate_failed'
+    error = BadRequestError('private-candidate-text', response=httpx.Response(400, request=httpx.Request('POST', 'https://api.groq.com/openai/v1/chat/completions')),
+                            body={'code': code, 'failed_generation': 'private-candidate-text'})
+    body = valid_rewrite()
+    if mode == 'invalid': body['optimized_skills'] = {'Skills': 'private-candidate-text'}
+    def create(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1 or mode == 'second_failure': raise error
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content=json.dumps(body)))])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(ats_engine, 'get_client', lambda: (client, 'openai/gpt-oss-20b'))
+    monkeypatch.setattr(ats_engine.settings, 'GROQ_API_KEY', 'synthetic-test-key')
+    if mode == 'valid':
+        assert ats_engine._json('Return JSON.', ResumeRewrite) == body
+    else:
+        with pytest.raises(ValueError if mode == 'invalid' else BadRequestError):
+            ats_engine._json('Return JSON.', ResumeRewrite)
+    assert len(calls) == (1 if mode == 'other_error' else 2)
+    if len(calls) == 2:
+        assert calls[1]['response_format'] == {'type': 'json_object'}
+        assert calls[1]['messages'] == calls[0]['messages']
+        assert calls[1]['extra_body'] == calls[0]['extra_body']
+    assert 'private-candidate-text' not in caplog.text
