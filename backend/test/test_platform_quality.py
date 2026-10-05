@@ -117,7 +117,7 @@ def test_successful_upload_scores_exported_pdf_and_charges_once(client, db, monk
     assert client.get('/api/v1/resume/preview/' + response.json()['task_id'], headers=headers()).content == record.content
 
 
-def test_failed_upload_does_not_consume_quota(client, db, monkeypatch):
+def test_failed_upload_does_not_consume_quota(client, db, monkeypatch, caplog):
     def unavailable(text):
         raise RuntimeError('Provider unavailable')
     monkeypatch.setattr('backend.app.utils.ats_engine.extract_resume_data', unavailable)
@@ -126,6 +126,29 @@ def test_failed_upload_does_not_consume_quota(client, db, monkeypatch):
         files={'file': ('input.pdf', input_pdf, 'application/pdf')},
         data={'job_title': 'Engineer', 'job_description': 'Python experience required for this engineering role.'})
     assert response.status_code == 503
+    assert 'Reference:' in response.json()['detail']
+    assert 'stage=extract_resume_data' in caplog.text
+    assert 'error_type=RuntimeError' in caplog.text
+    assert 'Provider unavailable' not in caplog.text
+    assert db.query(Resume).count() == 0
+    assert db.query(Subscription).first().scans_this_month == 0
+
+
+def test_provider_auth_failure_is_identified_without_exposing_details(client, db, monkeypatch, caplog):
+    import httpx
+    from openai import AuthenticationError
+    def denied(text):
+        response = httpx.Response(401, request=httpx.Request('POST', 'https://example.com'))
+        raise AuthenticationError('private-provider-response', response=response, body=None)
+    monkeypatch.setattr('backend.app.utils.ats_engine.extract_resume_data', denied)
+    input_pdf = generate_optimized_resume('input.pdf', resume_data=original()).getvalue()
+    response = client.post('/api/v1/resume/upload', headers=headers(),
+        files={'file': ('input.pdf', input_pdf, 'application/pdf')},
+        data={'job_title': 'Engineer', 'job_description': 'Python experience required for this engineering role.'})
+    assert response.status_code == 503
+    assert 'credentials or permissions' in response.json()['detail']
+    assert 'provider_status=401' in caplog.text
+    assert 'private-provider-response' not in response.text + caplog.text
     assert db.query(Resume).count() == 0
     assert db.query(Subscription).first().scans_this_month == 0
 
