@@ -41,6 +41,24 @@ def client(db): return TestClient(app)
 def headers(email='candidate@example.com'): return {'Authorization':'Bearer '+create_access_token({'sub':email})}
 
 
+@pytest.mark.parametrize('accepted', [True, False])
+def test_resend_verification_reports_delivery_acceptance(client, db, monkeypatch, accepted):
+    user = db.query(User).filter_by(email='jayeolaoluwadamilare@gmail.com').first()
+    user.is_verified = False
+    db.commit()
+    calls = []
+    def send(**kwargs):
+        calls.append(kwargs)
+        return accepted
+    monkeypatch.setattr('backend.app.routes.auth.send_verification_email', send)
+    response = client.post('/api/v1/auth/resend-verification', headers=headers(user.email))
+    assert response.status_code == (200 if accepted else 503)
+    assert calls[0]['to_email'] == user.email
+    assert calls[0]['token'] == user.verification_token
+    assert not user.is_verified
+    assert user.verification_token not in response.text
+
+
 def test_owner_only_browser_diagnostic(client, db, monkeypatch):
     from backend.app.routes import admin
     from backend.app.utils import ats_engine
