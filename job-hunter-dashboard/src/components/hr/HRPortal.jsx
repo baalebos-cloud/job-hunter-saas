@@ -20,6 +20,15 @@ export default function HRPortal() {
   const [myJobs, setMyJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [applications, setApplications] = useState([]);
+  const [resumePreview, setResumePreview] = useState(null);
+  const [loadingResume, setLoadingResume] = useState(null);
+  const [resumeError, setResumeError] = useState('');
+  useEffect(() => {
+    if (!resumePreview) return;
+    const close = e => { if (e.key === 'Escape') setResumePreview(null); };
+    window.addEventListener('keydown', close);
+    return () => { URL.revokeObjectURL(resumePreview.url); window.removeEventListener('keydown', close); };
+  }, [resumePreview]);
   const [tab, setTab] = useState('post');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
@@ -80,6 +89,19 @@ export default function HRPortal() {
     if (selectedJob) loadApplications(selectedJob);
   };
 
+  const viewResume = async (app) => {
+    setLoadingResume(app.application_id);
+    setResumeError('');
+    try {
+      const response = await axios.get(`${API}/hr/applications/${app.application_id}/resume`, {
+        headers: h(), responseType: 'blob', timeout: 30000,
+      });
+      setResumePreview({ url: URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' })), name: app.applicant_name });
+    } catch {
+      setResumeError('The submitted resume could not be loaded. Please retry.');
+    } finally { setLoadingResume(null); }
+  };
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const inputCls = 'w-full px-4 py-3 rounded-xl border-2 border-slate-700 bg-slate-800 text-white text-sm font-semibold outline-none focus:border-emerald-500 transition-all placeholder:text-slate-500';
@@ -99,6 +121,18 @@ export default function HRPortal() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white" style={{ fontFamily: "'Inter', sans-serif" }}>
+      {resumePreview && (
+        <div className="fixed inset-0 z-[60] bg-black/70 p-4 flex items-center justify-center">
+          <section role="dialog" aria-modal="true" aria-labelledby="applicant-resume-title" className="bg-slate-900 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 id="applicant-resume-title" className="font-bold">Submitted resume — {resumePreview.name}</h2>
+              <button autoFocus onClick={() => setResumePreview(null)} className="px-4 py-2 bg-slate-700 rounded-lg">Close preview</button>
+            </div>
+            <a href={resumePreview.url} download="Applicant_Resume.pdf" className="text-emerald-300 underline mb-3">Download submitted resume</a>
+            <iframe title={`Submitted resume for ${resumePreview.name}`} src={resumePreview.url} className="w-full flex-1 rounded-lg bg-white" />
+          </section>
+        </div>
+      )}
       {/* Navbar */}
       <div className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/90 backdrop-blur px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -278,6 +312,8 @@ export default function HRPortal() {
         {/* Applications */}
         {tab === 'applications' && (
           <div className="space-y-4">
+            {resumeError && <p role="alert" className="text-rose-300">{resumeError}</p>}
+            <p className="text-slate-300 text-sm">Review the submitted resume against the job requirements. The match score is a screening aid, not a verified qualification or hiring decision.</p>
             <h2 className="text-xl font-black text-white">
               {selectedJob ? `Applicants for Job #${selectedJob}` : 'Select a job to view applicants'}
             </h2>
@@ -304,7 +340,7 @@ export default function HRPortal() {
                       (app.ats_score||0) >= 80 ? 'bg-emerald-500/20 text-emerald-400'
                       : (app.ats_score||0) >= 60 ? 'bg-amber-500/20 text-amber-400'
                       : 'bg-slate-700 text-slate-400'
-                    }`}>ATS: {app.ats_score || 0}%</span>
+                    }`}>{app.ats_score == null ? 'Job match: not assessed' : `Job match: ${app.ats_score}%`}</span>
                     <span className={`text-xs font-black px-2 py-1 rounded-full capitalize ${
                       app.status === 'interview' ? 'bg-purple-500/20 text-purple-400'
                       : app.status === 'offer' ? 'bg-emerald-500/20 text-emerald-400'
@@ -315,6 +351,12 @@ export default function HRPortal() {
                 </div>
                 {/* Status actions */}
                 <div className="flex gap-2 mt-4 flex-wrap">
+                  {app.resume_available ? (
+                    <button onClick={() => viewResume(app)} disabled={loadingResume !== null}
+                      className="text-xs font-black px-3 py-1.5 rounded-xl bg-blue-500/20 text-blue-300 disabled:opacity-50">
+                      {loadingResume === app.application_id ? 'Loading resume…' : 'View submitted resume'}
+                    </button>
+                  ) : <span className="text-xs text-slate-400">No resume submitted on this platform</span>}
                   {['reviewed', 'interview', 'offer', 'rejected'].map(s => (
                     <button key={s} onClick={() => updateStatus(app.application_id, s)}
                       disabled={app.status === s}
@@ -325,7 +367,7 @@ export default function HRPortal() {
                         : s === 'rejected' ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
                         : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                       }`}>
-                      {s === 'interview' ? '📅 Schedule Interview' : s === 'offer' ? '🎉 Send Offer' : s === 'rejected' ? '❌ Reject' : '👁 Mark Reviewed'}
+                      {s === 'interview' ? 'Mark interview stage' : s === 'offer' ? 'Mark offer stage' : s === 'rejected' ? 'Mark rejected' : 'Mark reviewed'}
                     </button>
                   ))}
                 </div>
