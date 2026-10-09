@@ -145,13 +145,14 @@ def resend_verification(
     current_user.verification_token = token
     db.commit()
 
-    background_tasks.add_task(
-        send_verification_email,
+    accepted = send_verification_email(
         to_email=current_user.email,
         token=token,
         full_name=current_user.full_name or "",
     )
-    return {"message": "Verification email resent. Please check your inbox."}
+    if not accepted:
+        raise HTTPException(503, "Verification email could not be sent. Please retry later or contact support.")
+    return {"message": "Verification email accepted for sending. Please check your inbox and spam folder."}
 
 
 # ── POST /auth/forgot-password ────────────────────────────────────────────────
