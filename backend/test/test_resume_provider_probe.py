@@ -30,3 +30,16 @@ def test_probe_does_not_print_failed_generation_or_exception_message(monkeypatch
     assert run_probe(client, 'openai/gpt-oss-20b', output.append) == 1
     assert 'synthetic diagnostic reason' in '\n'.join(output)
     assert 'do-not-print' not in '\n'.join(output)
+
+
+def test_probe_does_not_replace_shared_provider_client(monkeypatch):
+    sentinel = object()
+    shared = lambda: (sentinel, 'normal-model')
+    monkeypatch.setattr(ats_engine, 'get_client', shared)
+    monkeypatch.setattr(ats_engine.settings, 'GROQ_API_KEY', 'synthetic-key')
+    def create(**kwargs):
+        assert ats_engine.get_client() == (sentinel, 'normal-model')
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content='invalid JSON'))])
+    probe_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert run_probe(probe_client, 'openai/gpt-oss-20b', lambda line: None) == 1
+    assert ats_engine.get_client is shared

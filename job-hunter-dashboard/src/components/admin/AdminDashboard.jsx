@@ -13,6 +13,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
   const [msg, setMsg] = useState('');
+  const [testingAI, setTestingAI] = useState(false);
+  const [aiReport, setAIReport] = useState(null);
+  const [aiError, setAIError] = useState('');
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
@@ -27,6 +30,17 @@ export default function AdminDashboard() {
     if (t === 'users')   { const r = await axios.get(`${API}/admin/users`, { headers: h() }); setUsers(r.data); }
     if (t === 'jobs')    { const r = await axios.get(`${API}/admin/jobs`, { headers: h() }); setJobs(r.data); }
     if (t === 'apps')    { const r = await axios.get(`${API}/admin/applications`, { headers: h() }); setApps(r.data); }
+  };
+
+  const testAI = async () => {
+    setTestingAI(true); setAIReport(null); setAIError('');
+    try {
+      const { data } = await axios.post(`${API}/admin/resume-diagnostic`, {}, { headers: h(), timeout: 300000 });
+      setAIReport(data);
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      setAIError(typeof detail === 'string' ? detail : 'The diagnostic could not complete. Please try again.');
+    } finally { setTestingAI(false); }
   };
 
   const makeHR = async (id) => {
@@ -61,6 +75,7 @@ export default function AdminDashboard() {
 
   const TABS = [
     { id: 'stats', label: '📊 Stats' },
+    { id: 'ai', label: 'AI Resume Test' },
     { id: 'users', label: '👥 Users' },
     { id: 'jobs',  label: '💼 Jobs' },
     { id: 'apps',  label: '📋 Applications' },
@@ -101,6 +116,38 @@ export default function AdminDashboard() {
       </div>
 
       <div className="p-6">
+
+        {tab === 'ai' && (
+          <section className="max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <h2 className="text-xl font-bold">AI Resume Test</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Test resume extraction with a fictional candidate. No user resume is uploaded and no resume scan is deducted.
+              The test uses your configured AI provider and may take several minutes.
+            </p>
+            <button type="button" onClick={testAI} disabled={testingAI}
+              className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 disabled:bg-slate-700 font-bold">
+              {testingAI ? 'Testing resume extraction…' : 'Run AI Test'}
+            </button>
+            <div role="status" aria-live="polite" className="mt-4">
+              {aiError && <p className="text-rose-400">{aiError}</p>}
+              {aiReport && <p className={aiReport.passed ? 'text-emerald-400' : 'text-amber-400'}>
+                {aiReport.passed ? 'Synthetic extraction passed. A real resume still needs verification.' : 'Synthetic extraction failed. Copy the report below for investigation.'}
+              </p>}
+            </div>
+            {aiReport && (
+              <>
+                <button type="button" className="mt-3 text-sm text-emerald-400"
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(JSON.stringify(aiReport, null, 2)); setMsg('Diagnostic report copied'); }
+                    catch { setAIError('Could not copy automatically. Select and copy the report below.'); }
+                  }}>Copy diagnostic report</button>
+                <pre className="mt-3 p-4 bg-slate-950 rounded-xl text-xs whitespace-pre-wrap break-words overflow-auto max-h-[36rem]">
+                  {JSON.stringify(aiReport, null, 2)}
+                </pre>
+              </>
+            )}
+          </section>
+        )}
 
         {/* Stats */}
         {tab === 'stats' && stats && (
