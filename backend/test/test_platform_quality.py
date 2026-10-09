@@ -40,6 +40,48 @@ def db():
 def client(db): return TestClient(app)
 def headers(email='candidate@example.com'): return {'Authorization':'Bearer '+create_access_token({'sub':email})}
 
+
+def test_owner_only_browser_diagnostic(client, db, monkeypatch):
+    from backend.app.routes import admin
+    from backend.app.utils import ats_engine
+    from backend.scripts import diagnose_resume_provider
+    monkeypatch.setattr(admin, '_probe_last_started', None)
+    calls = []
+    sentinel = object()
+    monkeypatch.setattr(ats_engine, 'get_client', lambda: (sentinel, 'synthetic-model'))
+    def probe(client, model, emit):
+        calls.append((client, model))
+        emit(json.dumps({'result': 'failed', 'error': 'ValueError'}))
+        return 1
+    monkeypatch.setattr(diagnose_resume_provider, 'run_probe', probe)
+    endpoint = '/api/v1/admin/resume-diagnostic'
+    assert client.post(endpoint).status_code == 401
+    for email in ('candidate@example.com', 'hr@example.com', 'pending@example.com'):
+        assert client.post(endpoint, headers=headers(email)).status_code == 403
+    assert not calls
+    count = db.query(Resume).count()
+    response = client.post(endpoint, headers=headers('jayeolaoluwadamilare@gmail.com'))
+    assert response.status_code == 200
+    assert response.json() == {'passed': False, 'events': [{'result': 'failed', 'error': 'ValueError'}]}
+    assert response.headers['cache-control'] == 'no-store'
+    assert calls == [(sentinel, 'synthetic-model')]
+    assert db.query(Resume).count() == count
+    assert client.post(endpoint, headers=headers('jayeolaoluwadamilare@gmail.com')).status_code == 429
+    assert len(calls) == 1
+
+
+def test_browser_diagnostic_setup_failure_is_safe_and_unlocks(client, monkeypatch):
+    from backend.app.routes import admin
+    from backend.app.utils import ats_engine
+    monkeypatch.setattr(admin, '_probe_last_started', None)
+    def fail(): raise RuntimeError('private-provider-key')
+    monkeypatch.setattr(ats_engine, 'get_client', fail)
+    response = client.post('/api/v1/admin/resume-diagnostic', headers=headers('jayeolaoluwadamilare@gmail.com'))
+    assert response.status_code == 200
+    assert response.json()['events'] == [{'result': 'setup_failed', 'error': 'RuntimeError'}]
+    assert 'private-provider-key' not in response.text
+    assert not admin._probe_lock.locked()
+
 def test_owner_and_hr_boundaries(client,db):
     assert client.get('/api/v1/admin/users').status_code==401
     assert client.get('/api/v1/admin/users',headers=headers()).status_code==403
