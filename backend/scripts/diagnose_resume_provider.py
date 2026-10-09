@@ -6,7 +6,6 @@ No resume/file arguments, database access, or user quota consumption.
 """
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from backend.app.utils import ats_engine
 
@@ -68,8 +67,7 @@ def run_probe(client, model, emit=print):
 
     observed = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     try:
-        with patch.object(ats_engine, 'get_client', return_value=(observed, model)):
-            ats_engine.extract_resume_data(SYNTHETIC_RESUME)
+        ats_engine.extract_resume_data(SYNTHETIC_RESUME, _client_model=(observed, model))
     except Exception as exc:
         report(result='failed', error=type(exc).__name__, attempts=attempts)
         return 1
