@@ -3,6 +3,8 @@
 # Lark Suite SMTP over SSL (port 465)
 # Aligned with existing email.py SMTP pattern
 # =============================================================================
+import logging
+import httpx
 import smtplib
 import ssl
 from datetime import datetime
@@ -10,10 +12,12 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from backend.app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 def _send(to_email: str, subject: str, html_content: str) -> bool:
     """
-    Core send function — Lark Suite SMTP SSL port 465.
+    Core send function — SMTP SSL.
     Reused by all email functions below.
     """
     msg = MIMEMultipart("alternative")
@@ -31,6 +35,33 @@ def _send(to_email: str, subject: str, html_content: str) -> bool:
     except Exception as e:
         print(f"[Email] Failed to send to {to_email}: {str(e)}")
         return False
+
+
+def _send_resend_verification(to_email: str, subject: str, html_content: str) -> bool:
+    # HTTPS works on Railway Hobby. Do not fall back to SMTP on API
+    # failure: a timed-out send may already have been accepted.
+    try:
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+            json={"from": f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>",
+                  "to": [to_email], "subject": subject, "html": html_content},
+            timeout=15.0,
+        )
+        if not 200 <= response.status_code < 300:
+            logger.warning("email_delivery_failed provider=resend status=%s", response.status_code)
+            return False
+        body = response.json()
+        if not isinstance(body, dict) or not isinstance(body.get("id"), str) or not body["id"]:
+            logger.warning("email_delivery_failed provider=resend reason=invalid_acknowledgement")
+            return False
+        logger.info("email_delivery_accepted provider=resend")
+        return True
+    except Exception as exc:
+        # Provider bodies and exception strings can expose tokens or PII.
+        logger.warning("email_delivery_failed provider=resend error_type=%s", type(exc).__name__)
+        return False
+
 
 
 def send_verification_email(to_email: str, token: str, full_name: str = "") -> bool:
@@ -98,6 +129,8 @@ def send_verification_email(to_email: str, token: str, full_name: str = "") -> b
     </body>
     </html>
     """
+    if settings.RESEND_API_KEY:
+        return _send_resend_verification(to_email, subject, html_content)
     return _send(to_email, subject, html_content)
 
 

@@ -14,7 +14,7 @@ def test_smtp_sender_settings_load_from_environment(monkeypatch):
 
 
 def test_verification_uses_configured_sender_and_frontend(monkeypatch):
-    settings = Settings(_env_file=None, SMTP_HOST='smtp.example.invalid', SMTP_PORT=465,
+    settings = Settings(_env_file=None, RESEND_API_KEY='', SMTP_HOST='smtp.example.invalid', SMTP_PORT=465,
                         SMTP_USER='noreply@baalebo.xyz', SMTP_PASSWORD='synthetic-password',
                         EMAILS_FROM_EMAIL='noreply@baalebo.xyz', EMAILS_FROM_NAME='Baalebos Cloud',
                         FRONTEND_URL='https://www.baalebo.xyz')

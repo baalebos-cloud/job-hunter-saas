@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
 
     # SMTP_SSL sender used by backend.app.utils.email (implicit TLS).
+    RESEND_API_KEY: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = Field(default=465, ge=1, le=65535)
     SMTP_USER: str = ""

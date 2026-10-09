@@ -52,6 +52,8 @@ export default function ProfilePage() {
   const [eduForm, setEduForm]           = useState({ degree: '', institution: '', start_date: '', end_date: '' });
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [saving, setSaving]             = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState('');
   const photoInputRef = useRef(null);
   const token = localStorage.getItem('token');
 
@@ -63,6 +65,19 @@ export default function ProfilePage() {
   };
 
   useEffect(() => { if (token) fetchProfile(); else setLoading(false); }, [token]);
+
+  const resendVerification = async () => {
+    setSendingVerification(true); setVerificationMessage('');
+    try {
+      const { data } = await axios.post(`${API_BASE_URL}/auth/resend-verification`, {}, {
+        headers: { Authorization: `Bearer ${token}` }, timeout: 30000,
+      });
+      setVerificationMessage(data.message);
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      setVerificationMessage(typeof detail === 'string' ? detail : 'Could not request verification. Please try again.');
+    } finally { setSendingVerification(false); }
+  };
 
   const patchProfile = async (fields) => {
     setSaving(true);
@@ -171,6 +186,20 @@ export default function ProfilePage() {
         <h1 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>My Profile</h1>
         <span className="text-xs text-slate-500">Account created on {createdDate}</span>
       </div>
+
+      {!profile.is_verified && (
+        <section className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <h2 className="font-bold text-slate-900">Verify your email address</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Send a verification link to {profile.email}, then open the link in your inbox.
+          </p>
+          <button type="button" onClick={resendVerification} disabled={sendingVerification}
+            className="mt-3 px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50">
+            {sendingVerification ? 'Sending…' : 'Resend verification email'}
+          </button>
+          {verificationMessage && <p role="status" aria-live="polite" className="mt-3 text-sm text-slate-700">{verificationMessage}</p>}
+        </section>
+      )}
 
       {/* ── Profile header card ── */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6">
