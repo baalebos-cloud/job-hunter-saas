@@ -36,8 +36,8 @@ def get_client():
     raise ValueError('Resume analysis is currently unavailable. AI provider is not configured.')
 
 
-def _json(prompt, contract=None):
-    client, model = get_client()
+def _json(prompt, contract=None, client_model=None):
+    client, model = client_model if client_model is not None else get_client()
     options = {'max_tokens': 6000}
     if settings.GROQ_API_KEY and model in ('openai/gpt-oss-20b', 'openai/gpt-oss-120b'):
         # Groq GPT-OSS completion budgets also cover reasoning. Use JSON mode
@@ -128,9 +128,9 @@ def analyze_detailed_ats(file_content=None, filename='resume.pdf', job_descripti
     return score_requirements(text, job_description, requirements)
 
 
-def extract_resume_data(file_content=None, filename='resume.pdf', job_title='', **kwargs):
+def extract_resume_data(file_content=None, filename='resume.pdf', job_title='', _client_model=None, **kwargs):
     text = _text(file_content, filename, **kwargs)
-    data = _json('Extract ALL resume sections, including every role, project, qualification, certification and contact link. Preserve exact names, roles, employers and dates. Skills must use exact phrases present in source. Preserve certification status such as In Progress. No targeting or rewriting at this stage. Return {"name":"", "title":"", "contact":"", "summary":"", "experience":[{"role":"","company":"","dates":"","bullets":[],"environment":""}], "projects":[{"title":"","tech":"","bullets":[]}], "skills":{"Skills":[]}, "certifications":[], "education":[{"degree":"","institution":"","year":""}], "additional_information":""}. Empty sections use [] or {}.\nRESUME DATA:\n'+text, contract=ExtractedResume)
+    data = _json('Extract ALL resume sections, including every role, project, qualification, certification and contact link. Preserve exact names, roles, employers and dates. Skills must use exact phrases present in source. Preserve certification status such as In Progress. No targeting or rewriting at this stage. Return {"name":"", "title":"", "contact":"", "summary":"", "experience":[{"role":"","company":"","dates":"","bullets":[],"environment":""}], "projects":[{"title":"","tech":"","bullets":[]}], "skills":{"Skills":[]}, "certifications":[], "education":[{"degree":"","institution":"","year":""}], "additional_information":""}. Empty sections use [] or {}.\nRESUME DATA:\n'+text, contract=ExtractedResume, client_model=_client_model)
     return validate_resume(data)
 
 
