@@ -4,6 +4,9 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime
 import os
+import json
+from threading import Lock
+from time import monotonic
 
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
@@ -139,3 +142,35 @@ def list_applications(
         }
         for a in apps
     ]
+
+# One synthetic probe at a time per process; avoid accidental repeated clicks.
+_probe_lock = Lock()
+_probe_last_started = None
+
+
+@router.post("/resume-diagnostic")
+def resume_diagnostic(admin: User = Depends(require_admin)):
+    """Owner-only, synthetic input; no database writes or candidate resumes."""
+    global _probe_last_started
+    if not _probe_lock.acquire(blocking=False):
+        raise HTTPException(429, "A diagnostic is already running. Please wait.")
+    try:
+        now = monotonic()
+        if _probe_last_started is not None and now - _probe_last_started < 60:
+            raise HTTPException(429, "Wait one minute before running another diagnostic.")
+        _probe_last_started = now
+        from backend.app.utils.ats_engine import get_client
+        from backend.scripts.diagnose_resume_provider import run_probe
+        events = []
+        try:
+            client, model = get_client()
+            result = run_probe(client, model, emit=lambda line: events.append(json.loads(line)))
+        except Exception as exc:
+            # Never expose credential-bearing exception messages or tracebacks.
+            events.append({"result": "setup_failed", "error": type(exc).__name__})
+            result = 2
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"passed": result == 0, "events": events},
+                            headers={"Cache-Control": "no-store"})
+    finally:
+        _probe_lock.release()
