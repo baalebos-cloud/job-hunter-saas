@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = Field(default="", env="OPENROUTER_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
 
+    # SMTP_SSL sender used by backend.app.utils.email (implicit TLS).
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = Field(default=465, ge=1, le=65535)
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAILS_FROM_EMAIL: str = "noreply@baalebo.xyz"
+    EMAILS_FROM_NAME: str = "Baalebos Cloud"
+    FRONTEND_URL: str = "https://www.baalebo.xyz"
+
     # --- Mail ---
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")
     MAIL_PASSWORD: str = Field(default="", env="MAIL_PASSWORD")
