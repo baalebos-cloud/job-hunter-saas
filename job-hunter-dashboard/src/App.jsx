@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import axios from 'axios'
 import SEO from './components/SEO'
@@ -27,14 +27,16 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/
 
 // ── Auth guard — redirect to login if no token ────────────────────────────────
 function RequireAuth({ children }) {
+  const location = useLocation()
   const token = localStorage.getItem('token')
-  if (!token) return <Navigate to="/login" replace />
+  if (!token) return <Navigate to="/login" state={{ from: location.pathname }} replace />
   return children
 }
 
 // ── Role guard — blocks non-admin/HR users from restricted pages ─────────────
 // FIX 3: Admin and HR pages are hidden from regular users, even via direct URL
 function RequireRole({ role, children }) {
+  const location = useLocation()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const token = localStorage.getItem('token')
@@ -47,7 +49,7 @@ function RequireRole({ role, children }) {
       .finally(() => setLoading(false))
   }, [token])
 
-  if (!token) return <Navigate to="/login" replace />
+  if (!token) return <Navigate to="/login" state={{ from: location.pathname }} replace />
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
@@ -507,12 +509,12 @@ function ApplicationsPage() {
     <div>
       <div className="flex items-end justify-between mb-6">
         <div>
-          <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">Tracker</p>
-          <h2 className="text-2xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
+          <p className="text-xs font-black uppercase tracking-widest text-emerald-700 mb-1">Tracker</p>
+          <h2 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>
             Your Applications
           </h2>
-          <p className="text-slate-400 text-sm mt-1">
-            <span className="text-emerald-400 font-black">{apps.length}</span> job{apps.length !== 1 ? 's' : ''} tracked
+          <p className="text-slate-600 text-sm mt-1">
+            <span className="text-emerald-700 font-black">{apps.length}</span> job{apps.length !== 1 ? 's' : ''} tracked
           </p>
         </div>
         <a href="/jobs"

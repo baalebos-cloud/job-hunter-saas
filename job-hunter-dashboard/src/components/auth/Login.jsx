@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useLocation } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 export default function Login() {
+  const location = useLocation();
+  const requestedPath = location.state?.from;
+  const destination = ['/admin', '/hr', '/optimizer', '/jobs', '/applications', '/profile', '/settings', '/referral'].includes(requestedPath) ? requestedPath : '/';
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem('token')) window.location.href = '/';
-  }, []);
+    if (localStorage.getItem('token')) window.location.href = destination;
+  }, [destination]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,7 +23,7 @@ export default function Login() {
     try {
       const res = await axios.post(`${API_BASE_URL}/auth/login`, form);
       const token = res.data.access_token || res.data.token || null;
-      if (token?.trim()) { localStorage.setItem('token', token.trim()); window.location.href = '/'; }
+      if (token?.trim()) { localStorage.setItem('token', token.trim()); window.location.href = destination; }
       else setError('Login succeeded but no token received.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Invalid email or password.');
