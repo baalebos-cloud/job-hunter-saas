@@ -17,6 +17,7 @@ from backend.app.routes import billing as billing_router
 from backend.app.routes import referral as referral_router
 from backend.app.routes import hr_auth as hr_auth_router
 from backend.app.routes import profile as profile_router
+from backend.app.routes import automation as automation_router
 from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
@@ -25,6 +26,7 @@ from backend.app.models.resume import Resume               # noqa: F401
 from backend.app.models.application import Application     # noqa: F401
 from backend.app.models.subscription import Subscription   # noqa: F401
 from backend.app.models.referral import Referral           # noqa: F401
+from backend.app.models.automation import AutomationEvent, ScrapeRun, AutomationState  # noqa: F401
 
 app = FastAPI(
     title="Baalebos Cloud AI v2",
@@ -108,6 +110,7 @@ async def startup_event():
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP",
                 "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP",
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR UNIQUE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_hr BOOLEAN DEFAULT FALSE",
@@ -133,6 +136,10 @@ async def startup_event():
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alerts_enabled_at TIMESTAMP",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alert_work_type VARCHAR NOT NULL DEFAULT 'all'",
+                "CREATE INDEX IF NOT EXISTS ix_jobs_first_seen_at ON jobs (first_seen_at)",
             ]
             for sql in migrations:
                 try:
@@ -191,6 +198,7 @@ app.include_router(billing_router.router,  prefix="/api/v1/billing",   tags=["Bi
 app.include_router(referral_router.router, prefix="/api/v1/referral",  tags=["Referral"])
 app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR Auth"])
 app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Profile"])
+app.include_router(automation_router.router, prefix="/api/v1/automation", tags=["Automation"])
 
 # Admin login is under /api/v1/auth/admin/login (already in auth router)
 

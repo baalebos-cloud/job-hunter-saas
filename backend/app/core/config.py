@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: str = "Baalebos Cloud"
     FRONTEND_URL: str = "https://www.baalebo.xyz"
     N8N_APPLICATION_WEBHOOK_URL: str = ""
+    N8N_EVENTS_WEBHOOK_URL: str = ""
     N8N_WEBHOOK_SECRET: str = ""
+    SCRAPER_STALE_HOURS: int = Field(default=8, ge=1, le=168)
 
     # --- Mail ---
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")

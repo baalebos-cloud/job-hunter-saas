@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
+from typing import Literal
 
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
@@ -44,6 +45,8 @@ class ProfileUpdate(BaseModel):
     notice_period_days:  Optional[int]  = None
     city:                Optional[str]  = None
     timezone:            Optional[str]  = None
+    job_alerts_enabled:   Optional[bool] = None
+    job_alert_work_type:  Optional[Literal["all", "remote", "hybrid", "onsite"]] = None
 
 
 class SkillIn(BaseModel):
@@ -90,6 +93,10 @@ def _serialize_profile(user: User) -> dict:
         "timezone":            user.timezone,
         "id_verified":         user.id_verified,
         "is_verified":         user.is_verified,
+        "is_hr":               user.is_hr,
+        "is_admin":            user.is_admin,
+        "job_alerts_enabled":   user.job_alerts_enabled,
+        "job_alert_work_type":  user.job_alert_work_type,
         "created_at":          user.created_at,
         "certified_skills":    [{"id": s.id, "name": s.name} for s in user.certified_skills if s.verified and s.name not in DEFAULT_CERTIFIED_SKILLS],
         "other_skills":        [{"id": s.id, "name": s.name} for s in user.other_skills],
@@ -128,6 +135,17 @@ def update_my_profile(
     db: Session = Depends(get_db)
 ):
     updates = payload.dict(exclude_unset=True)
+    # Nullable PATCH fields cannot erase database NOT NULL consent settings.
+    if any(field in updates and updates[field] is None for field in ("job_alerts_enabled", "job_alert_work_type")):
+        raise HTTPException(422, "Choose a valid job alert setting.")
+    if updates.get("job_alerts_enabled"):
+        if current_user.is_hr or current_user.is_admin:
+            raise HTTPException(422, "Job alerts are for job seeker accounts.")
+        track = updates.get("career_track", current_user.career_track)
+        if not current_user.is_verified or not track or not track.strip():
+            raise HTTPException(422, "Verify your email and add a career track before enabling job alerts.")
+        if not current_user.job_alerts_enabled:
+            current_user.job_alerts_enabled_at = datetime.utcnow()
     for field, value in updates.items():
         setattr(current_user, field, value)
     db.commit()

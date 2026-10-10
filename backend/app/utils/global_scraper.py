@@ -4,6 +4,8 @@ import logging
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from threading import local
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,49 @@ from backend.app.models.resume import Resume               # noqa
 from backend.app.models.application import Application     # noqa
 
 logger = logging.getLogger(__name__)
+
+
+_source_context = local()
+
+
+def _source_error(exc):
+    metrics = getattr(_source_context, "metrics", None)
+    if metrics is not None:
+        metrics["errors"] += 1
+
+
+def _source_get(*args, **kwargs):
+    """Record request outcomes without storing credential-bearing URLs/bodies."""
+    metrics = getattr(_source_context, "metrics", None)
+    if metrics is not None:
+        metrics["requests"] += 1
+    try:
+        response = requests.get(*args, **kwargs)
+    except Exception:
+        if metrics is not None:
+            metrics["failed_requests"] += 1
+        raise
+    if metrics is not None and response.status_code != 200:
+        metrics["failed_requests"] += 1
+    return response
+
+
+def _observe_source(name, fn):
+    metrics = {"requests": 0, "failed_requests": 0, "errors": 0}
+    _source_context.metrics = metrics
+    try:
+        jobs = fn()
+    except Exception as exc:
+        _source_error(exc)
+        jobs = []
+    finally:
+        _source_context.metrics = None
+    issues = metrics["failed_requests"] or metrics["errors"]
+    status = "success" if jobs else "empty"
+    if issues:
+        status = "partial" if jobs or (metrics["requests"] > metrics["failed_requests"] and not metrics["errors"]) else "failed"
+    return jobs, {"name": name, "status": status, "job_count": len(jobs), **metrics}
+
 
 HEADERS = {"User-Agent": "BaalebosBot/2.0 (job aggregator; contact@baalebo.xyz)"}
 
@@ -221,7 +266,7 @@ def scrape_remotive(role: str) -> list:
     jobs = []
     try:
         cat = REMOTIVE_CATEGORIES.get(role, "software-dev")
-        res = requests.get(REMOTIVE_API.format(category=cat), timeout=12, headers=HEADERS)
+        res = _source_get(REMOTIVE_API.format(category=cat), timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
         for job in res.json().get("jobs", [])[:15]:
@@ -238,7 +283,8 @@ def scrape_remotive(role: str) -> list:
                 "source": "Remotive", "category": role, "salary_range": sal,
             })
     except Exception as e:
-        logger.warning(f"[Remotive] {role}: {e}")
+        _source_error(e)
+        logger.warning(f"[Remotive] {role}: {type(e).__name__}")
     return jobs
 
 
@@ -246,7 +292,7 @@ def scrape_remotive_search(query: str) -> list:
     jobs = []
     try:
         url = REMOTIVE_SEARCH.format(query=requests.utils.quote(query))
-        res = requests.get(url, timeout=12, headers=HEADERS)
+        res = _source_get(url, timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
         for job in res.json().get("jobs", []):
@@ -264,7 +310,8 @@ def scrape_remotive_search(query: str) -> list:
                 "salary_range": sal,
             })
     except Exception as e:
-        logger.warning(f"[Remotive Search '{query}'] {e}")
+        _source_error(e)
+        logger.warning(f"[Remotive Search '{query}'] {type(e).__name__}")
     return jobs
 
 
@@ -272,7 +319,7 @@ def scrape_jobicy(role: str) -> list:
     jobs = []
     try:
         url = JOBICY_RSS.format(role=role.replace(" ", "+"))
-        res = requests.get(url, timeout=12, headers=HEADERS)
+        res = _source_get(url, timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
         root    = ET.fromstring(res.content)
@@ -293,14 +340,15 @@ def scrape_jobicy(role: str) -> list:
                 "source": "Jobicy", "category": role, "salary_range": _salary(desc),
             })
     except Exception as e:
-        logger.warning(f"[Jobicy] {role}: {e}")
+        _source_error(e)
+        logger.warning(f"[Jobicy] {role}: {type(e).__name__}")
     return jobs
 
 
 def scrape_arbeitnow() -> list:
     jobs = []
     try:
-        res = requests.get(ARBEITNOW_API, timeout=12, headers=HEADERS)
+        res = _source_get(ARBEITNOW_API, timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
         for job in res.json().get("data", [])[:50]:
@@ -318,7 +366,8 @@ def scrape_arbeitnow() -> list:
                 "salary_range": None,
             })
     except Exception as e:
-        logger.warning(f"[Arbeitnow] {e}")
+        _source_error(e)
+        logger.warning(f"[Arbeitnow] {type(e).__name__}")
     return jobs
 
 
@@ -328,7 +377,7 @@ def scrape_weworkremotely() -> list:
     for cat in categories:
         try:
             url = WEWORKREMOTELY_RSS.format(category=cat)
-            res = requests.get(url, timeout=12, headers=HEADERS)
+            res = _source_get(url, timeout=12, headers=HEADERS)
             if res.status_code != 200:
                 continue
             root    = ET.fromstring(res.content)
@@ -353,7 +402,8 @@ def scrape_weworkremotely() -> list:
                     "salary_range": _salary(desc),
                 })
         except Exception as e:
-            logger.warning(f"[WWR] {cat}: {e}")
+            _source_error(e)
+            logger.warning(f"[WWR] {cat}: {type(e).__name__}")
     return jobs
 
 
@@ -361,7 +411,7 @@ def scrape_greenhouse() -> list:
     jobs = []
     for company in GREENHOUSE_COMPANIES:
         try:
-            res = requests.get(GREENHOUSE_API.format(company=company), timeout=10, headers=HEADERS)
+            res = _source_get(GREENHOUSE_API.format(company=company), timeout=10, headers=HEADERS)
             if res.status_code != 200:
                 continue
             for job in res.json().get("jobs", [])[:5]:
@@ -385,7 +435,8 @@ def scrape_greenhouse() -> list:
                     "salary_range": _salary(desc),
                 })
         except Exception as e:
-            logger.warning(f"[Greenhouse] {company}: {e}")
+            _source_error(e)
+            logger.warning(f"[Greenhouse] {company}: {type(e).__name__}")
     return jobs
 
 
@@ -393,7 +444,7 @@ def scrape_lever() -> list:
     jobs = []
     for company in LEVER_COMPANIES:
         try:
-            res = requests.get(LEVER_API.format(company=company), timeout=10, headers=HEADERS)
+            res = _source_get(LEVER_API.format(company=company), timeout=10, headers=HEADERS)
             if res.status_code != 200:
                 continue
             data = res.json()
@@ -415,14 +466,15 @@ def scrape_lever() -> list:
                     "salary_range": _salary(desc),
                 })
         except Exception as e:
-            logger.warning(f"[Lever] {company}: {e}")
+            _source_error(e)
+            logger.warning(f"[Lever] {company}: {type(e).__name__}")
     return jobs
 
 
 def scrape_themuse() -> list:
     jobs = []
     try:
-        res = requests.get(THEMUSE_API.format(page=0), timeout=12, headers=HEADERS)
+        res = _source_get(THEMUSE_API.format(page=0), timeout=12, headers=HEADERS)
         if res.status_code != 200:
             return jobs
         for job in res.json().get("results", [])[:20]:
@@ -446,7 +498,8 @@ def scrape_themuse() -> list:
                 "salary_range": _salary(desc),
             })
     except Exception as e:
-        logger.warning(f"[TheMuse] {e}")
+        _source_error(e)
+        logger.warning(f"[TheMuse] {type(e).__name__}")
     return jobs
 
 
@@ -460,7 +513,7 @@ def scrape_adzuna(role: str, countries: list | None = None) -> list:
                 url = ADZUNA_API.format(country=country, role=role_enc, app_id=ADZUNA_APP_ID, app_key=ADZUNA_APP_KEY)
             else:
                 url = ADZUNA_API_ANON.format(country=country, role=role_enc)
-            res = requests.get(url, timeout=12, headers=HEADERS)
+            res = _source_get(url, timeout=12, headers=HEADERS)
             if res.status_code != 200:
                 continue
             for job in res.json().get("results", []):
@@ -486,7 +539,8 @@ def scrape_adzuna(role: str, countries: list | None = None) -> list:
                     "salary_range": salary or _salary(desc),
                 })
         except Exception as e:
-            logger.warning(f"[Adzuna] {country}/{role}: {e}")
+            _source_error(e)
+            logger.warning(f"[Adzuna] {country}/{role}: {type(e).__name__}")
     return jobs
 
 
@@ -498,7 +552,7 @@ def scrape_skillsire() -> list:
     """
     jobs = []
     try:
-        res = requests.get(SKILLSIRE_RSS, timeout=12, headers=HEADERS)
+        res = _source_get(SKILLSIRE_RSS, timeout=12, headers=HEADERS)
         if res.status_code != 200:
             logger.warning(f"[Skillsire] HTTP {res.status_code}")
             return jobs
@@ -521,7 +575,8 @@ def scrape_skillsire() -> list:
                 "salary_range": _salary(desc),
             })
     except Exception as e:
-        logger.warning(f"[Skillsire] {e}")
+        _source_error(e)
+        logger.warning(f"[Skillsire] {type(e).__name__}")
     return jobs
 
 
@@ -536,7 +591,7 @@ def scrape_micro1() -> list:
 
     # Try JSON API first
     try:
-        res = requests.get(MICRO1_API, timeout=12, headers={
+        res = _source_get(MICRO1_API, timeout=12, headers={
             **HEADERS,
             "Accept": "application/json",
         })
@@ -561,11 +616,12 @@ def scrape_micro1() -> list:
             if jobs:
                 return jobs
     except Exception as e:
-        logger.warning(f"[Micro1 API] {e}")
+        _source_error(e)
+        logger.warning(f"[Micro1 API] {type(e).__name__}")
 
     # Fallback to RSS
     try:
-        res = requests.get(MICRO1_RSS, timeout=12, headers=HEADERS)
+        res = _source_get(MICRO1_RSS, timeout=12, headers=HEADERS)
         if res.status_code == 200:
             root    = ET.fromstring(res.content)
             channel = root.find("channel")
@@ -583,7 +639,8 @@ def scrape_micro1() -> list:
                         "salary_range": _salary(desc),
                     })
     except Exception as e:
-        logger.warning(f"[Micro1 RSS] {e}")
+        _source_error(e)
+        logger.warning(f"[Micro1 RSS] {type(e).__name__}")
 
     return jobs
 
@@ -603,7 +660,7 @@ def scrape_amazon_jobs() -> list:
                     role=requests.utils.quote(role),
                     country=country
                 )
-                res = requests.get(url, timeout=15, headers={
+                res = _source_get(url, timeout=15, headers={
                     **HEADERS,
                     "Accept": "application/json",
                     "Referer": "https://www.amazon.jobs/",
@@ -632,7 +689,8 @@ def scrape_amazon_jobs() -> list:
                         "salary_range": None,  # Amazon rarely publishes salary
                     })
             except Exception as e:
-                logger.warning(f"[Amazon Jobs] {role}/{country}: {e}")
+                _source_error(e)
+                logger.warning(f"[Amazon Jobs] {role}/{country}: {type(e).__name__}")
     return jobs
 
 
@@ -644,7 +702,7 @@ def scrape_remoteok() -> list:
     """
     jobs = []
     try:
-        res = requests.get(REMOTEOK_API, timeout=15, headers={
+        res = _source_get(REMOTEOK_API, timeout=15, headers={
             **HEADERS,
             "Accept": "application/json",
         })
@@ -671,7 +729,8 @@ def scrape_remoteok() -> list:
                 "salary_range": salary,
             })
     except Exception as e:
-        logger.warning(f"[RemoteOK] {e}")
+        _source_error(e)
+        logger.warning(f"[RemoteOK] {type(e).__name__}")
     return jobs
 
 
@@ -683,7 +742,7 @@ def scrape_jobstash() -> list:
     """
     jobs = []
     try:
-        res = requests.get(JOBSTASH_API, timeout=12, headers={
+        res = _source_get(JOBSTASH_API, timeout=12, headers={
             **HEADERS,
             "Accept": "application/json",
         })
@@ -713,47 +772,59 @@ def scrape_jobstash() -> list:
                 "salary_range": salary or _salary(desc),
             })
     except Exception as e:
-        logger.warning(f"[Jobstash] {e}")
+        _source_error(e)
+        logger.warning(f"[Jobstash] {type(e).__name__}")
     return jobs
 
 
 # ── DB Saver ──────────────────────────────────────────────────────────────────
-def save_jobs_to_db(jobs: list, db: Session) -> int:
+def save_jobs_to_db(jobs: list, db: Session, save_stats=None) -> int:
     saved = 0
     now   = datetime.utcnow()
+    save_stats = save_stats if save_stats is not None else {"db_errors": 0}
     for jd in jobs:
         try:
-            if not jd.get("url"):
+            if not jd.get("url") or not jd.get("title"):
+                save_stats["db_errors"] += 1
                 continue
-            existing = db.query(Job).filter(Job.url == jd["url"]).first()
-            if existing:
-                for field in ("title","company","location","description","salary_range","category"):
-                    if jd.get(field) is not None: setattr(existing,field,jd[field])
-                existing.last_checked_at = now
-                existing.scraped_at = now
-                existing.is_active = True
-                existing.work_type = jd.get("work_type") or _work_type(jd.get("location",""),jd.get("title",""),jd.get("description",""))
-                continue
-            db.add(Job(
-                title=jd["title"], company=jd.get("company", ""),
-                location=jd["location"], description=jd.get("description"),
-                url=jd["url"], source=jd["source"],
-                category=jd["category"], salary_range=jd.get("salary_range"),
-                scraped_at=now, last_checked_at=now, is_active=True,
-                work_type=jd.get("work_type") or _work_type(
-                    jd.get("location", ""), jd.get("title", ""), jd.get("description", "")
-                ),
-            ))
-            saved += 1
+            inserted = False
+            # A malformed row must not roll back every previously saved row.
+            with db.begin_nested():
+                existing = db.query(Job).filter(Job.url == jd["url"]).first()
+                if existing:
+                    # Do not overwrite a employer-managed vacancy through a feed.
+                    if existing.posted_by_hr:
+                        continue
+                    for field in ("title","company","location","description","salary_range","category"):
+                        if jd.get(field) is not None: setattr(existing,field,jd[field])
+                    existing.last_checked_at = now
+                    existing.scraped_at = now
+                    existing.is_active = True
+                    existing.work_type = jd.get("work_type") or _work_type(jd.get("location",""),jd.get("title",""),jd.get("description",""))
+                else:
+                    db.add(Job(
+                        title=jd["title"], company=jd.get("company", ""),
+                        location=jd.get("location", ""), description=jd.get("description"),
+                        url=jd["url"], source=jd.get("source", "Unknown"),
+                        category=jd.get("category", "Software Engineer"), salary_range=jd.get("salary_range"),
+                        scraped_at=now, last_checked_at=now, first_seen_at=now, is_active=True,
+                        work_type=jd.get("work_type") or _work_type(
+                            jd.get("location", ""), jd.get("title", ""), jd.get("description", "")
+                        ),
+                    ))
+                    inserted = True
+                db.flush()
+            saved += int(inserted)
         except Exception as e:
-            logger.warning(f"[DB] '{jd.get('title')}': {e}")
-            db.rollback()
+            save_stats["db_errors"] += 1
+            logger.warning("scraper_row_failed error_type=%s", type(e).__name__)
 
     if jobs:
         try:
             db.commit()
         except Exception as e:
-            logger.error(f"[DB] Commit failed: {e}")
+            logger.error("scraper_commit_failed error_type=%s", type(e).__name__)
+            save_stats["db_errors"] += 1
             db.rollback()
             return 0
 
@@ -761,26 +832,42 @@ def save_jobs_to_db(jobs: list, db: Session) -> int:
 
 
 # ── Concurrent Executor ───────────────────────────────────────────────────────
-def _run_sources_concurrent(source_fns: list, max_workers: int = 8) -> list:
+def _run_sources_concurrent(source_fns: list, max_workers: int = 8, source_results=None) -> list:
     all_jobs = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(fn): name for name, fn in source_fns}
+        futures = {executor.submit(_observe_source, name, fn): name for name, fn in source_fns}
         for future in as_completed(futures):
             name = futures[future]
             try:
-                jobs = future.result(timeout=30)
+                jobs, result = future.result()
+                if source_results is not None:
+                    source_results.append(result)
                 all_jobs.extend(jobs)
                 logger.info(f"[{name}] returned {len(jobs)} jobs")
             except Exception as e:
-                logger.warning(f"[{name}] failed: {e}")
+                logger.warning("scraper_source_failed name=%s error_type=%s", name, type(e).__name__)
+                if source_results is not None:
+                    source_results.append({"name": name, "status": "failed", "job_count": 0})
     return all_jobs
 
 
 # ── Main Entry ────────────────────────────────────────────────────────────────
 def scrape_global_jobs() -> dict:
+    from backend.app.models.automation import ScrapeRun
+    from backend.app.services.job_automation import run_tick
     db            = SessionLocal()
     total_scraped = 0
     total_saved   = 0
+    source_results = []
+    save_stats = {"db_errors": 0}
+    fatal_error = False
+    run = ScrapeRun(id=uuid.uuid4().hex, started_at=datetime.utcnow(), status="running", summary={})
+    try:
+        db.add(run)
+        db.commit()  # A terminated process leaves a visible running heartbeat.
+    except Exception:
+        db.close()
+        raise
 
     try:
         # ── Fixed sources (concurrent) ────────────────────────────────────────
@@ -797,18 +884,18 @@ def scrape_global_jobs() -> dict:
             ("RemoteOK",        scrape_remoteok),     # Largest remote board
             ("Jobstash",        scrape_jobstash),     # Web3 / AI / fintech
         ]
-        fixed_jobs = _run_sources_concurrent(fixed_sources, max_workers=10)
+        fixed_jobs = _run_sources_concurrent(fixed_sources, max_workers=10, source_results=source_results)
         total_scraped += len(fixed_jobs)
-        total_saved   += save_jobs_to_db(fixed_jobs, db)
+        total_saved   += save_jobs_to_db(fixed_jobs, db, save_stats)
 
         # ── Remotive regional searches (concurrent) ───────────────────────────
         search_fns = [
             (f"Remotive Search '{term}'", lambda t=term: scrape_remotive_search(t))
             for term in SEARCH_TERMS
         ]
-        search_jobs = _run_sources_concurrent(search_fns, max_workers=10)
+        search_jobs = _run_sources_concurrent(search_fns, max_workers=10, source_results=source_results)
         total_scraped += len(search_jobs)
-        total_saved   += save_jobs_to_db(search_jobs, db)
+        total_saved   += save_jobs_to_db(search_jobs, db, save_stats)
 
         # ── Per-role scraping (concurrent) ────────────────────────────────────
         role_fns = []
@@ -817,20 +904,42 @@ def scrape_global_jobs() -> dict:
             role_fns.append((f"Jobicy:{role}",   lambda r=role: scrape_jobicy(r)))
             role_fns.append((f"Adzuna:{role}",   lambda r=role: scrape_adzuna(r, ["us", "gb", "za", "ca"])))
 
-        role_jobs = _run_sources_concurrent(role_fns, max_workers=12)
+        role_jobs = _run_sources_concurrent(role_fns, max_workers=12, source_results=source_results)
         total_scraped += len(role_jobs)
-        total_saved   += save_jobs_to_db(role_jobs, db)
+        total_saved   += save_jobs_to_db(role_jobs, db, save_stats)
 
     except Exception as e:
-        logger.error(f"[Scraper] Fatal: {e}", exc_info=True)
-    finally:
-        db.close()
+        fatal_error = True
+        db.rollback()
+        logger.error("scraper_run_failed error_type=%s", type(e).__name__)
 
     summary = {
         "total_scraped": total_scraped,
         "total_saved":   total_saved,
         "timestamp":     datetime.utcnow().isoformat(),
+        "run_id":        run.id,
+        "failed_sources": sum(result["status"] == "failed" for result in source_results),
+        "partial_sources": sum(result["status"] == "partial" for result in source_results),
+        "source_results": sorted(source_results, key=lambda result: result["name"]),
+        **save_stats,
     }
+    if fatal_error or (source_results and summary["failed_sources"] == len(source_results)):
+        summary["status"] = "failed"
+    elif summary["failed_sources"] or summary["partial_sources"] or save_stats["db_errors"]:
+        summary["status"] = "partial"
+    else:
+        summary["status"] = "success" if total_scraped else "empty"
+    try:
+        run.status = summary["status"]
+        run.finished_at = datetime.utcnow()
+        run.summary = summary
+        db.commit()
+        run_tick(db)
+    except Exception as e:
+        db.rollback()
+        logger.warning("scraper_automation_failed error_type=%s", type(e).__name__)
+    finally:
+        db.close()
     logger.info(f"[Scraper] Done: {summary}")
     return summary
 

@@ -192,6 +192,12 @@ pytest tests/ -v
 
 ---
 
+## Job and application automation
+
+See [the n8n setup guide](docs/job-automation.md) for scraper monitoring, daily
+admin summaries, opt-in job matching alerts, and internal application emails.
+The importable workflows are in [workflows/n8n](workflows/n8n).
+
 ## License
 
 MIT
