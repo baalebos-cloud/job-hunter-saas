@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     EMAILS_FROM_EMAIL: str = "noreply@baalebo.xyz"
     EMAILS_FROM_NAME: str = "Baalebos Cloud"
     FRONTEND_URL: str = "https://www.baalebo.xyz"
+    N8N_APPLICATION_WEBHOOK_URL: str = ""
+    N8N_WEBHOOK_SECRET: str = ""
 
     # --- Mail ---
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")
