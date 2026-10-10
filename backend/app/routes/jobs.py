@@ -21,6 +21,8 @@ from backend.app.models.application import Application
 from backend.app.schemas.job import JobCreate, JobResponse
 from backend.app.dependencies.auth import get_current_user
 from backend.app.services.notification_service import send_application_confirmation
+from backend.app.services.automation_service import notify_new_application
+from backend.app.dependencies.roles import require_hr
 
 router = APIRouter(tags=["Jobs"])
 
@@ -158,7 +160,7 @@ class ApplicationRequest(BaseModel):
 
 
 @router.post("/{job_id}/apply")
-def apply_for_job(job_id: int, payload: ApplicationRequest, db: Session = Depends(get_db),
+def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                   current_user: User = Depends(get_current_user)):
     job = db.query(Job).filter(Job.id == job_id, Job.is_active == True).first()
     if not job:
@@ -175,16 +177,27 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, db: Session = Depend
     if not internal and (not job.url or not job.url.startswith(('https://','http://'))):
         raise HTTPException(422, "No valid employer application link is available.")
     app = db.query(Application).filter(Application.user_id == current_user.id, Application.job_id == job_id).first()
+    new_internal_submission = False
     if not app:
         app = Application(user_id=current_user.id, job_id=job_id)
         db.add(app)
     if app.status not in ('submitted_internal','reviewed','interview','offer','rejected','submitted_external'):
+        new_internal_submission = internal
         app.status = 'submitted_internal' if internal else 'external_started'
         app.resume_id = selected.id if selected else None
         app.job_snapshot = {"title":job.title,"company":job.company,"description":job.description,"url":job.url}
         app.submission_method = 'baalebos' if internal else 'external_handoff'
         app.ats_score = _compute_ats_score(selected,job)
     db.commit(); db.refresh(app)
+    if new_internal_submission:
+        employer = db.query(User).filter(User.id == job.hr_user_id).first()
+        if employer:
+            try:
+                require_hr(employer)
+            except HTTPException:
+                employer = None
+        if employer and employer.email:
+            background_tasks.add_task(notify_new_application, app.id, job.title, employer.email)
     return {"application_id": app.id, "status": app.status, "job_url":job.url,
             "message": "Received by the employer on Baalebos." if internal else "Open the employer form to complete your application. Employer receipt is not yet confirmed."}
 
