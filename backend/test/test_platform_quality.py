@@ -157,6 +157,46 @@ def test_internal_requires_correct_resume_and_preserves_attachment(client,db):
     assert client.get(f'/api/v1/hr/applications/{application_id}/resume', headers=headers()).status_code == 403
 
 
+@pytest.mark.parametrize('approved', [True, False])
+def test_application_automation_only_first_internal_submission(client, db, monkeypatch, approved):
+    calls = []
+    monkeypatch.setattr('backend.app.routes.jobs.notify_new_application', lambda *args: calls.append(args))
+    employer = db.query(User).filter_by(id=3).first()
+    employer.hr_approved = approved
+    job = Job(title='Python', company='Employer', description='Python required', hr_user_id=3, posted_by_hr=True, is_active=True)
+    db.add(job); db.commit()
+    db.add(Resume(owner_id=2, filename='optimized_alert.pdf', content=b'%PDF', analysis_data={'job_description':job.description}))
+    db.commit()
+    for _ in range(2):
+        response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert', 'employer_email':'attacker@example.com'}, headers=headers())
+        assert response.status_code == 200
+    assert calls == ([(response.json()['application_id'], 'Python', 'hr@example.com')] if approved else [])
+
+
+def test_external_application_does_not_notify_employer(client, db, monkeypatch):
+    calls = []
+    monkeypatch.setattr('backend.app.routes.jobs.notify_new_application', lambda *args: calls.append(args))
+    job = Job(title='External', company='Employer', url='https://example.com/apply', hr_user_id=3, posted_by_hr=True, is_active=True)
+    db.add(job); db.commit()
+    assert client.post(f'/api/v1/jobs/{job.id}/apply', json={}, headers=headers()).status_code == 200
+    assert calls == []
+
+
+def test_notification_failure_does_not_undo_application(client, db, monkeypatch):
+    from backend.app.services import automation_service
+    monkeypatch.setattr(automation_service.settings, 'N8N_APPLICATION_WEBHOOK_URL', 'https://example.com/webhook')
+    monkeypatch.setattr(automation_service.settings, 'N8N_WEBHOOK_SECRET', 'private-test-secret')
+    def fail(*args, **kwargs): raise TimeoutError('private-provider-body')
+    monkeypatch.setattr(automation_service.httpx, 'post', fail)
+    job = Job(title='Python', company='Employer', description='Python required', hr_user_id=3, posted_by_hr=True, is_active=True)
+    db.add(job); db.commit()
+    db.add(Resume(owner_id=2, filename='optimized_alert.pdf', content=b'%PDF', analysis_data={'job_description':job.description}))
+    db.commit()
+    response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert'}, headers=headers())
+    assert response.status_code == 200
+    assert db.query(Application).first().status == 'submitted_internal'
+
+
 def test_successful_upload_scores_exported_pdf_and_charges_once(client, db, monkeypatch):
     import backend.app.utils.ats_engine as engine
     base = original()
