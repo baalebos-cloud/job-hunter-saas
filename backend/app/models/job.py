@@ -20,6 +20,9 @@ class Job(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     last_checked_at = Column(DateTime, nullable=True)
     published_at = Column(DateTime, nullable=True)
+    # Unlike scraped_at, this never changes when a listing is refreshed.
+    # Existing listings remain NULL after migration to avoid historical alerts.
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=True, index=True)
     work_type = Column(String, nullable=True)  # remote | hybrid | onsite
     posted_by_hr = Column(Boolean, default=False)  # True = HR posted, False = scraped
     hr_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # HR who posted

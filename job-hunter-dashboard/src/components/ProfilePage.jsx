@@ -39,6 +39,65 @@ function SectionCard({ title, badge, defaultOpen = true, actions, children }) {
   );
 }
 
+function JobAlertSettings({ profile, save, saving }) {
+  const [form, setForm] = useState({
+    career_track: profile.career_track || '', country: profile.country || '',
+    job_alert_work_type: profile.job_alert_work_type || 'all',
+    job_alerts_enabled: !!profile.job_alerts_enabled,
+  });
+  const [message, setMessage] = useState('');
+  useEffect(() => setForm({
+    career_track: profile.career_track || '', country: profile.country || '',
+    job_alert_work_type: profile.job_alert_work_type || 'all',
+    job_alerts_enabled: !!profile.job_alerts_enabled,
+  }), [profile.career_track, profile.country, profile.job_alert_work_type, profile.job_alerts_enabled]);
+  const field = (name, value) => setForm(previous => ({ ...previous, [name]: value }));
+  const submit = async (event) => {
+    event.preventDefault(); setMessage('');
+    if (await save(form)) setMessage('Job alert preferences saved.');
+  };
+  return (
+    <SectionCard title="Job alerts">
+      <p className="text-sm text-slate-600 mb-4">Receive a daily email when new external or employer-posted jobs match your preferences. Review each job’s full requirements before applying.</p>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="alert-career-track" className="block text-sm font-bold text-slate-700 mb-1">Career track</label>
+            <input id="alert-career-track" name="career_track" maxLength={120} required={form.job_alerts_enabled} value={form.career_track}
+              onChange={event => field('career_track', event.target.value)} placeholder="e.g. DevOps Engineer"
+              className="w-full rounded-xl border border-slate-300 p-3 text-sm text-slate-900" />
+          </div>
+          <div>
+            <label htmlFor="alert-country" className="block text-sm font-bold text-slate-700 mb-1">Country</label>
+            <input id="alert-country" name="country" maxLength={120} value={form.country}
+              onChange={event => field('country', event.target.value)} placeholder="e.g. Nigeria"
+              className="w-full rounded-xl border border-slate-300 p-3 text-sm text-slate-900" />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="alert-work-type" className="block text-sm font-bold text-slate-700 mb-1">Work arrangement</label>
+          <select id="alert-work-type" name="job_alert_work_type" value={form.job_alert_work_type}
+            onChange={event => field('job_alert_work_type', event.target.value)}
+            className="rounded-xl border border-slate-300 p-3 text-sm text-slate-900">
+            <option value="all">Any arrangement</option><option value="remote">Remote</option>
+            <option value="hybrid">Hybrid</option><option value="onsite">On site</option>
+          </select>
+        </div>
+        <label htmlFor="job-alerts-enabled" className="flex gap-3 items-center text-sm text-slate-700">
+          <input id="job-alerts-enabled" name="job_alerts_enabled" type="checkbox" checked={form.job_alerts_enabled}
+            disabled={!profile.is_verified} onChange={event => field('job_alerts_enabled', event.target.checked)} />
+          Email me matching job alerts. I can turn this off here at any time.
+        </label>
+        {!profile.is_verified && <p className="text-sm text-amber-800">Verify your email before enabling alerts.</p>}
+        <button type="submit" disabled={saving} className="rounded-xl bg-emerald-700 px-4 py-2 text-white font-bold disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save job alert preferences'}
+        </button>
+        {message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
+      </form>
+    </SectionCard>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const [profile, setProfile]     = useState(null);
@@ -84,7 +143,8 @@ export default function ProfilePage() {
     try {
       const res = await axios.patch(`${API_BASE_URL}/profile/me`, fields, { headers: { Authorization: `Bearer ${token}` } });
       setProfile(res.data);
-    } catch (e) { alert('Failed to save changes.'); }
+      return true;
+    } catch (e) { alert(e.response?.data?.detail || 'Failed to save changes.'); return false; }
     finally { setSaving(false); }
   };
 
@@ -200,6 +260,8 @@ export default function ProfilePage() {
           {verificationMessage && <p role="status" aria-live="polite" className="mt-3 text-sm text-slate-700">{verificationMessage}</p>}
         </section>
       )}
+
+      {!profile.is_hr && !profile.is_admin && <JobAlertSettings profile={profile} save={patchProfile} saving={saving} />}
 
       {/* ── Profile header card ── */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6">

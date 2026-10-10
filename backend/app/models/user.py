@@ -40,6 +40,9 @@ class User(Base):
     city                 = Column(String, nullable=True)
     timezone             = Column(String, nullable=True)
     id_verified          = Column(Boolean, default=False)
+    job_alerts_enabled   = Column(Boolean, default=False, nullable=False)
+    job_alerts_enabled_at = Column(DateTime, nullable=True)
+    job_alert_work_type  = Column(String, default="all", nullable=False)
 
     created_at          = Column(DateTime, default=datetime.utcnow)
 

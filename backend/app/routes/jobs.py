@@ -21,7 +21,7 @@ from backend.app.models.application import Application
 from backend.app.schemas.job import JobCreate, JobResponse
 from backend.app.dependencies.auth import get_current_user
 from backend.app.services.notification_service import send_application_confirmation
-from backend.app.services.automation_service import notify_new_application
+from backend.app.services.job_automation import enqueue_application, dispatch_pending
 from backend.app.dependencies.roles import require_hr
 
 router = APIRouter(tags=["Jobs"])
@@ -71,7 +71,7 @@ def list_jobs(
     db: Session = Depends(get_db)
 ):
     cutoff = datetime.utcnow() - timedelta(days=FRESHNESS_DAYS)
-    q = db.query(Job).filter(Job.is_active == True, or_(Job.scraped_at >= cutoff, Job.scraped_at.is_(None)))
+    q = db.query(Job).filter(Job.is_active == True, or_(Job.posted_by_hr.is_(True), Job.scraped_at >= cutoff, Job.scraped_at.is_(None)))
     q = _apply_country_filter(q, country or "")
     if work_type and work_type.lower() != "all":
         q = q.filter(Job.work_type == work_type.lower())
@@ -94,7 +94,7 @@ def search_jobs(
     kw = f"%{q}%"
     query = db.query(Job).filter(
         Job.is_active == True,
-        or_(Job.scraped_at >= cutoff, Job.scraped_at.is_(None)),
+        or_(Job.posted_by_hr.is_(True), Job.scraped_at >= cutoff, Job.scraped_at.is_(None)),
         or_(
             Job.title.ilike(kw), Job.company.ilike(kw),
             Job.description.ilike(kw), Job.category.ilike(kw),
@@ -115,7 +115,7 @@ def matched_jobs(
     track        = current_user.career_track or job_title or ""
     user_country = country or current_user.country or ""
     cutoff       = datetime.utcnow() - timedelta(days=FRESHNESS_DAYS)
-    q = db.query(Job).filter(Job.is_active == True, or_(Job.scraped_at >= cutoff, Job.scraped_at.is_(None)))
+    q = db.query(Job).filter(Job.is_active == True, or_(Job.posted_by_hr.is_(True), Job.scraped_at >= cutoff, Job.scraped_at.is_(None)))
     q = _apply_country_filter(q, user_country)
 
     if track:
@@ -176,6 +176,9 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
         raise HTTPException(422, "Select a resume tailored to this vacancy before submitting.")
     if not internal and (not job.url or not job.url.startswith(('https://','http://'))):
         raise HTTPException(422, "No valid employer application link is available.")
+    # Serialize this user's apply requests on PostgreSQL so rapid/repeated
+    # submissions cannot create two applications and two notification events.
+    db.query(User).filter(User.id == current_user.id).with_for_update().first()
     app = db.query(Application).filter(Application.user_id == current_user.id, Application.job_id == job_id).first()
     new_internal_submission = False
     if not app:
@@ -188,7 +191,7 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
         app.job_snapshot = {"title":job.title,"company":job.company,"description":job.description,"url":job.url}
         app.submission_method = 'baalebos' if internal else 'external_handoff'
         app.ats_score = _compute_ats_score(selected,job)
-    db.commit(); db.refresh(app)
+    db.flush()
     if new_internal_submission:
         employer = db.query(User).filter(User.id == job.hr_user_id).first()
         if employer:
@@ -197,7 +200,10 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
             except HTTPException:
                 employer = None
         if employer and employer.email:
-            background_tasks.add_task(notify_new_application, app.id, job.title, employer.email)
+            enqueue_application(db, app, employer, job)
+    db.commit(); db.refresh(app)
+    if new_internal_submission:
+        background_tasks.add_task(dispatch_pending, limit=1, only_event_id=f"baalebos-application-{app.id}")
     return {"application_id": app.id, "status": app.status, "job_url":job.url,
             "message": "Received by the employer on Baalebos." if internal else "Open the employer form to complete your application. Employer receipt is not yet confirmed."}
 

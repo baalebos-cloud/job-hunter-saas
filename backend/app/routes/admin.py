@@ -19,6 +19,19 @@ router = APIRouter(tags=["Admin"])
 
 
 from backend.app.dependencies.roles import require_admin
+from backend.app.services.job_automation import automation_status, run_tick
+
+
+@router.get("/automation")
+def get_automation_status(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from fastapi.responses import JSONResponse
+    from fastapi.encoders import jsonable_encoder
+    return JSONResponse(jsonable_encoder(automation_status(db)), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/automation/run")
+def run_automation(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    return run_tick(db)
 
 
 @router.get("/stats")

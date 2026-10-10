@@ -1,0 +1,150 @@
+{
+  "name": "Baalebos \u2014 jobs, applications and admin alerts",
+  "active": false,
+  "nodes": [
+    {
+      "name": "Baalebos Webhook",
+      "id": "baalebos-webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "baalebos-job-hunter-saas",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "baalebos-job-hunter-saas"
+    },
+    {
+      "name": "Prepare Email",
+      "id": "prepare-email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nif (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid event body');\nconst allowed = ['application.created', 'jobs.matched', 'admin.summary', 'scraper.warning', 'scraper.stale'];\nconst type = body.event_type || 'application.created';\nif (!allowed.includes(type)) throw new Error('Unsupported event type');\nif (typeof body.event_id !== 'string' || !/^baalebos-[a-zA-Z0-9-]{1,140}$/.test(body.event_id)) throw new Error('Invalid event identifier');\nconst to = body.to_email || body.employer_email;\nif (typeof to !== 'string' || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(to)) throw new Error('Invalid event recipient');\nlet subject = body.subject;\nlet text = body.text;\nif (type === 'application.created' && !subject && !text) {\n  if (!Number.isInteger(body.application_id) || body.application_id < 1 || typeof body.job_title !== 'string') throw new Error('Invalid application event');\n  subject = 'New application: ' + body.job_title;\n  text = 'A new application was received for ' + body.job_title + '.\\nApplication ID: ' + body.application_id + '\\nReview it at https://www.baalebo.xyz/hr';\n}\nif (typeof subject !== 'string' || !subject.trim() || subject.length > 500 || typeof text !== 'string' || !text.trim() || text.length > 20000) throw new Error('Invalid email content');\nreturn [{json:{event_id:body.event_id, idempotency_key:type === 'application.created' ? 'application-notification-' + body.event_id : body.event_id, to, subject:subject.replace(/[\\r\\n]/g, ' '), text}}];"
+      }
+    },
+    {
+      "name": "Send With Resend",
+      "id": "send-with-resend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.idempotency_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { from: 'Baalebos Cloud <noreply@baalebo.xyz>', to: [$json.to], subject: $json.subject, text: $json.text } }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "name": "Check Acceptance",
+      "id": "check-acceptance",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nif (typeof result.id !== 'string' || !result.id) throw new Error('Email provider did not accept the message');\nreturn [{json:{id:result.id}}];"
+      }
+    },
+    {
+      "name": "Acknowledge",
+      "id": "acknowledge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, provider_message_id: $json.id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Baalebos Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email": {
+      "main": [
+        [
+          {
+            "node": "Send With Resend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send With Resend": {
+      "main": [
+        [
+          {
+            "node": "Check Acceptance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Acceptance": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}

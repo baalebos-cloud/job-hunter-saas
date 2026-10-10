@@ -16,6 +16,9 @@ export default function AdminDashboard() {
   const [testingAI, setTestingAI] = useState(false);
   const [aiReport, setAIReport] = useState(null);
   const [aiError, setAIError] = useState('');
+  const [automation, setAutomation] = useState(null);
+  const [automationError, setAutomationError] = useState('');
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
@@ -30,6 +33,21 @@ export default function AdminDashboard() {
     if (t === 'users')   { const r = await axios.get(`${API}/admin/users`, { headers: h() }); setUsers(r.data); }
     if (t === 'jobs')    { const r = await axios.get(`${API}/admin/jobs`, { headers: h() }); setJobs(r.data); }
     if (t === 'apps')    { const r = await axios.get(`${API}/admin/applications`, { headers: h() }); setApps(r.data); }
+    if (t === 'automation') {
+      setAutomationError('');
+      try { const r = await axios.get(`${API}/admin/automation`, { headers: h() }); setAutomation(r.data); }
+      catch { setAutomationError('Could not load automation status.'); }
+    }
+  };
+
+  const processNotifications = async () => {
+    setProcessing(true); setAutomationError('');
+    try {
+      const { data } = await axios.post(`${API}/admin/automation/run`, {}, { headers: h(), timeout: 90000 });
+      setMsg(`Notifications accepted: ${data.accepted}. Retrying: ${data.retrying}. Failed: ${data.failed}.`);
+      await load('automation');
+    } catch { setAutomationError('Could not complete notification processing. Check Railway and n8n executions.'); }
+    finally { setProcessing(false); }
   };
 
   const testAI = async () => {
@@ -62,7 +80,7 @@ export default function AdminDashboard() {
     setScraping(true);
     try {
       const r = await axios.post(`${API}/admin/scrape`, {}, { headers: h() });
-      setMsg(`✅ Scrape done: ${r.data.total_saved} new jobs`);
+      setMsg(`Scrape ${r.data.status || 'completed'}: ${r.data.total_saved} new jobs. See Automation for source results.`);
       const s = await axios.get(`${API}/admin/stats`, { headers: h() }); setStats(s.data);
     } catch { setMsg('❌ Scrape failed'); } finally { setScraping(false); }
   };
@@ -76,6 +94,7 @@ export default function AdminDashboard() {
   const TABS = [
     { id: 'stats', label: '📊 Stats' },
     { id: 'ai', label: 'AI Resume Test' },
+    { id: 'automation', label: 'Automation' },
     { id: 'users', label: '👥 Users' },
     { id: 'jobs',  label: '💼 Jobs' },
     { id: 'apps',  label: '📋 Applications' },
@@ -116,6 +135,52 @@ export default function AdminDashboard() {
       </div>
 
       <div className="p-6">
+
+        {tab === 'automation' && (
+          <section className="max-w-5xl bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h2 className="text-xl font-bold">Jobs and notifications</h2>
+            <p className="text-sm text-slate-300">Scraper monitoring, daily admin summaries, matching job alerts and internal application notifications. Your existing cron service continues to scrape jobs.</p>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => load('automation')} className="rounded-xl border border-slate-600 px-4 py-2 font-bold">Refresh status</button>
+              <button type="button" onClick={processNotifications} disabled={processing}
+                className="rounded-xl bg-emerald-700 px-4 py-2 font-bold disabled:opacity-50">
+                {processing ? 'Processing…' : 'Process queued notifications'}
+              </button>
+            </div>
+            {automationError && <p role="alert" className="text-rose-300">{automationError}</p>}
+            {automation && <>
+              <p className="text-sm text-slate-200">Job and admin alerts: {automation.events_configured ? 'Configured' : 'Not configured'} · Internal applications: {automation.application_notifications_configured ? 'Configured' : 'Not configured'}</p>
+              <p className="text-sm text-slate-400">Configuration status does not confirm delivery. Confirm accepted emails in n8n and Resend.</p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {['pending', 'processing', 'sent', 'failed', 'cancelled'].map(status => (
+                  <div key={status} className="bg-slate-950 p-3 rounded-xl">
+                    <p className="text-2xl font-bold">{automation.notification_counts[status] || 0}</p>
+                    <p className="text-sm text-slate-300">{status === 'sent' ? 'Provider accepted' : status}</p>
+                  </div>
+                ))}
+              </div>
+              {automation.last_scrape ? <>
+                <p className="text-sm">Latest scrape: <strong>{automation.last_scrape.status}</strong> · Started {new Date(`${automation.last_scrape.started_at}Z`).toLocaleString()}</p>
+                <p className="text-sm text-slate-300">Fetched {automation.last_scrape.summary.total_scraped || 0} · Saved {automation.last_scrape.summary.total_saved || 0} · Failed sources {automation.last_scrape.summary.failed_sources || 0}</p>
+                <div className="overflow-auto max-h-80">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-slate-300"><tr><th className="p-2">Source</th><th className="p-2">Result</th><th className="p-2">Jobs fetched</th></tr></thead>
+                    <tbody>{(automation.last_scrape.summary.source_results || []).map(source => (
+                      <tr key={source.name} className="border-t border-slate-800"><td className="p-2">{source.name}</td><td className="p-2">{source.status}</td><td className="p-2">{source.job_count}</td></tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </> : <p className="text-sm text-amber-300">No scrape has been recorded since this update. The next cron run will appear here.</p>}
+              {!!automation.failed_notifications.length && <div>
+                <h3 className="font-bold text-rose-300">Notifications needing attention</h3>
+                <p className="text-sm text-slate-300">Fix the reported configuration or provider error. Expired retries stop automatically to avoid sending duplicate emails.</p>
+                <ul className="mt-2 text-sm text-slate-300 space-y-1">{automation.failed_notifications.map(event => (
+                  <li key={event.event_id}>{event.event_type}: {event.event_id} · {event.last_error} · {event.attempts} attempts</li>
+                ))}</ul>
+              </div>}
+            </>}
+          </section>
+        )}
 
         {tab === 'ai' && (
           <section className="max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-6">

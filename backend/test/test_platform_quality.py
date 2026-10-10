@@ -17,16 +17,18 @@ from backend.app.models.resume import Resume
 from backend.app.models.application import Application
 from backend.app.models.subscription import Subscription
 from backend.app.models.referral import Referral
+from backend.app.models.automation import AutomationEvent
 from backend.app.services.auth_service import create_access_token
 from backend.app.utils.resume_quality import merge_rewrite, score_requirements
 from backend.app.utils.pdf_generator import generate_optimized_resume
 from backend.app.utils.ats_engine import extract_text
 
 @pytest.fixture
-def db():
+def db(monkeypatch):
     engine=create_engine('sqlite://',connect_args={'check_same_thread':False},poolclass=StaticPool)
     Base.metadata.create_all(engine)
     session=sessionmaker(bind=engine)()
+    monkeypatch.setattr('backend.app.services.job_automation.SessionLocal', sessionmaker(bind=engine))
     users=[User(email='jayeolaoluwadamilare@gmail.com',full_name='Owner',hashed_password='x',is_admin=True,is_verified=True),
            User(email='candidate@example.com',full_name='Candidate',hashed_password='x',is_verified=True),
            User(email='hr@example.com',full_name='HR',hashed_password='x',is_hr=True,is_verified=True,hr_approved=True),
@@ -159,8 +161,7 @@ def test_internal_requires_correct_resume_and_preserves_attachment(client,db):
 
 @pytest.mark.parametrize('approved', [True, False])
 def test_application_automation_only_first_internal_submission(client, db, monkeypatch, approved):
-    calls = []
-    monkeypatch.setattr('backend.app.routes.jobs.notify_new_application', lambda *args: calls.append(args))
+    monkeypatch.setattr('backend.app.routes.jobs.dispatch_pending', lambda **kwargs: None)
     employer = db.query(User).filter_by(id=3).first()
     employer.hr_approved = approved
     job = Job(title='Python', company='Employer', description='Python required', hr_user_id=3, posted_by_hr=True, is_active=True)
@@ -170,16 +171,23 @@ def test_application_automation_only_first_internal_submission(client, db, monke
     for _ in range(2):
         response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert', 'employer_email':'attacker@example.com'}, headers=headers())
         assert response.status_code == 200
-    assert calls == ([(response.json()['application_id'], 'Python', 'hr@example.com')] if approved else [])
+    events = db.query(AutomationEvent).all()
+    assert len(events) == int(approved)
+    if approved:
+        assert events[0].payload['application_id'] == response.json()['application_id']
+        assert events[0].payload['to_email'] == 'hr@example.com'
+        assert events[0].status == 'pending'
+        assert 'attacker@example.com' not in json.dumps(events[0].payload)
 
 
 def test_external_application_does_not_notify_employer(client, db, monkeypatch):
     calls = []
-    monkeypatch.setattr('backend.app.routes.jobs.notify_new_application', lambda *args: calls.append(args))
+    monkeypatch.setattr('backend.app.routes.jobs.dispatch_pending', lambda **kwargs: calls.append(kwargs))
     job = Job(title='External', company='Employer', url='https://example.com/apply', hr_user_id=3, posted_by_hr=True, is_active=True)
     db.add(job); db.commit()
     assert client.post(f'/api/v1/jobs/{job.id}/apply', json={}, headers=headers()).status_code == 200
     assert calls == []
+    assert db.query(AutomationEvent).count() == 0
 
 
 def test_notification_failure_does_not_undo_application(client, db, monkeypatch):
@@ -195,6 +203,8 @@ def test_notification_failure_does_not_undo_application(client, db, monkeypatch)
     response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert'}, headers=headers())
     assert response.status_code == 200
     assert db.query(Application).first().status == 'submitted_internal'
+    assert db.query(AutomationEvent).first().status == 'pending'
+    assert db.query(AutomationEvent).first().attempts == 1
 
 
 def test_successful_upload_scores_exported_pdf_and_charges_once(client, db, monkeypatch):

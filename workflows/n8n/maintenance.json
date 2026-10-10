@@ -1,0 +1,131 @@
+{
+  "name": "Baalebos \u2014 notification retries and scraper monitoring",
+  "active": false,
+  "nodes": [
+    {
+      "name": "Every 15 Minutes",
+      "id": "every-15-minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Run Manually",
+      "id": "run-manually",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "name": "Process Notifications",
+      "id": "process-notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://job-hunter-saas-production-bb41.up.railway.app/api/v1/automation/tick",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Report Maintenance Failure",
+      "id": "report-maintenance-failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'baalebos-maintenance-failure-' + new Date().toISOString().slice(0, 10) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"from\": \"Baalebos Cloud <noreply@baalebo.xyz>\", \"to\": [\"jayeolaoluwadamilare@gmail.com\"], \"subject\": \"Baalebos automation maintenance needs attention\", \"text\": \"The scheduled maintenance request to Job Hunter failed. The backend may be unavailable, or the webhook secret may not match. Check Railway and the n8n execution. This message is limited to one provider-accepted email per UTC day. No resumes or user data are included.\"}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Process Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Manually": {
+      "main": [
+        [
+          {
+            "node": "Process Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Notifications": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Report Maintenance Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
