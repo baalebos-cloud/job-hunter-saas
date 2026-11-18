@@ -10,6 +10,7 @@ import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
+import { clearSession } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
 import ForgotPassword from './components/auth/ForgotPassword'
@@ -83,7 +84,7 @@ function OptimizerPage() {
             setAnalysisResult(res.data.result)
             setActiveTaskId(null)
             setIsAnalyzing(false)
-            localStorage.setItem('lastTaskId', res.data.result?.task_id || '')
+            localStorage.setItem('lastTaskId', res.data.result?.task_id || res.data.task_id || activeTaskId)
           } else if (res.data.status === 'failed') {
             alert('Analysis failed. Please check your file format.')
             setActiveTaskId(null)
@@ -243,7 +244,7 @@ function SettingsPage() {
       <div className="bg-rose-950/20 border border-rose-900/30 rounded-3xl p-6">
         <p className="text-rose-400 font-black text-sm mb-1">Sign Out</p>
         <p className="text-slate-500 text-xs mb-4">You'll need to log in again to access your account.</p>
-        <button onClick={() => { localStorage.removeItem('token'); window.location.href = '/login' }}
+        <button onClick={() => { clearSession(); window.location.href = '/login' }}
           className="text-xs font-black px-5 py-2.5 rounded-xl bg-rose-900/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition-all uppercase tracking-widest">
           Sign Out of Account
         </button>

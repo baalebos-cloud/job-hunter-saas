@@ -43,6 +43,11 @@ _rate_store: dict = defaultdict(list)
 RATE_LIMITS = {
     "/api/v1/auth/login":        (10,  60),   # 10 requests per 60 seconds
     "/api/v1/auth/signup":       (5,   60),   # 5 requests per 60 seconds
+    # Read-only resume endpoints are owner-scoped; allow 2s status polling
+    # (30/min) plus previews. Specific prefixes must precede "/api/v1/resume".
+    "/api/v1/resume/status":     (120, 60),
+    "/api/v1/resume/preview":    (60,  60),
+    "/api/v1/resume/download":   (60,  60),
     "/api/v1/resume":            (20,  60),   # 20 requests per 60 seconds
     "/api/v1/billing/webhook":   (200, 60),   # Stripe webhooks — never throttle
     "default":                   (100, 60),   # 100 requests per 60 seconds
@@ -184,6 +189,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the cross-origin dashboard read the candidate-named PDF filename.
+    expose_headers=["Content-Disposition"],
 )
 
 # --- ROUTES ---

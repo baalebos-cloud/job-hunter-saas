@@ -43,6 +43,8 @@ export default function ResumeUpload({ onUploadSuccess }) {
   const [jobTitle, setJobTitle] = useState('');
   const [jobDesc, setJobDesc] = useState('');
   const [workType, setWorkType] = useState('remote');
+  const [region, setRegion] = useState('');
+  const [onePage, setOnePage] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -91,6 +93,8 @@ export default function ResumeUpload({ onUploadSuccess }) {
     formData.append('job_description', jobDesc);
     formData.append('job_title', jobTitle.trim());
     formData.append('work_type', workType);
+    if (region) formData.append('region', region);
+    formData.append('one_page', onePage ? 'true' : 'false');
 
     try {
       const res = await axios.post(`${API_BASE_URL}/resume/upload`, formData, {
@@ -223,6 +227,28 @@ export default function ResumeUpload({ onUploadSuccess }) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Resume format */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="resume-region" className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+              Resume convention
+            </label>
+            <select id="resume-region" value={region} onChange={e => setRegion(e.target.value)} className={inputCls}>
+              <option value="">Auto (from my profile country)</option>
+              <option value="US">United States (Letter)</option>
+              <option value="CA">Canada (Letter)</option>
+              <option value="UK">United Kingdom (A4)</option>
+              <option value="EU">European Union (A4)</option>
+              <option value="NG">Nigeria (A4)</option>
+              <option value="OTHER">Other / international (A4)</option>
+            </select>
+          </div>
+          <label className="flex items-start gap-3 text-sm text-slate-600 sm:mt-7">
+            <input type="checkbox" className="mt-1" checked={onePage} onChange={e => setOnePage(e.target.checked)} />
+            <span>Fit on one page (may shorten lower-priority bullet points; employers, education and certifications are always kept)</span>
+          </label>
         </div>
 
         {/* Job Description */}

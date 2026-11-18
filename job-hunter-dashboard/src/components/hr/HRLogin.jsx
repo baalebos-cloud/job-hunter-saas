@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState } from 'react';
 import axios from 'axios';
+import { startSession } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -46,7 +47,7 @@ export default function HRLogin() {
       });
       const token = res.data.access_token;
       if (token) {
-        localStorage.setItem('token', token.trim());
+        startSession(token);
         window.location.href = res.data.redirect || '/hr';
       }
     } catch (err) {

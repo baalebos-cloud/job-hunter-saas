@@ -1,8 +1,11 @@
 import uuid
 import json
 import logging
+from typing import Optional
+from urllib.parse import quote
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
@@ -28,6 +31,41 @@ def provider_diagnostics(exc):
     return result
 
 
+def _region_for(user, requested=None):
+    from backend.app.utils.pdf_generator import resolve_region
+    return resolve_region(requested, getattr(user, 'country', None))
+
+
+def _export(tailored, region, one_page, requirements):
+    """Render the resume; candidate content only, never optimizer notes."""
+    from backend.app.utils.pdf_generator import export_resume
+    keywords = [r.get('phrase') or r.get('requirement') for r in requirements or [] if isinstance(r, dict)]
+    return export_resume(tailored, region=region, max_pages=1 if one_page else 2, priority_keywords=keywords)
+
+
+def _save(db, record):
+    """Postgres is the source of truth (Railway's filesystem is ephemeral)."""
+    try:
+        db.add(record)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error('resume_save_failed error_type=%s', type(exc).__name__)
+        raise HTTPException(500, 'Could not save the resume. Nothing was charged; please retry.') from exc
+
+
+def _pdf_response(record, disposition):
+    from backend.app.utils.pdf_generator import download_filename
+    try:
+        name = json.loads(record.parsed_data or '{}').get('name')
+    except (TypeError, ValueError):
+        name = None
+    ascii_name, utf8_name = download_filename(name)
+    header = f'{disposition}; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(utf8_name)}'
+    return Response(record.content, media_type='application/pdf',
+                    headers={'Content-Disposition': header, 'Cache-Control': 'private, no-store'})
+
+
 def owned_resume(identifier, db, user):
     record = db.query(Resume).filter(Resume.filename == f'optimized_{identifier}.pdf', Resume.owner_id == user.id).first()
     if not record:
@@ -37,6 +75,7 @@ def owned_resume(identifier, db, user):
 
 @router.post('/upload')
 async def upload_resume(file: UploadFile=File(...), job_description: str=Form(...), job_title: str=Form(...),
+                        region: Optional[str]=Form(None), one_page: bool=Form(False),
                         db: Session=Depends(get_db), current_user=Depends(require_scan_quota)):
     filename = file.filename or ''
     if not filename.lower().endswith(('.pdf','.docx')):
@@ -49,12 +88,12 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
         raise HTTPException(400, 'Invalid DOCX.')
     if not job_title.strip() or len(job_title)>200: raise HTTPException(400, 'Provide a target job title up to 200 characters.')
     task_id = str(uuid.uuid4())
+    resolved_region = _region_for(current_user, region)
     stage = 'load_pipeline'
     def prepare():
         nonlocal stage
         from backend.app.utils.ats_engine import extract_text, extract_resume_data, extract_requirements, rewrite_resume_for_job
         from backend.app.utils.resume_quality import merge_rewrite, score_requirements
-        from backend.app.utils.pdf_generator import generate_optimized_resume
         stage = 'extract_text'
         text = extract_text(content, filename)
         stage = 'extract_resume_data'
@@ -68,14 +107,19 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
         stage = 'validate_rewrite'
         tailored = merge_rewrite(original, rewrite, text)
         stage = 'export_pdf'
-        pdf = generate_optimized_resume(filename, resume_data=tailored).getvalue()
+        exported_resume = _export(tailored, resolved_region, one_page, requirements)
+        pdf = exported_resume.pdf
         stage = 'read_exported_pdf'
         exported = extract_text(pdf, 'resume.pdf')
         stage = 'score_exported_pdf'
         analysis = score_requirements(exported, job_description, requirements)
         analysis.update(original_score=before['overall_score'], confirmation_questions=rewrite.get('confirmation_questions',[]),
                         suggestions_applied=rewrite.get('suggestions_applied',[]), job_title=job_title, job_description=job_description,
-                        task_id=task_id, resume_id=task_id, status='success')
+                        task_id=task_id, resume_id=task_id, status='success',
+                        # Missing requirements are suggestions only; they enter the
+                        # resume solely through /regenerate with explicit confirmation.
+                        suggested_skills=list(analysis.get('missing_list', [])), confirmed_keywords=[],
+                        one_page=bool(one_page), document=exported_resume.info())
         return tailored, analysis, pdf
     try:
         tailored, analysis, pdf = await run_in_threadpool(prepare)
@@ -104,27 +148,74 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
                     parsed_data=json.dumps(tailored), ats_score=analysis['overall_score'], analysis_data=analysis)
     from backend.app.dependencies.plan_guard import consume_scan
     consume_scan(current_user.id, db)
-    try:
-        db.add(record); db.commit()
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(503, 'Could not save the resume. Please retry.') from exc
+    _save(db, record)
     return {'task_id':task_id,'status':'completed','result':analysis}
+
+
+class RegenerateRequest(BaseModel):
+    confirmed_keywords: list[str] = Field(default_factory=list, max_length=50)
+    region: Optional[str] = None
+    one_page: Optional[bool] = None
+
+
+@router.post('/regenerate/{task_id}')
+def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """Re-export with keywords the candidate explicitly confirmed. Only
+    requirements reported as missing for this analysis can be confirmed."""
+    from backend.app.utils.ats_engine import extract_text
+    from backend.app.utils.resume_quality import score_requirements, normalize
+    from backend.app.utils.pdf_generator import merge_confirmed_keywords, ResumeExportError
+    record = owned_resume(task_id, db, current_user)
+    analysis = dict(record.analysis_data or {})
+    try:
+        tailored = json.loads(record.parsed_data or '{}')
+    except ValueError:
+        tailored = {}
+    allowed = {normalize(k): k for k in analysis.get('suggested_skills') or analysis.get('missing_list') or []}
+    previous = list(analysis.get('confirmed_keywords') or [])
+    requested = [k.strip() for k in body.confirmed_keywords if isinstance(k, str) and k.strip()]
+    unknown = [k for k in requested if normalize(k) not in allowed and normalize(k) not in {normalize(p) for p in previous}]
+    if unknown:
+        raise HTTPException(422, 'Only suggested skills from this analysis can be confirmed.')
+    confirmed = previous + [allowed.get(normalize(k), k) for k in requested if normalize(k) not in {normalize(p) for p in previous}]
+    region = _region_for(current_user, body.region or analysis.get('document', {}).get('region'))
+    one_page = analysis.get('one_page', False) if body.one_page is None else body.one_page
+    requirements = [{'phrase': r.get('requirement'), 'priority': r.get('priority')}
+                    for r in analysis.get('requirements', []) if isinstance(r, dict)]
+    try:
+        updated = merge_confirmed_keywords(tailored, confirmed)
+        exported_resume = _export(updated, region, one_page, requirements)
+        rescored = score_requirements(extract_text(exported_resume.pdf, 'resume.pdf'),
+                                      analysis.get('job_description', ''), requirements)
+    except ResumeExportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, 'The resume could not be regenerated. Please retry.') from exc
+    confirmed_keys = {normalize(k) for k in confirmed}
+    analysis.update(rescored, suggested_skills=[k for k in rescored.get('missing_list', []) if normalize(k) not in confirmed_keys],
+                    confirmed_keywords=confirmed, one_page=bool(one_page), document=exported_resume.info(),
+                    task_id=task_id, resume_id=task_id, status='success')
+    record.content = exported_resume.pdf
+    record.parsed_data = json.dumps(updated)
+    record.ats_score = analysis['overall_score']
+    record.analysis_data = analysis
+    _save(db, record)
+    return {'task_id': task_id, 'status': 'completed', 'result': analysis}
 
 
 @router.get('/preview/{resume_id}')
 def preview(resume_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     record = owned_resume(resume_id,db,current_user)
-    return Response(record.content,media_type='application/pdf',headers={'Content-Disposition':'inline; filename="resume.pdf"','Cache-Control':'private, no-store'})
+    return _pdf_response(record, 'inline')
 
 
 @router.get('/status/{task_id}')
 def status(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     record = owned_resume(task_id,db,current_user)
-    return {'task_id':task_id,'status':'completed','result':record.analysis_data}
+    return {'task_id':task_id,'status':'completed','result':{**(record.analysis_data or {}), 'task_id':task_id, 'resume_id':task_id}}
 
 
 @router.get('/download/{task_id}')
 def download(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     record = owned_resume(task_id,db,current_user)
-    return Response(record.content,media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="Baalebos_Resume.pdf"','Cache-Control':'private, no-store'})
+    return _pdf_response(record, 'attachment')

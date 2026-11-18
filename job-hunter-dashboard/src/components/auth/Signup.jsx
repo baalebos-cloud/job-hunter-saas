@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { startSession } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -96,7 +97,7 @@ export default function Signup() {
 
       // Step 3: Redirect
       if (token?.trim()) {
-        localStorage.setItem('token', token.trim());
+        startSession(token);
         window.location.href = '/';
       } else {
         window.location.href = '/login';
