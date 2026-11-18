@@ -1,7 +1,7 @@
 # =============================================================================
 # backend/app/models/user.py
 # =============================================================================
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
+from sqlalchemy import Index, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.app.database import Base
@@ -9,7 +9,9 @@ from backend.app.database import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = (Index('ix_users_verification_token', 'verification_token'),
+                      Index('ix_users_reset_token', 'reset_token'),
+                      {'extend_existing': True})
 
     id                  = Column(Integer, primary_key=True, index=True)
     email               = Column(String, unique=True, index=True, nullable=False)

@@ -34,6 +34,7 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks([
     "backend.app.tasks.scrape_task",
     "backend.app.tasks.application_tasks",
+    "backend.app.tasks.resume_tasks",
 ])
 
 if __name__ == "__main__":

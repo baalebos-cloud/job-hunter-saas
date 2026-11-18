@@ -1,10 +1,12 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, JSON
+from sqlalchemy import Index, text, Column, Integer, String, DateTime, ForeignKey, Float, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.app.database import Base
 
 class Application(Base):
     __tablename__ = "applications"
+    __table_args__ = (Index("ix_applications_user_created", "user_id", text("created_at DESC")),
+                      Index("ix_applications_job_status", "job_id", "status"))
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)

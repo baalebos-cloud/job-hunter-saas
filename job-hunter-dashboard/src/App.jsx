@@ -86,7 +86,7 @@ function OptimizerPage() {
             setIsAnalyzing(false)
             localStorage.setItem('lastTaskId', res.data.result?.task_id || res.data.task_id || activeTaskId)
           } else if (res.data.status === 'failed') {
-            alert('Analysis failed. Please check your file format.')
+            alert(res.data.error || 'Analysis failed. Please retry.')
             setActiveTaskId(null)
             setIsAnalyzing(false)
           }

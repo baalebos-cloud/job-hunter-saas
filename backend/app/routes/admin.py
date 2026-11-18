@@ -8,7 +8,7 @@ import json
 from threading import Lock
 from time import monotonic
 
-from backend.app.database import get_db
+from backend.app.database import get_db, get_read_db
 from backend.app.dependencies.auth import get_current_user
 from backend.app.models.user import User
 from backend.app.models.job import Job
@@ -35,7 +35,7 @@ def run_automation(db: Session = Depends(get_db), admin: User = Depends(require_
 
 
 @router.get("/stats")
-def admin_stats(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def admin_stats(db: Session = Depends(get_read_db), admin: User = Depends(require_admin)):
     return {
         "total_users":        db.query(User).count(),
         "total_jobs":         db.query(Job).count(),
@@ -52,7 +52,7 @@ def admin_stats(db: Session = Depends(get_db), admin: User = Depends(require_adm
 @router.get("/users")
 def list_users(
     skip: int = 0, limit: int = 50,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     admin: User = Depends(require_admin)
 ):
     # One aggregate query instead of lazy-loading every user's applications (N+1).
@@ -106,7 +106,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depen
 @router.get("/jobs")
 def list_all_jobs(
     skip: int = 0, limit: int = 50,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     admin: User = Depends(require_admin)
 ):
     jobs = db.query(Job).order_by(Job.scraped_at.desc()).offset(skip).limit(limit).all()
@@ -138,7 +138,7 @@ async def trigger_scrape(
 @router.get("/applications")
 def list_applications(
     skip: int = 0, limit: int = 50,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     admin: User = Depends(require_admin)
 ):
     from sqlalchemy.orm import joinedload

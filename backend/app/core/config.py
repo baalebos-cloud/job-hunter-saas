@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     N8N_EVENTS_WEBHOOK_URL: str = ""
     N8N_WEBHOOK_SECRET: str = ""
     SCRAPER_STALE_HOURS: int = Field(default=8, ge=1, le=168)
+    # "async": uploads return 202 and a Celery worker runs OCR + refiner + PDF.
+    # "sync" keeps the work in the API process (no worker required).
+    RESUME_PROCESSING_MODE: str = Field(default="sync", pattern="^(sync|async)$")
+    RESUME_JOB_TIMEOUT_MINUTES: int = Field(default=15, ge=2, le=120)
+    # Optional read replica (e.g. RDS replica behind PgBouncer) for read-only GETs.
+    DATABASE_READ_URL: str = ""
 
     # --- Mail ---
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")

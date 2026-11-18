@@ -130,7 +130,8 @@ def applicant_resume(application_id: int, db: Session = Depends(get_db), hr_user
                                      Resume.owner_id == application.user_id).first()
     if not resume:
         raise HTTPException(404, 'Resume not found')
-    return Response(resume.content, media_type='application/pdf', headers={
+    from backend.app.services.resume_storage import load_pdf
+    return Response(load_pdf(resume), media_type='application/pdf', headers={
         'Content-Disposition': 'inline; filename="Applicant_Resume.pdf"', 'Cache-Control': 'private, no-store'})
 
 

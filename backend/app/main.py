@@ -117,59 +117,22 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup_event():
+    """No DDL at startup: schema changes run before deploy via
+    ``python -m backend.scripts.migrate`` (alembic upgrade head). This only
+    reports drift so a missed migration is visible immediately."""
     try:
-        Base.metadata.create_all(bind=engine)
-        print("✅ Database tables created/verified")
-        # Add new columns if they don't exist (safe migration)
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
         from sqlalchemy import text
+        from pathlib import Path
+        head = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))).get_current_head()
         with engine.connect() as conn:
-            migrations = [
-                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS resume_id INTEGER REFERENCES resumes(id)",
-                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS job_snapshot JSON",
-                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS submission_method VARCHAR",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR UNIQUE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_hr BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS hr_approved BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS posted_by_hr BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_user_id INTEGER",
-                # Email verification / password reset
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP",
-                # Profile page fields
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS available_for_work BOOLEAN DEFAULT TRUE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS expected_pay_hourly FLOAT",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS about TEXT",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_url VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_filename VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS notice_period_days INTEGER",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alerts_enabled_at TIMESTAMP",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alert_work_type VARCHAR NOT NULL DEFAULT 'all'",
-                "CREATE INDEX IF NOT EXISTS ix_jobs_first_seen_at ON jobs (first_seen_at)",
-            ]
-            for sql in migrations:
-                try:
-                    conn.execute(text(sql))
-                    conn.commit()
-                except Exception:
-                    pass  # column already exists
-        print("✅ DB migrations applied")
-    except Exception as e:
-        print(f"⚠️ DB startup warning: {e}")
+            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        if current != head:
+            logger.error("schema_out_of_date current=%s head=%s - run python -m backend.scripts.migrate", current, head)
+    except Exception as exc:
+        logger.warning("schema_version_check_skipped error_type=%s", type(exc).__name__)
+
 
 # --- SCHEMAS ---
 class AnalysisRequest(BaseModel):
