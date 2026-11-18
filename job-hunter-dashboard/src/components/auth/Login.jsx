@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
+import { startSession } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -23,7 +24,7 @@ export default function Login() {
     try {
       const res = await axios.post(`${API_BASE_URL}/auth/login`, form);
       const token = res.data.access_token || res.data.token || null;
-      if (token?.trim()) { localStorage.setItem('token', token.trim()); window.location.href = destination; }
+      if (token?.trim()) { startSession(token); window.location.href = destination; }
       else setError('Login succeeded but no token received.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Invalid email or password.');

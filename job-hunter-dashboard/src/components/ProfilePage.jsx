@@ -5,6 +5,7 @@
 // =============================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { clearSession } from '../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -218,7 +219,7 @@ export default function ProfilePage() {
   const deleteAccount = async () => {
     try {
       await axios.delete(`${API_BASE_URL}/profile/me`, { headers: { Authorization: `Bearer ${token}` } });
-      localStorage.removeItem('token');
+      clearSession();
       window.location.href = '/login';
     } catch { alert('Failed to delete account.'); }
   };
