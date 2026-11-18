@@ -20,7 +20,7 @@ class MemoryStore:
     backend = 'memory'
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._values: dict[str, tuple[float, str]] = {}
         self._windows: dict[str, list[float]] = defaultdict(list)
 
@@ -55,6 +55,37 @@ class MemoryStore:
             hits = [t for t in self._windows.get(key, []) if now - t < window] + [now]
             self._windows[key] = hits
             return len(hits)
+
+    def incr(self, key: str, amount: int = 1, ttl: int = 3600) -> int:
+        with self._lock:
+            expires, value = self._values.get(key, (0, '0'))
+            if expires and expires < time.time():
+                value = '0'
+            new = int(value) + amount
+            self._values[key] = (time.time() + ttl, str(new))
+            return new
+
+    def get(self, key: str):
+        with self._lock:
+            item = self._values.get(key)
+            if not item or item[0] < time.time():
+                return None
+            return item[1]
+
+    def push_sample(self, key: str, value: float, maxlen: int = 1000, ttl: int = 3600):
+        with self._lock:
+            samples = self._windows[key]
+            samples.append(float(value))
+            del samples[:-maxlen]
+            self._values[f'{key}:ttl'] = (time.time() + ttl, '1')
+
+    def samples(self, key: str) -> list[float]:
+        with self._lock:
+            marker = self._values.get(f'{key}:ttl')
+            if marker and marker[0] < time.time():
+                self._windows.pop(key, None)
+                self._values.pop(f'{key}:ttl', None)
+            return list(self._windows.get(key, []))
 
     def clear(self):
         with self._lock:
@@ -95,6 +126,26 @@ class RedisStore:
         pipe.zcard(key)
         pipe.expire(key, int(window) + 1)
         return int(pipe.execute()[2])
+
+    def incr(self, key, amount=1, ttl=3600):
+        pipe = self.client.pipeline()
+        pipe.incrby(key, amount)
+        pipe.expire(key, ttl)
+        return int(pipe.execute()[0])
+
+    def get(self, key):
+        value = self.client.get(key)
+        return value.decode() if isinstance(value, bytes) else value
+
+    def push_sample(self, key, value, maxlen=1000, ttl=3600):
+        pipe = self.client.pipeline()
+        pipe.lpush(key, float(value))
+        pipe.ltrim(key, 0, maxlen - 1)
+        pipe.expire(key, ttl)
+        pipe.execute()
+
+    def samples(self, key):
+        return [float(v) for v in self.client.lrange(key, 0, -1)]
 
     def clear(self):  # pragma: no cover - never used against shared Redis
         raise RuntimeError('Refusing to clear a shared Redis store.')

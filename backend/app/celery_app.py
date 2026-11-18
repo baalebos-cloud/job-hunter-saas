@@ -24,6 +24,10 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     beat_schedule={
         # Scrape jobs every 6 hours — 5 mins was too aggressive for free-tier Railway
+        "data-retention-daily": {
+            "task": "backend.app.tasks.maintenance.run_retention",
+            "schedule": 86400.0,
+        },
         "scrape-jobs-every-6-hours": {
             "task": "backend.app.tasks.scrape_jobs",
             "schedule": 21600.0,  # 6 hours
@@ -35,6 +39,7 @@ celery_app.autodiscover_tasks([
     "backend.app.tasks.scrape_task",
     "backend.app.tasks.application_tasks",
     "backend.app.tasks.resume_tasks",
+    "backend.app.tasks.maintenance",
 ])
 
 if __name__ == "__main__":

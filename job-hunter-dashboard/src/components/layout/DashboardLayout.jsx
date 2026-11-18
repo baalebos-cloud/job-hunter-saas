@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, FileText, Briefcase, ListChecks, Gift, UserRound, Settings, ShieldCheck, Building2, Menu, X, LogOut, CreditCard } from 'lucide-react';
+import { LayoutDashboard, FileText, Briefcase, ListChecks, Gift, UserRound, Settings, ShieldCheck, Building2, Menu, X, LogOut, CreditCard, Activity } from 'lucide-react';
 import axios from 'axios';
 import { signOut } from '../../lib/session';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -10,7 +10,7 @@ export default function DashboardLayout({children}) {
   useEffect(()=>{setOpen(false)},[pathname]);
   useEffect(()=>{axios.get(`${API}/auth/me`,{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}}).then(r=>setProfile(r.data)).catch(()=>{})},[]);
   useEffect(()=>{if(!open)return; const close=e=>{if(e.key==='Escape')setOpen(false)}; window.addEventListener('keydown',close); return()=>window.removeEventListener('keydown',close)},[open]);
-  const nav=[...links,...(profile?.is_admin?[['Owner console','/admin',ShieldCheck]]:[]),...(profile?.is_hr||profile?.is_admin?[['Employer portal','/hr',Building2]]:[])];
+  const nav=[...links,...(profile?.is_admin?[['Owner console','/admin',ShieldCheck]]:[]),...((profile?.permissions||[]).some(p=>['metrics:read','audit:read','users:read','reports:read'].includes(p))?[['Security & governance','/governance',Activity]]:[]),...(profile?.is_hr||profile?.is_admin?[['Employer portal','/hr',Building2]]:[])];
   return <div className="talent-shell min-h-screen flex bg-slate-50 text-slate-900">
     {open&&<button aria-label="Close navigation" className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={()=>setOpen(false)}/>}
     <aside className={`fixed lg:sticky top-0 h-screen w-64 bg-white border-r border-slate-200 flex flex-col z-50 shrink-0 transition-transform ${open?'translate-x-0':'-translate-x-full lg:translate-x-0'}`}>

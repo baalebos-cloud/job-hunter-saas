@@ -21,6 +21,24 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("migrate")
 
 
+def _install_postgres_objects(engine):
+    """Objects create_all cannot express (append-only audit trigger)."""
+    from sqlalchemy import text
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "audit_migration", Path(__file__).resolve().parents[1] / "alembic/versions/20261120_audit_privacy.py")
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with engine.begin() as conn:
+        conn.execute(text(migration.TRIGGER_FN))
+        conn.execute(text("DROP TRIGGER IF EXISTS audit_logs_append_only ON audit_logs"))
+        conn.execute(text("CREATE TRIGGER audit_logs_append_only BEFORE UPDATE OR DELETE ON audit_logs "
+                          "FOR EACH ROW EXECUTE FUNCTION audit_logs_append_only()"))
+        conn.execute(text("DROP TRIGGER IF EXISTS audit_logs_no_truncate ON audit_logs"))
+        conn.execute(text("CREATE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs "
+                          "FOR EACH STATEMENT EXECUTE FUNCTION audit_logs_append_only()"))
+
+
 def main() -> int:
     from alembic import command
     from alembic.config import Config
@@ -35,6 +53,8 @@ def main() -> int:
     if "users" not in tables:
         log.info("Fresh database: creating schema and stamping head")
         metadata.create_all(engine)
+        if engine.dialect.name == "postgresql":
+            _install_postgres_objects(engine)
         command.stamp(config, "head")
         return 0
     if "alembic_version" not in tables:

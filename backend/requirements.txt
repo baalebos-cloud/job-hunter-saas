@@ -59,5 +59,13 @@ python-bidi==0.6.12
 # --- Object storage (resume PDFs in S3, SSE-KMS) ---
 boto3==1.35.54
 
+# --- Observability (metrics always; tracing only when OTEL_EXPORTER_OTLP_ENDPOINT is set) ---
+prometheus-client==0.26.0
+opentelemetry-sdk==1.27.0
+opentelemetry-exporter-otlp-proto-http==1.27.0
+opentelemetry-instrumentation-fastapi==0.48b0
+opentelemetry-instrumentation-sqlalchemy==0.48b0
+setuptools<81  # pkg_resources, imported by the 0.48b0 instrumentations
+
 # --- Payments ---
 stripe>=7.0.0

@@ -5,6 +5,7 @@ import axios from 'axios'
 import SEO from './components/SEO'
 
 import DashboardLayout from './components/layout/DashboardLayout'
+import GovernanceDashboard from './components/governance/GovernanceDashboard'
 import TalentOverview from './components/TalentOverview'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
@@ -57,10 +58,23 @@ function RequireRole({ role, children }) {
     </div>
   )
 
-  const hasAccess = role === 'admin' ? profile?.is_admin : (profile?.is_admin || profile?.is_hr)
+  const GOVERNANCE = ['metrics:read', 'audit:read', 'users:read', 'reports:read']
+  const hasAccess = role === 'admin' ? profile?.is_admin
+    : role === 'governance' ? (profile?.permissions || []).some(p => GOVERNANCE.includes(p))
+    : (profile?.is_admin || profile?.is_hr)
   if (!hasAccess) return <Navigate to="/" replace />
 
   return children
+}
+
+function GovernancePage() {
+  const [permissions, setPermissions] = useState(null)
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then(r => setPermissions(r.data.permissions || [])).catch(() => setPermissions([]))
+  }, [])
+  if (!permissions) return <p role="status">Loading…</p>
+  return <GovernanceDashboard permissions={permissions} />
 }
 
 // ── Overview page (/) ─────────────────────────────────────────────────────────
@@ -589,6 +603,9 @@ function App() {
         } />
         <Route path="/admin" element={
           <RequireRole role="admin"><DashboardLayout><AdminDashboard /></DashboardLayout></RequireRole>
+        } />
+        <Route path="/governance" element={
+          <RequireRole role="governance"><DashboardLayout><GovernancePage /></DashboardLayout></RequireRole>
         } />
         <Route path="/hr" element={
           <RequireRole role="hr"><DashboardLayout><HRPortal /></DashboardLayout></RequireRole>

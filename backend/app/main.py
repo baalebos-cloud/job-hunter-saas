@@ -1,5 +1,6 @@
 import io
 import logging
+import re
 import os
 import time
 import uuid
@@ -20,6 +21,8 @@ from backend.app.routes import hr_auth as hr_auth_router
 from backend.app.routes import profile as profile_router
 from backend.app.routes import automation as automation_router
 from backend.app.routes import rbac as rbac_router
+from backend.app.routes import privacy as privacy_router
+from backend.app.routes import governance as governance_router
 from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
@@ -30,6 +33,7 @@ from backend.app.models.subscription import Subscription   # noqa: F401
 from backend.app.models.referral import Referral           # noqa: F401
 from backend.app.models.automation import AutomationEvent, ScrapeRun, AutomationState  # noqa: F401
 from backend.app.models.security import RefreshToken, RbacRole, RbacPermission  # noqa: F401
+from backend.app.models.audit import AuditLog, ErasureTombstone  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,8 @@ RATE_LIMITS = {
     "/api/v1/resume/preview":    (60,  60),
     "/api/v1/resume/download":   (60,  60),
     "/api/v1/resume":            (20,  60),   # 20 requests per 60 seconds
+    "/api/v1/privacy/export":    (5,  3600),
+    "/api/v1/governance/summary": (60, 60),
     "/api/v1/billing/webhook":   (200, 60),   # Stripe webhooks — never throttle
     "default":                   (100, 60),   # 100 requests per 60 seconds
 }
@@ -134,6 +140,74 @@ async def startup_event():
         logger.warning("schema_version_check_skipped error_type=%s", type(exc).__name__)
 
 
+# ── Observability: trace IDs, metrics, structured audit trail ─────────────────
+_TRACE_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+_UNAUDITED = ("/health", "/metrics", "/api/v1/health")
+
+
+def _incoming_trace_id(request: Request) -> str:
+    traceparent = request.headers.get("traceparent", "")
+    parts = traceparent.split("-")
+    if len(parts) == 4 and len(parts[1]) == 32 and all(c in "0123456789abcdef" for c in parts[1]):
+        return parts[1]
+    candidate = request.headers.get("x-request-id", "")
+    return candidate.replace("-", "")[:32] if _TRACE_ID.match(candidate) else uuid.uuid4().hex
+
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):
+    """Outermost middleware: every request (incl. 429s and 500s) gets a trace
+    ID, Prometheus metrics, a fleet-wide window sample and an audit record."""
+    from backend.app.core import metrics
+    from backend.app.services.audit import build_request_entry, emit
+    request.state.trace_id = _incoming_trace_id(request)
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Trace-Id"] = request.state.trace_id
+        return response
+    finally:
+        path = request.url.path
+        if not path.startswith(_UNAUDITED) and path != "/":
+            elapsed = time.perf_counter() - started
+            route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+            metrics.HTTP_REQUESTS.labels(request.method, route, str(status)).inc()
+            metrics.HTTP_LATENCY.labels(request.method, route).observe(elapsed)
+            if status == 429:
+                metrics.RATE_LIMITED.labels(route).inc()
+            metrics.record_request(route, status, elapsed * 1000)
+            emit(build_request_entry(trace_id=request.state.trace_id, user=getattr(request.state, "user", None),
+                                     method=request.method, route=route, status=status,
+                                     latency_ms=elapsed * 1000, ip=_get_client_ip(request)))
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics(request: Request, db: Session = Depends(get_db)):
+    """Prometheus scrape endpoint: METRICS_TOKEN bearer for scrapers, or a
+    signed-in user with metrics:read."""
+    import hmac
+    from fastapi.responses import Response as RawResponse
+    from backend.app.core.metrics import render
+    token = os.getenv("METRICS_TOKEN", "")
+    supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    allowed = bool(token) and bool(supplied) and hmac.compare_digest(supplied.encode(), token.encode())
+    if not allowed and supplied:
+        from backend.app.dependencies.auth import decode_access_token
+        from backend.app.dependencies.roles import has_permission
+        try:
+            claims = decode_access_token(supplied)
+            user = db.query(User).filter(User.email == claims["sub"]).first()
+            allowed = bool(user) and int(claims.get("tv", 0)) == int(user.token_version or 0) \
+                and has_permission(db, user, "metrics:read")
+        except HTTPException:
+            allowed = False
+    if not allowed:
+        raise HTTPException(status_code=401, detail="Metrics require authorization")
+    return RawResponse(render(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
 # --- SCHEMAS ---
 class AnalysisRequest(BaseModel):
     resume_text: str
@@ -185,6 +259,11 @@ app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR
 app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Profile"])
 app.include_router(automation_router.router, prefix="/api/v1/automation", tags=["Automation"])
 app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
+app.include_router(privacy_router.router, prefix="/api/v1/privacy", tags=["Privacy"])
+app.include_router(governance_router.router, prefix="/api/v1/governance", tags=["Governance"])
+
+from backend.app.core.telemetry import init_tracing  # noqa: E402
+init_tracing(app)
 
 # Admin login is under /api/v1/auth/admin/login (already in auth router)
 
