@@ -82,26 +82,25 @@ def owned_resume(identifier, db, user):
 async def upload_resume(file: UploadFile=File(...), job_description: str=Form(...), job_title: str=Form(...),
                         region: Optional[str]=Form(None),
                         db: Session=Depends(get_db), current_user=Depends(require_scan_quota)):
+    from backend.app.utils.upload_validation import validate_upload, UploadRejected, MAX_UPLOAD_BYTES
     filename = file.filename or ''
-    if not filename.lower().endswith(('.pdf','.docx')):
-        raise HTTPException(400, 'Use PDF or DOCX.')
-    content = await file.read(10*1024*1024+1)
-    if len(content)>10*1024*1024: raise HTTPException(400, 'Maximum file size is 10MB.')
-    if filename.lower().endswith('.pdf') and not content.startswith(b'%PDF'):
-        raise HTTPException(400, 'Invalid PDF.')
-    if filename.lower().endswith('.docx') and not content.startswith(b'PK\x03\x04'):
-        raise HTTPException(400, 'Invalid DOCX.')
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        # Magic bytes, page cap and zip-bomb checks before any parser runs.
+        await run_in_threadpool(validate_upload, filename, content)
+    except UploadRejected as exc:
+        raise HTTPException(400, str(exc)) from exc
     if not job_title.strip() or len(job_title)>200: raise HTTPException(400, 'Provide a target job title up to 200 characters.')
     task_id = str(uuid.uuid4())
     resolved_region = _region_for(current_user, region)
     stage = 'load_pipeline'
     def prepare():
         nonlocal stage
-        from backend.app.utils.ats_engine import (extract_text, extract_resume_data, extract_requirements,
+        from backend.app.utils.ats_engine import (extract_text, extract_text_with_ocr, extract_resume_data, extract_requirements,
                                                   rewrite_resume_for_job, prepare_resume_text, clean_job_description)
         from backend.app.utils.resume_quality import merge_rewrite, score_requirements
         stage = 'extract_text'
-        text = prepare_resume_text(extract_text(content, filename), filename)
+        text = prepare_resume_text(extract_text_with_ocr(content, filename), filename)
         clean_jd = clean_job_description(job_description)
         stage = 'extract_resume_data'
         original = extract_resume_data(text)

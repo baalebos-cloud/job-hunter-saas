@@ -12,6 +12,11 @@ RUN set -eux; \
         libpq-dev \
         build-essential \
         curl \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        poppler-utils \
+        fonts-noto-core \
+        fonts-wqy-zenhei \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

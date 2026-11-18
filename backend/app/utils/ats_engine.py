@@ -27,6 +27,24 @@ def extract_text(file_content: bytes, filename='resume.pdf'):
     raise ValueError('Use a text-based PDF or DOCX. Legacy DOC is not supported.')
 
 
+def extract_text_with_ocr(file_content: bytes, filename='resume.pdf'):
+    """Text extraction with a bounded OCR fallback for scanned PDFs or PDFs
+    whose fonts extract as (cid:N) codes."""
+    from backend.app.utils.ocr import needs_ocr, ocr_pdf, OcrUnavailable, CID_PATTERN
+    text = extract_text(file_content, filename)
+    if not filename.lower().endswith('.pdf') or not needs_ocr(text):
+        return text
+    try:
+        recognised = ocr_pdf(file_content)
+    except OcrUnavailable as exc:
+        logger.warning('resume_ocr_unavailable reason=%s', exc)
+        return text  # _text() reports the original, specific problem
+    if len(recognised.strip()) >= 40 and not CID_PATTERN.search(recognised):
+        logger.info('resume_ocr_fallback_used chars=%s', len(recognised))
+        return recognised
+    return text
+
+
 def get_client():
     if settings.GROQ_API_KEY:
         return OpenAI(api_key=settings.GROQ_API_KEY, base_url='https://api.groq.com/openai/v1', timeout=60, max_retries=1), settings.GROQ_MODEL
@@ -108,9 +126,9 @@ def _json(prompt, contract=None, client_model=None):
 def _text(file_content=None, filename='resume.pdf', **kwargs):
     text = file_content if isinstance(file_content, str) else extract_text(file_content, filename) if file_content else kwargs.get('resume_text', '')
     if not text or len(text.strip()) < 40:
-        raise ValueError('Could not read the resume. Use a text-based PDF or DOCX.')
+        raise ValueError('Could not read the resume, even with OCR. Use a text-based PDF or DOCX.')
     if re.search(r'\(cid:\d+\)', text):
-        raise ValueError('This PDF contains unreadable font characters. Upload the original DOCX or re-export the PDF with correctly encoded text before analysis.')
+        raise ValueError('This PDF contains unreadable font characters and OCR could not recover the text. Upload the original DOCX or re-export the PDF with correctly encoded text.')
     if len(text) > 50000:
         raise ValueError('Resume exceeds the supported 50,000-character limit; no content was truncated.')
     # Untrusted input: no markup/PDF actions reach the model, and builder
