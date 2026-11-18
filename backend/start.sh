@@ -20,7 +20,6 @@ case "$SERVICE_TYPE" in
     exec uvicorn backend.app.main:app \
       --host 0.0.0.0 \
       --port "${PORT:-8000}" \
-      --proxy-headers \
-      --forwarded-allow-ips "*"
+      --no-proxy-headers  # client IP resolved in-app from TRUSTED_PROXY_CIDRS
     ;;
 esac

@@ -29,7 +29,7 @@ def db(monkeypatch):
     Base.metadata.create_all(engine)
     session=sessionmaker(bind=engine)()
     monkeypatch.setattr('backend.app.services.job_automation.SessionLocal', sessionmaker(bind=engine))
-    users=[User(email='jayeolaoluwadamilare@gmail.com',full_name='Owner',hashed_password='x',is_admin=True,is_verified=True),
+    users=[User(email='jayeolaoluwadamilare@gmail.com',full_name='Owner',hashed_password='x',is_admin=True,role='super_admin',is_verified=True),
            User(email='candidate@example.com',full_name='Candidate',hashed_password='x',is_verified=True),
            User(email='hr@example.com',full_name='HR',hashed_password='x',is_hr=True,is_verified=True,hr_approved=True),
            User(email='pending@example.com',hashed_password='x',is_hr=True,is_verified=True,hr_approved=False)]
@@ -56,7 +56,9 @@ def test_resend_verification_reports_delivery_acceptance(client, db, monkeypatch
     response = client.post('/api/v1/auth/resend-verification', headers=headers(user.email))
     assert response.status_code == (200 if accepted else 503)
     assert calls[0]['to_email'] == user.email
-    assert calls[0]['token'] == user.verification_token
+    from backend.app.services.auth_service import hash_token
+    assert hash_token(calls[0]['token']) == user.verification_token  # only the hash is stored
+    assert calls[0]['token'] not in response.text
     assert not user.is_verified
     assert user.verification_token not in response.text
 
@@ -113,7 +115,7 @@ def test_owner_and_hr_boundaries(client,db):
     application=Application(user_id=2,job_id=job.id,status='submitted_internal');db.add(application);db.commit()
     assert client.get(f'/api/v1/hr/jobs/{job.id}/applications',headers=headers('hr@example.com')).status_code==404
     assert client.patch(f'/api/v1/hr/applications/{application.id}/status?new_status=offer',headers=headers('hr@example.com')).status_code==404
-    assert client.patch(f'/api/v1/admin/users/2/make-admin',headers=headers('jayeolaoluwadamilare@gmail.com')).status_code==403
+    assert client.patch(f'/api/v1/admin/users/2/make-admin',headers=headers('jayeolaoluwadamilare@gmail.com')).status_code==410  # replaced by RBAC
 
 
 def test_signup_cannot_self_assign_hr(client,db,monkeypatch):

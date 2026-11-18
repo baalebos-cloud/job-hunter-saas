@@ -1,7 +1,8 @@
 import io
+import logging
 import os
 import time
-from collections import defaultdict
+import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -18,6 +19,7 @@ from backend.app.routes import referral as referral_router
 from backend.app.routes import hr_auth as hr_auth_router
 from backend.app.routes import profile as profile_router
 from backend.app.routes import automation as automation_router
+from backend.app.routes import rbac as rbac_router
 from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
@@ -27,6 +29,9 @@ from backend.app.models.application import Application     # noqa: F401
 from backend.app.models.subscription import Subscription   # noqa: F401
 from backend.app.models.referral import Referral           # noqa: F401
 from backend.app.models.automation import AutomationEvent, ScrapeRun, AutomationState  # noqa: F401
+from backend.app.models.security import RefreshToken, RbacRole, RbacPermission  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Baalebos Cloud AI v2",
@@ -36,13 +41,14 @@ app = FastAPI(
     openapi_url=None if os.getenv("ENVIRONMENT") == "production" else "/openapi.json",
 )
 
-# ── Rate limiting (in-memory) ─────────────────────────────────────────────────
-# Tracks: {ip: [(timestamp, count)]}
-_rate_store: dict = defaultdict(list)
-
+# ── Rate limiting (Redis sliding window, trusted-proxy client IP) ────────────
 RATE_LIMITS = {
     "/api/v1/auth/login":        (10,  60),   # 10 requests per 60 seconds
+    "/api/v1/auth/admin/login":  (10,  60),
+    "/api/v1/hr-auth/login":     (10,  60),
     "/api/v1/auth/signup":       (5,   60),   # 5 requests per 60 seconds
+    "/api/v1/auth/forgot-password": (5, 300),
+    "/api/v1/auth/refresh":      (30,  60),
     # Read-only resume endpoints are owner-scoped; allow 2s status polling
     # (30/min) plus previews. Specific prefixes must precede "/api/v1/resume".
     "/api/v1/resume/status":     (120, 60),
@@ -55,36 +61,45 @@ RATE_LIMITS = {
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    from backend.app.core.client_ip import client_ip
+    return client_ip(request)
+
+
+def reset_rate_limits():
+    """Test helper: clear the in-memory fallback store."""
+    from backend.app.core.kv_store import memory_store
+    memory_store().clear()
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    ip = _get_client_ip(request)
+    from backend.app.core.rate_limit import hit
     path = request.url.path
-    now = time.time()
-
-    # Find matching rate limit rule
-    limit, window = RATE_LIMITS.get("default")
+    limit, window = RATE_LIMITS["default"]
     for route_prefix, (lim, win) in RATE_LIMITS.items():
         if route_prefix != "default" and path.startswith(route_prefix):
             limit, window = lim, win
             break
-
-    key = f"{ip}:{path}"
-    # Clean old entries
-    _rate_store[key] = [t for t in _rate_store[key] if now - t < window]
-    if len(_rate_store[key]) >= limit:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Too many requests. Please slow down."},
-            headers={"Retry-After": str(window)}
-        )
-    _rate_store[key].append(now)
+    allowed, retry_after = hit(f"{_get_client_ip(request)}:{path}", limit, window)
+    if not allowed:
+        return JSONResponse(status_code=429, content={"detail": "Too many requests. Please slow down."},
+                            headers={"Retry-After": str(retry_after)})
     return await call_next(request)
+
+
+def _trace_id(request: Request | None = None) -> str:
+    existing = getattr(getattr(request, "state", None), "trace_id", None) if request else None
+    return existing or uuid.uuid4().hex
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Opaque 500s: a trace ID for support, details only in server logs."""
+    trace_id = _trace_id(request)
+    logger.error('unhandled_exception trace_id=%s path=%s error_type=%s', trace_id, request.url.path,
+                 type(exc).__name__, exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "trace_id": trace_id},
+                        headers={"X-Trace-Id": trace_id})
 
 
 @app.middleware("http")
@@ -206,6 +221,7 @@ app.include_router(referral_router.router, prefix="/api/v1/referral",  tags=["Re
 app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR Auth"])
 app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Profile"])
 app.include_router(automation_router.router, prefix="/api/v1/automation", tags=["Automation"])
+app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
 
 # Admin login is under /api/v1/auth/admin/login (already in auth router)
 
@@ -213,11 +229,12 @@ app.include_router(automation_router.router, prefix="/api/v1/automation", tags=[
 @app.post("/api/v1/ai/analyze", tags=["AI Engine"])
 async def analyze_resume_against_job(payload: AnalysisRequest, current_user=Depends(auth.get_current_user)):
     try:
-        result = await ai_engine.analyze_resume(payload.resume_text, payload.job_description)
-        return result
-    except Exception as e:
-        print(f"Detailed Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return await ai_engine.analyze_resume(payload.resume_text, payload.job_description)
+    except Exception as exc:
+        # Never echo exception text: it can contain provider or candidate data.
+        trace_id = _trace_id()
+        logger.error('ai_analyze_failed trace_id=%s error_type=%s', trace_id, type(exc).__name__)
+        raise HTTPException(status_code=500, detail=f"Analysis failed. Reference: {trace_id}")
 
 @app.get("/")
 @app.get("/health")
@@ -229,13 +246,13 @@ async def health_check():
 @app.post("/api/v1/cron/scrape")
 @app.get("/api/v1/cron/scrape")
 async def cron_scrape(request: Request):
-    """Cron-safe endpoint — accepts secret via query param or header for Railway cron."""
-    secret = (
-        request.headers.get("X-Cron-Secret", "")
-        or request.query_params.get("secret", "")
-    )
-    expected = os.getenv("CRON_SECRET", os.getenv("ADMIN_SECRET_KEY", ""))
-    if not expected or secret != expected:
+    """Cron-safe endpoint. The secret is accepted only in the X-Cron-Secret
+    header (query strings end up in access logs) and compared in constant time."""
+    import hmac
+    from backend.app.core.config import settings
+    supplied = request.headers.get("X-Cron-Secret", "")
+    expected = settings.CRON_SECRET or os.getenv("CRON_SECRET", os.getenv("ADMIN_SECRET_KEY", ""))
+    if not expected or not supplied or not hmac.compare_digest(supplied.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Forbidden")
     from fastapi.concurrency import run_in_threadpool
     from backend.app.utils.global_scraper import scrape_global_jobs

@@ -16,7 +16,9 @@ import time
 from backend.app.dependencies.roles import require_admin
 from backend.app.database import get_db
 from backend.app.models.user import User
-from backend.app.services.auth_service import hash_password, verify_password, create_access_token
+from backend.app.services.auth_service import hash_password, hash_token, new_opaque_token
+from backend.app.core.rate_limit import LoginGuard
+from fastapi import Response
 from backend.app.utils.email import send_verification_email, _send
 
 router = APIRouter(tags=["HR Auth"])
@@ -33,18 +35,8 @@ BLOCKED_DOMAINS = {
     "throwaway.email", "mailinator.com", "guerrillamail.com",
 }
 
-# Brute force protection
-_failed: dict = defaultdict(list)
-
-def _check_bf(ip: str):
-    now = time.time()
-    _failed[ip] = [t for t in _failed[ip] if now - t < 300]
-    if len(_failed[ip]) >= 5:
-        raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 5 minutes.")
-
-def _get_ip(request: Request) -> str:
-    fwd = request.headers.get("X-Forwarded-For")
-    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+# Brute-force protection shared across replicas (Redis), per IP and per account.
+hr_login_guard = LoginGuard('hr')
 
 
 class HRSignupRequest(BaseModel):
@@ -206,7 +198,7 @@ def hr_signup(
         raise HTTPException(status_code=400, detail="Company name is required.")
 
     # 3. Create user — is_hr=True but is_verified=False, hr_approved=False
-    verification_token = secrets.token_urlsafe(32)
+    verification_token, verification_digest = new_opaque_token()
     new_user = User(
         email=payload.email.lower().strip(),
         full_name=payload.full_name.strip(),
@@ -215,7 +207,7 @@ def hr_signup(
         country=payload.country or None,
         is_hr=True,
         is_verified=False,
-        verification_token=verification_token,
+        verification_token=verification_digest,
     )
     db.add(new_user)
     db.commit()
@@ -259,7 +251,7 @@ def hr_verify_email(token: str, db: Session = Depends(get_db)):
     Marks email as verified. Account still needs admin approval to login.
     """
     user = db.query(User).filter(
-        User.verification_token == token,
+        User.verification_token == hash_token(token),
         User.is_hr == True
     ).first()
     if not user:
@@ -280,7 +272,7 @@ def hr_verify_email(token: str, db: Session = Depends(get_db)):
 
 # ── POST /hr-auth/login ───────────────────────────────────────────────────────
 @router.post("/login")
-def hr_login(payload: HRLoginRequest, request: Request, db: Session = Depends(get_db)):
+def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Dedicated HR login — validates:
     1. Company email only (no free providers)
@@ -289,20 +281,12 @@ def hr_login(payload: HRLoginRequest, request: Request, db: Session = Depends(ge
     4. Account is admin-approved (is_verified + not blocked)
     5. Correct password
     """
-    ip = _get_ip(request)
-    _check_bf(ip)
-
+    from backend.app.routes.auth import authenticate, start_session
     # Block free email logins at the HR portal
     _validate_company_email(payload.email)
-
-    user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
-
-    if not user or not verify_password(payload.password, user.hashed_password):
-        _failed[ip].append(time.time())
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    user = authenticate(db, request, payload.email, payload.password, hr_login_guard)
 
     if not user.is_hr:
-        _failed[ip].append(time.time())
         raise HTTPException(
             status_code=403,
             detail="This account is not registered as an HR account. "
@@ -319,15 +303,12 @@ def hr_login(payload: HRLoginRequest, request: Request, db: Session = Depends(ge
     if not user.hr_approved:
         raise HTTPException(403, "Your employer account is awaiting administrator approval.")
 
-    token = create_access_token({"sub": user.email})
-    return {
-        "access_token": token,
-        "token_type":   "bearer",
+    return start_session(db, user, response, {
         "is_hr":        True,
         "full_name":    user.full_name,
         "company_name": user.company_name,
         "redirect":     "/hr",
-    }
+    })
 
 
 # ── POST /hr-auth/approve/{user_id} — Admin only ──────────────────────────────

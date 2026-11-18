@@ -170,7 +170,7 @@ def test_refiner_sanitizes_llm_inputs_and_returns_before_after(monkeypatch):
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
     from backend.app.database import Base, get_db
-    from backend.app.main import app, _rate_store
+    from backend.app.main import app, reset_rate_limits
     from backend.app.models.user import User
     from backend.app.services.auth_service import create_access_token
     import backend.app.utils.ats_engine as engine
@@ -181,7 +181,7 @@ def test_refiner_sanitizes_llm_inputs_and_returns_before_after(monkeypatch):
     session.add(User(email='r@example.com', full_name='R', hashed_password='x', is_verified=True, country='Nigeria'))
     session.commit()
     app.dependency_overrides[get_db] = lambda: session
-    _rate_store.clear()
+    reset_rate_limits()
     seen = {}
     base = {'name': 'Ada Obi', 'title': '', 'contact': 'ada@example.com', 'summary': 'Python engineer.',
             'experience': [{'role': 'Engineer', 'company': 'Acme', 'dates': '2021', 'bullets': ['Built Python tools.'], 'environment': ''}],

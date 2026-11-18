@@ -18,7 +18,22 @@ class Settings(BaseSettings):
         env="SECRET_KEY"
     )
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 days
+    # Short-lived access JWTs; sessions continue via rotating refresh cookies.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, ge=1, le=60)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=14, ge=1, le=90)
+    REFRESH_COOKIE_NAME: str = "bb_refresh"
+    # "strict" requires the API on the same site as the dashboard
+    # (e.g. api.baalebo.xyz). Use "none" only while the API is cross-site.
+    REFRESH_COOKIE_SAMESITE: str = Field(default="strict", pattern="^(strict|lax|none)$")
+    REFRESH_COOKIE_SECURE: bool = True
+    REFRESH_COOKIE_DOMAIN: str = ""
+    REFRESH_COOKIE_PATH: str = "/api/v1/auth"
+    # Proxies whose X-Forwarded-For is trusted (ALB / Railway edge). Comma list.
+    TRUSTED_PROXY_CIDRS: str = ""
+    CRON_SECRET: str = ""
+    # One-time bootstrap: this verified account is granted super_admin by the
+    # RBAC migration. Afterwards roles are managed in the database.
+    ADMIN_EMAIL: str = ""
 
     # --- AI ---
     GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")

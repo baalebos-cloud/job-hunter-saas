@@ -44,6 +44,12 @@ class User(Base):
     job_alerts_enabled_at = Column(DateTime, nullable=True)
     job_alert_work_type  = Column(String, default="all", nullable=False)
 
+    # RBAC governance role (super_admin, security_auditor, engineering_lead,
+    # compliance_officer, viewer); NULL for candidates and employers.
+    role                = Column(String, nullable=True, index=True)
+    # Incremented on password reset / "log out everywhere": invalidates JWTs.
+    token_version       = Column(Integer, default=0, nullable=False, server_default="0")
+
     created_at          = Column(DateTime, default=datetime.utcnow)
 
     resumes            = relationship("Resume",          back_populates="owner")

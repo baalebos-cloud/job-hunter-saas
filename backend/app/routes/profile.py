@@ -189,6 +189,14 @@ def link_resume_to_profile(
     db: Session = Depends(get_db)
 ):
     """Link an already-uploaded optimized resume as the profile's public resume."""
+    from backend.app.utils.url_safety import validate_public_https_url, UnsafeUrl
+    try:
+        resume_url = validate_public_https_url(resume_url)
+    except UnsafeUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    filename = (filename or '').strip()[:255]
+    if not filename or any(c in filename for c in '/\\\x00'):
+        raise HTTPException(status_code=422, detail="Provide a plain file name.")
     current_user.resume_url      = resume_url
     current_user.resume_filename = filename
     db.commit()

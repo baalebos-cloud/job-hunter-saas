@@ -249,7 +249,7 @@ def db():
 @pytest.fixture
 def client(db):
     from backend.app import main
-    main._rate_store.clear()
+    main.reset_rate_limits()
     return TestClient(app)
 
 
