@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { apiErrorMessage, filenameFromDisposition } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
@@ -138,7 +139,7 @@ function FaqSection() {
     { q: 'Is Baalebos free?', a: 'The free plan includes two resume scans per month. Your completed resume includes a PDF preview and download. See Plans for current limits.' },
     { q: 'Is my resume stored or shared?', a: 'Your resume is processed securely and only used to generate your analysis. Resume text is sent to the configured AI provider for processing. Generated documents are stored in your account.' },
     { q: 'What file formats are supported?', a: 'We support PDF and DOCX file formats. For best results, use a clean single-column PDF.' },
-    { q: 'How do I improve my ATS score?', a: 'Add the missing keywords naturally into your resume, quantify achievements with numbers, use strong action verbs, and mirror the exact language from the job description.' },
+    { q: 'How do I improve my ATS score?', a: 'Confirm only the suggested skills you genuinely have, and Baalebos will add them to the PDF. Describe real achievements with strong action verbs and the exact language of the job description. Never add numbers you cannot substantiate.' },
   ];
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
@@ -162,20 +163,27 @@ function FaqSection() {
 }
 
 // NEW: Resume Download Modal
-function ResumeDownloadModal({isOpen,onClose,onDownload,downloading,resume_id}) {
+function ResumeDownloadModal({isOpen,onClose,onDownload,downloading,resume_id,version,downloadError}) {
  const [url,setUrl]=useState(null);const [error,setError]=useState('');
  useEffect(()=>{if(!isOpen||!resume_id)return;let active=true;let objectUrl;
  setUrl(null);setError('');
  axios.get(`${API_BASE_URL}/resume/preview/${resume_id}`,{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`},responseType:'blob'})
  .then(r=>{if(!r.headers['content-type']?.includes('application/pdf'))throw new Error('Invalid preview');objectUrl=URL.createObjectURL(new Blob([r.data],{type:'application/pdf'}));if(active)setUrl(objectUrl);else URL.revokeObjectURL(objectUrl)})
- .catch(()=>{if(active)setError('Preview could not load. Please close and retry.')});
+ .catch(async err=>{const message=err?.response?await apiErrorMessage(err,'Preview could not load. Please close and retry.'):'Preview could not load. Please close and retry.';if(active)setError(message)});
  return()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
- },[isOpen,resume_id]);
+ },[isOpen,resume_id,version]);
  if(!isOpen)return null;
- return <div className="fixed inset-0 bg-black/40 z-50 p-4 flex items-center justify-center"><section role="dialog" aria-modal="true" aria-label="Resume preview" className="bg-white rounded-2xl w-full max-w-4xl p-5"><div className="flex justify-between items-center mb-4"><h2 className="font-semibold text-xl">Review your tailored resume</h2><button aria-label="Close preview" onClick={onClose}>✕</button></div><p className="text-sm text-slate-500 mb-4">Check all facts and qualifications. This is the same PDF that downloads.</p>{error?<p role="alert">{error}</p>:url?<object data={url} type="application/pdf" className="w-full h-[60vh]"><a href={url} target="_blank" rel="noopener noreferrer">Open the PDF preview</a></object>:<p role="status" className="py-20 text-center">Loading document preview…</p>}<div className="flex justify-end gap-3 mt-4"><button onClick={onClose} className="border rounded-xl px-4 py-3">Close</button><button disabled={downloading||!url} onClick={()=>onDownload('ats')} className="bg-emerald-700 text-white rounded-xl px-5 py-3 disabled:opacity-50">{downloading?'Downloading…':'Download PDF'}</button></div></section></div>
+ return <div className="fixed inset-0 bg-black/40 z-50 p-4 flex items-center justify-center"><section role="dialog" aria-modal="true" aria-label="Resume preview" className="bg-white rounded-2xl w-full max-w-4xl p-5"><div className="flex justify-between items-center mb-4"><h2 className="font-semibold text-xl">Review your tailored resume</h2><button aria-label="Close preview" onClick={onClose}>✕</button></div><p className="text-sm text-slate-500 mb-4">Check all facts and qualifications. This is the same PDF that downloads.</p>{error?<p role="alert" className="text-red-700 bg-red-50 p-4 rounded-xl">{error}</p>:url?<iframe src={url} title="Tailored resume PDF preview" className="w-full h-[60vh] border border-slate-200 rounded-lg"/>:<p role="status" className="py-20 text-center">Loading document preview…</p>}{downloadError&&<p role="alert" className="text-red-700 bg-red-50 p-3 rounded-xl mt-3 text-sm">{downloadError}</p>}<div className="flex justify-end gap-3 mt-4"><button onClick={onClose} className="border rounded-xl px-4 py-3">Close</button><button disabled={downloading||!url} onClick={onDownload} className="bg-emerald-700 text-white rounded-xl px-5 py-3 disabled:opacity-50">{downloading?'Downloading…':'Download PDF'}</button></div></section></div>
 }
 
-export default function AtsResultView({ data }) {
+export default function AtsResultView({ data: initialData }) {
+  const [data, setData] = useState(initialData);
+  useEffect(() => { setData(initialData); }, [initialData]);
+  const [previewVersion, setPreviewVersion] = useState(0);
+  const [downloadError, setDownloadError] = useState('');
+  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerateMessage, setRegenerateMessage] = useState(null);
   const [matchedJobs, setMatchedJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -188,6 +196,8 @@ export default function AtsResultView({ data }) {
     total_keywords = 0, breakdown = {}, missing_list = [],
     job_title = 'Target Role', resume_id, task_id,
   } = data || {};
+  const suggestedSkills = (data?.suggested_skills ?? missing_list ?? []).filter(k => typeof k === 'string');
+  const documentInfo = data?.document;
 
   useEffect(() => {
     if (!token) return;
@@ -226,14 +236,36 @@ export default function AtsResultView({ data }) {
     setShowDownloadModal(true);
   };
 
-  const handleDownloadWithFormat = async (format) => {
+  const toggleSkill = (skill) => setSelectedSkills(current =>
+    current.includes(skill) ? current.filter(s => s !== skill) : [...current, skill]);
+
+  const handleRegenerate = async () => {
+    const resumeIdentifier = resume_id || task_id;
+    if (!resumeIdentifier || !selectedSkills.length) return;
+    setRegenerating(true); setRegenerateMessage(null);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/resume/regenerate/${resumeIdentifier}`,
+        { confirmed_keywords: selectedSkills },
+        { headers: { Authorization: `Bearer ${token}` } });
+      setData(res.data.result);
+      setSelectedSkills([]);
+      setPreviewVersion(v => v + 1);
+      setRegenerateMessage({ ok: true, text: 'Your resume PDF was regenerated with the skills you confirmed. Review it before downloading.' });
+    } catch (err) {
+      setRegenerateMessage({ ok: false, text: await apiErrorMessage(err, 'The resume could not be regenerated. Please retry.') });
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleDownload = async () => {
     const resumeIdentifier = resume_id || task_id;
     if (!resumeIdentifier) {
-      alert('Resume ID not found. Please try refreshing the page.');
+      setDownloadError('Resume ID not found. Please run the analysis again.');
       return;
     }
 
-    setDownloading(true);
+    setDownloading(true); setDownloadError('');
     try {
       const res = await axios.get(`${API_BASE_URL}/resume/download/${resumeIdentifier}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -242,15 +274,15 @@ export default function AtsResultView({ data }) {
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Baalebos_${format === 'ats' ? 'ATS_' : 'Formatted_'}Optimized_${job_title}.pdf`);
+      link.setAttribute('download', filenameFromDisposition(res.headers['content-disposition'], 'Resume.pdf'));
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
       setDownloaded(true);
       setShowDownloadModal(false);
-    } catch {
-      alert('Resume is still being generated. Please wait a moment and try again.');
+    } catch (err) {
+      setDownloadError(await apiErrorMessage(err, 'The PDF could not be downloaded. Please retry.'));
     } finally {
       setDownloading(false);
     }
@@ -299,19 +331,31 @@ export default function AtsResultView({ data }) {
       </div>
 
       {/* Top Keywords */}
-      {missing_list?.length > 0 && (
+      {(suggestedSkills.length > 0 || regenerateMessage) && (
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Qualifications to confirm</h3>
-          <p className="text-slate-500 text-xs mb-5">These requirements lack exact phrase evidence in your resume. Confirm relevant experience before including them.</p>
-          <div className="flex flex-wrap gap-2">
-            {missing_list.slice(0, 12).map((kw, i) => (
-              <span key={i} className="px-3 py-1.5 rounded-lg text-xs font-bold border"
-                style={{ backgroundColor: i < 3 ? '#fef3c7' : '#f8fafc', borderColor: i < 3 ? '#fcd34d' : '#e2e8f0', color: i < 3 ? '#92400e' : '#475569' }}>
-                {typeof kw === 'string' ? kw : kw.skill || kw}
-                {i < 3 && <span className="ml-1 text-amber-500">★</span>}
-              </span>
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Suggested skills to confirm</h3>
+          <p className="text-slate-500 text-xs mb-5">These job requirements were not found in your resume, so they were <strong>not</strong> added. Tick only the ones you genuinely have; they will be added to your Skills section.</p>
+          <fieldset className="flex flex-wrap gap-2">
+            <legend className="sr-only">Suggested skills</legend>
+            {suggestedSkills.slice(0, 20).map(skill => (
+              <label key={skill} className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer flex items-center gap-2 ${selectedSkills.includes(skill) ? 'bg-emerald-50 border-emerald-400 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                <input type="checkbox" checked={selectedSkills.includes(skill)} onChange={() => toggleSkill(skill)} />
+                {skill}
+              </label>
             ))}
-          </div>
+          </fieldset>
+          {suggestedSkills.length > 0 && (
+            <button onClick={handleRegenerate} disabled={!selectedSkills.length || regenerating}
+              className="mt-5 bg-emerald-700 text-white rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50">
+              {regenerating ? 'Regenerating…' : `I have these skills — add ${selectedSkills.length || ''} and regenerate PDF`}
+            </button>
+          )}
+          {regenerateMessage && <p role={regenerateMessage.ok ? 'status' : 'alert'} className={`mt-4 text-sm p-3 rounded-xl ${regenerateMessage.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{regenerateMessage.text}</p>}
+        </div>
+      )}
+      {documentInfo?.warnings?.length > 0 && (
+        <div role="note" className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-sm text-amber-900">
+          {documentInfo.warnings.map((warning, i) => <p key={i}>{warning}</p>)}
         </div>
       )}
 
@@ -423,8 +467,10 @@ export default function AtsResultView({ data }) {
       {/* Download Modal */}
       <ResumeDownloadModal 
         isOpen={showDownloadModal} 
-        onClose={() => setShowDownloadModal(false)} 
-        onDownload={handleDownloadWithFormat}
+        onClose={() => { setShowDownloadModal(false); setDownloadError(''); }} 
+        onDownload={handleDownload}
+        version={previewVersion}
+        downloadError={downloadError}
         job_title={job_title}
         downloading={downloading}
         resume_id={displayResumeId}
