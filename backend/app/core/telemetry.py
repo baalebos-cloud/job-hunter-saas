@@ -11,6 +11,15 @@ import os
 logger = logging.getLogger(__name__)
 
 
+def _strip_query(span, scope):
+    if span is None or not span.is_recording():
+        return
+    headers = dict(scope.get("headers") or [])
+    host = headers.get(b"host", b"").decode("latin-1") or "unknown"
+    span.set_attribute("http.url", f"{scope.get('scheme', 'http')}://{host}{scope.get('path', '')}")
+    span.set_attribute("http.target", scope.get("path", ""))
+
+
 def init_tracing(app) -> bool:
     if not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
         return False
@@ -30,8 +39,10 @@ def init_tracing(app) -> bool:
     provider = TracerProvider(resource=resource)
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
-    # Query strings and request bodies are not recorded as span attributes.
-    FastAPIInstrumentor.instrument_app(app, excluded_urls="health,metrics", tracer_provider=provider)
+    # Request bodies are never recorded; query strings (which can carry
+    # tokens or personal data) are stripped from the URL attribute.
+    FastAPIInstrumentor.instrument_app(app, excluded_urls="health,metrics", tracer_provider=provider,
+                                       server_request_hook=_strip_query)
     from backend.app.database import engine, read_engine
     SQLAlchemyInstrumentor().instrument(engines=[e for e in {engine, read_engine}], tracer_provider=provider)
     logger.info("otel_tracing_enabled")

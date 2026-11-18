@@ -327,5 +327,15 @@ def test_tracing_is_opt_in(monkeypatch):
     monkeypatch.delenv('OTEL_EXPORTER_OTLP_ENDPOINT', raising=False)
     assert init_tracing(FastAPI()) is False
     pytest.importorskip('opentelemetry.instrumentation.fastapi')
-    monkeypatch.setenv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://127.0.0.1:4318')
-    assert init_tracing(FastAPI()) is True
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr('opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter', lambda: exporter)
+    monkeypatch.setenv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://collector.invalid:4318')
+    probe = FastAPI()
+    probe.get('/ping')(lambda: {'ok': True})
+    assert init_tracing(probe) is True
+    assert TestClient(probe).get('/ping?token=secret').status_code == 200
+    from opentelemetry import trace
+    trace.get_tracer_provider().force_flush()
+    spans = exporter.get_finished_spans()
+    assert spans and all('secret' not in str(dict(span.attributes)) for span in spans)
