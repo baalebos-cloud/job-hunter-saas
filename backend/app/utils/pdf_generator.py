@@ -553,7 +553,9 @@ def generate_optimized_resume(filename=None, score=0, improvements=None, resume_
 def download_filename(name) -> tuple[str, str]:
     """Return (ascii_fallback, utf8_name) e.g. "Olajide_Ebun_Adewale_Resume.pdf"."""
     text = _text(name)
-    utf8 = re.sub(r'[^\w\-]+', '_', text, flags=re.UNICODE).strip('_')
+    # Keep letters, digits and combining marks (e.g. Yoruba tone marks).
+    utf8 = ''.join(c if c.isalnum() or c == '-' or unicodedata.combining(c) else '_' for c in text)
+    utf8 = re.sub(r'_+', '_', utf8).strip('_')
     ascii_name = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode()
     ascii_name = re.sub(r'[^A-Za-z0-9\-]+', '_', ascii_name).strip('_')
     ascii_name = (ascii_name[:80] or 'Candidate') + '_Resume.pdf'

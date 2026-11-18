@@ -189,6 +189,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the cross-origin dashboard read the candidate-named PDF filename.
+    expose_headers=["Content-Disposition"],
 )
 
 # --- ROUTES ---

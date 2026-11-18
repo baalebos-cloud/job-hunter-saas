@@ -215,7 +215,7 @@ def test_normalize_dates(raw, expected):
 
 
 def test_download_filename_is_candidate_name():
-    assert download_filename(YORUBA_NAME)[0] == 'Olajide_Ebun_Adewale_Resume.pdf'
+    assert download_filename(YORUBA_NAME) == ('Olajide_Ebun_Adewale_Resume.pdf', 'Ọlájídé_Ẹ̀bùn_Adéwálé_Resume.pdf')
     assert download_filename(None)[0] == 'Candidate_Resume.pdf'
 
 

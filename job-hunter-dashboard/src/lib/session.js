@@ -39,11 +39,13 @@ export async function apiErrorMessage(err, fallback = 'Something went wrong. Ple
   return fallback;
 }
 
-// Filename from Content-Disposition (prefers RFC 5987 filename*).
+// Filename from Content-Disposition. Prefers the ASCII `filename` (portable
+// across browsers and file systems); falls back to RFC 5987 `filename*`.
 export function filenameFromDisposition(header, fallback = 'Resume.pdf') {
   if (!header) return fallback;
+  const plain = /(?:^|;)\s*filename="?([^";]+)"?/i.exec(header);
+  if (plain) return plain[1];
   const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
   if (star) { try { return decodeURIComponent(star[1]); } catch { /* fall through */ } }
-  const plain = /filename="?([^";]+)"?/i.exec(header);
-  return plain ? plain[1] : fallback;
+  return fallback;
 }
