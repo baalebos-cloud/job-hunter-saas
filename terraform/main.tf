@@ -1,7 +1,11 @@
 # --- VARIABLES ---
 variable "project_name" { default = "jobhunter" }
 variable "db_username" { default = "postgres" }
-variable "db_password" { default = "SuperDevOps_Cloud0544!?" }
+# No default: supply it via TF_VAR_db_password or a git-ignored *.tfvars file.
+variable "db_password" {
+  type      = string
+  sensitive = true
+}
 variable "db_name" { default = "jobhunter" }
 
 # --- DATA SOURCE FOR LATEST AMI ---

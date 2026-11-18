@@ -10,3 +10,7 @@ build/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Terraform variable files can hold credentials
+*.tfvars
+!*.tfvars.example
