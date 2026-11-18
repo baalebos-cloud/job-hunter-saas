@@ -1,8 +1,8 @@
 # --- VARIABLES ---
-variable "project_name"     { default = "jobhunter" }
-variable "db_username"      { default = "postgres" }
-variable "db_password"      { default = "SuperDevOps_Cloud0544!?" }
-variable "db_name"          { default = "jobhunter" }
+variable "project_name" { default = "jobhunter" }
+variable "db_username" { default = "postgres" }
+variable "db_password" { default = "SuperDevOps_Cloud0544!?" }
+variable "db_name" { default = "jobhunter" }
 
 # --- DATA SOURCE FOR LATEST AMI ---
 data "aws_ami" "amazon_linux_2023" {
@@ -122,12 +122,12 @@ resource "aws_security_group" "rds_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
+    from_port = 5432
+    to_port   = 5432
+    protocol  = "tcp"
     # Allow the entire VPC internal range (10.0.0.0/16) 
     # to talk to the database
-    cidr_blocks = ["10.0.1.0/24", "10.0.2.0/24"] 
+    cidr_blocks = ["10.0.1.0/24", "10.0.2.0/24"]
   }
 
   egress {
@@ -155,7 +155,7 @@ resource "aws_db_instance" "postgres" {
   password               = var.db_password
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  publicly_accessible    = false   # safer in private subnets
+  publicly_accessible    = false # safer in private subnets
   skip_final_snapshot    = true
 }
 
@@ -211,8 +211,8 @@ resource "aws_autoscaling_group" "api" {
   min_size            = 2
   vpc_zone_identifier = [aws_subnet.public1.id, aws_subnet.public2.id]
 
-  target_group_arns   = [aws_lb_target_group.app_tg.arn]
-  health_check_type   = "ELB"
+  target_group_arns         = [aws_lb_target_group.app_tg.arn]
+  health_check_type         = "ELB"
   health_check_grace_period = 300
 
   launch_template {
@@ -223,7 +223,7 @@ resource "aws_autoscaling_group" "api" {
   tag {
     key                 = "Name"
     value               = "jobhunter-asg-instance"
-  propagate_at_launch = true
+    propagate_at_launch = true
   }
 }
 
