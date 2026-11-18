@@ -36,11 +36,16 @@ def _region_for(user, requested=None):
     return resolve_region(requested, getattr(user, 'country', None))
 
 
-def _export(tailored, region, one_page, requirements):
-    """Render the resume; candidate content only, never optimizer notes."""
-    from backend.app.utils.pdf_generator import export_resume
+def _export(tailored, region, requirements):
+    """Render the strictly one-page resume; candidate content only."""
+    from backend.app.utils.pdf_generator import export_resume, ResumeExportError
+    from pypdf import PdfReader
+    from io import BytesIO
     keywords = [r.get('phrase') or r.get('requirement') for r in requirements or [] if isinstance(r, dict)]
-    return export_resume(tailored, region=region, max_pages=1 if one_page else 2, priority_keywords=keywords)
+    result = export_resume(tailored, region=region, priority_keywords=keywords)
+    if len(PdfReader(BytesIO(result.pdf)).pages) != 1:  # hard invariant, checked again before storing
+        raise ResumeExportError('The resume could not be fitted on one page.')
+    return result
 
 
 def _save(db, record):
@@ -75,7 +80,7 @@ def owned_resume(identifier, db, user):
 
 @router.post('/upload')
 async def upload_resume(file: UploadFile=File(...), job_description: str=Form(...), job_title: str=Form(...),
-                        region: Optional[str]=Form(None), one_page: bool=Form(False),
+                        region: Optional[str]=Form(None),
                         db: Session=Depends(get_db), current_user=Depends(require_scan_quota)):
     filename = file.filename or ''
     if not filename.lower().endswith(('.pdf','.docx')):
@@ -92,34 +97,37 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
     stage = 'load_pipeline'
     def prepare():
         nonlocal stage
-        from backend.app.utils.ats_engine import extract_text, extract_resume_data, extract_requirements, rewrite_resume_for_job
+        from backend.app.utils.ats_engine import (extract_text, extract_resume_data, extract_requirements,
+                                                  rewrite_resume_for_job, prepare_resume_text, clean_job_description)
         from backend.app.utils.resume_quality import merge_rewrite, score_requirements
         stage = 'extract_text'
-        text = extract_text(content, filename)
+        text = prepare_resume_text(extract_text(content, filename), filename)
+        clean_jd = clean_job_description(job_description)
         stage = 'extract_resume_data'
         original = extract_resume_data(text)
         stage = 'extract_requirements'
         requirements = extract_requirements(job_description)
         stage = 'score_original'
-        before = score_requirements(text, job_description, requirements)
+        before = score_requirements(text, clean_jd, requirements)
         stage = 'rewrite_resume'
-        rewrite = rewrite_resume_for_job(resume_text=text, resume_data=original, job_description=job_description, job_title=job_title)
+        rewrite = rewrite_resume_for_job(resume_text=text, resume_data=original, job_description=clean_jd, job_title=job_title)
         stage = 'validate_rewrite'
         tailored = merge_rewrite(original, rewrite, text)
         stage = 'export_pdf'
-        exported_resume = _export(tailored, resolved_region, one_page, requirements)
+        exported_resume = _export(tailored, resolved_region, requirements)
         pdf = exported_resume.pdf
         stage = 'read_exported_pdf'
         exported = extract_text(pdf, 'resume.pdf')
         stage = 'score_exported_pdf'
-        analysis = score_requirements(exported, job_description, requirements)
-        analysis.update(original_score=before['overall_score'], confirmation_questions=rewrite.get('confirmation_questions',[]),
-                        suggestions_applied=rewrite.get('suggestions_applied',[]), job_title=job_title, job_description=job_description,
-                        task_id=task_id, resume_id=task_id, status='success',
+        analysis = score_requirements(exported, clean_jd, requirements)
+        analysis.update(original_score=before['overall_score'],
+                        scores={'before': before['overall_score'], 'after': analysis['overall_score']}, confirmation_questions=rewrite.get('confirmation_questions',[]),
+                        suggestions_applied=rewrite.get('suggestions_applied',[]), job_title=job_title,
+                        job_description=clean_jd, task_id=task_id, resume_id=task_id, status='success',
                         # Missing requirements are suggestions only; they enter the
                         # resume solely through /regenerate with explicit confirmation.
                         suggested_skills=list(analysis.get('missing_list', [])), confirmed_keywords=[],
-                        one_page=bool(one_page), document=exported_resume.info())
+                        document=exported_resume.info())
         return tailored, analysis, pdf
     try:
         tailored, analysis, pdf = await run_in_threadpool(prepare)
@@ -155,7 +163,6 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
 class RegenerateRequest(BaseModel):
     confirmed_keywords: list[str] = Field(default_factory=list, max_length=50)
     region: Optional[str] = None
-    one_page: Optional[bool] = None
 
 
 @router.post('/regenerate/{task_id}')
@@ -179,12 +186,11 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
         raise HTTPException(422, 'Only suggested skills from this analysis can be confirmed.')
     confirmed = previous + [allowed.get(normalize(k), k) for k in requested if normalize(k) not in {normalize(p) for p in previous}]
     region = _region_for(current_user, body.region or analysis.get('document', {}).get('region'))
-    one_page = analysis.get('one_page', False) if body.one_page is None else body.one_page
     requirements = [{'phrase': r.get('requirement'), 'priority': r.get('priority')}
                     for r in analysis.get('requirements', []) if isinstance(r, dict)]
     try:
         updated = merge_confirmed_keywords(tailored, confirmed)
-        exported_resume = _export(updated, region, one_page, requirements)
+        exported_resume = _export(updated, region, requirements)
         rescored = score_requirements(extract_text(exported_resume.pdf, 'resume.pdf'),
                                       analysis.get('job_description', ''), requirements)
     except ResumeExportError as exc:
@@ -193,7 +199,8 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
         raise HTTPException(422, 'The resume could not be regenerated. Please retry.') from exc
     confirmed_keys = {normalize(k) for k in confirmed}
     analysis.update(rescored, suggested_skills=[k for k in rescored.get('missing_list', []) if normalize(k) not in confirmed_keys],
-                    confirmed_keywords=confirmed, one_page=bool(one_page), document=exported_resume.info(),
+                    confirmed_keywords=confirmed, document=exported_resume.info(),
+                    scores={'before': analysis.get('original_score'), 'after': rescored['overall_score']},
                     task_id=task_id, resume_id=task_id, status='success')
     record.content = exported_resume.pdf
     record.parsed_data = json.dumps(updated)

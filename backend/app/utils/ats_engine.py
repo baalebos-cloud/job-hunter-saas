@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from backend.app.utils.resume_contracts import ExtractedResume, ResumeRewrite, Requirements
 from backend.app.core.config import settings
 from backend.app.utils.resume_quality import validate_resume, score_requirements
+from backend.app.utils.sanitize import sanitize_untrusted_text, strip_watermarks_and_branding
 logger = logging.getLogger(__name__)
 
 
@@ -112,10 +113,20 @@ def _text(file_content=None, filename='resume.pdf', **kwargs):
         raise ValueError('This PDF contains unreadable font characters. Upload the original DOCX or re-export the PDF with correctly encoded text before analysis.')
     if len(text) > 50000:
         raise ValueError('Resume exceeds the supported 50,000-character limit; no content was truncated.')
-    return text
+    # Untrusted input: no markup/PDF actions reach the model, and builder
+    # watermarks, page counters or tool commentary are not candidate content.
+    return strip_watermarks_and_branding(sanitize_untrusted_text(text))
+
+
+prepare_resume_text = _text
+
+
+def clean_job_description(job_description):
+    return sanitize_untrusted_text(job_description)
 
 
 def extract_requirements(job_description):
+    job_description = clean_job_description(job_description)
     if len(job_description.strip()) < 40 or len(job_description) > 30000:
         raise ValueError('Provide a job description between 40 and 30,000 characters.')
     result = _json('Extract distinct qualifications and skills from this job description. Include experience, education, work arrangement and location restrictions. Each phrase must be a short EXACT excerpt of the description. Mark required or preferred. Do not invent requirements. Return {"requirements":[{"phrase":"Python","priority":"required"}]}.\nJOB DATA:\n'+job_description, contract=Requirements)
@@ -137,4 +148,11 @@ def extract_resume_data(file_content=None, filename='resume.pdf', job_title='', 
 def rewrite_resume_for_job(resume_text=None, file_content_or_text=None, filename=None, job_description='', job_title=None, **kwargs):
     text = _text(resume_text or file_content_or_text, filename or 'resume.pdf')
     original = kwargs.get('resume_data') or extract_resume_data(text)
-    return _json('Tailor the summary and experience bullets for the target job using ONLY evidence in the original resume. Keep every experience entry in the original order with identical role, company and dates. Rephrase and prioritize supported responsibilities and achievements. Never add missing technologies, metrics, seniority, certifications or experience. Retain all source skills using their source wording. Missing qualifications belong in confirmation_questions, never the resume. Return {"optimized_summary":"", "optimized_experience":[{"role":"","company":"","dates":"","bullets":[]}], "optimized_skills":{}, "confirmation_questions":[], "suggestions_applied":[]}.\nTARGET TITLE DATA:\n'+str(job_title or '')+'\nJOB DATA:\n'+job_description+'\nORIGINAL STRUCTURED DATA:\n'+json.dumps(original)+'\nSOURCE RESUME DATA:\n'+text, contract=ResumeRewrite)
+    job_description = clean_job_description(job_description)
+    return _json('You are a truthful resume refiner. Tailor the summary and experience bullets for the target job using ONLY evidence in the original resume. '
+                 'Goals: (1) align wording with the job description where the source already supports it (use the JD\'s exact term when the source states the same skill, e.g. K8s -> Kubernetes); '
+                 '(2) increase bullet impact: lead with a strong action verb, state scope and outcome, keep each bullet to one or two lines; '
+                 '(3) order bullets so the most job-relevant evidence comes first. '
+                 'Hard rules: keep every experience entry in the original order with identical role, company and dates; never add technologies, tools, metrics, numbers, seniority, '
+                 'employers, dates, certifications or responsibilities that are not in the source; never include branding, scores, notes or advice in resume fields. '
+                 'Retain all source skills using their source wording. Every job requirement that the source does not support goes into confirmation_questions as a question to the candidate, never into the resume. Return {"optimized_summary":"", "optimized_experience":[{"role":"","company":"","dates":"","bullets":[]}], "optimized_skills":{}, "confirmation_questions":[], "suggestions_applied":[]}.\nTARGET TITLE DATA:\n'+str(job_title or '')+'\nJOB DATA:\n'+job_description+'\nORIGINAL STRUCTURED DATA:\n'+json.dumps(original)+'\nSOURCE RESUME DATA:\n'+text, contract=ResumeRewrite)

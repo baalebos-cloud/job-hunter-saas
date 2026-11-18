@@ -135,7 +135,7 @@ function FaqSection() {
   const [open, setOpen] = useState(null);
   const faqs = [
     { q: 'What is an ATS and why does it matter?', a: 'An applicant tracking system organizes recruitment. Employer screening rules and recruiter decisions vary. Baalebos cannot predict an employer’s outcome.' },
-    { q: 'How does Baalebos scan my resume?', a: 'Our AI extracts text from your resume, compares it against the job description you provided, and scores it across action verbs, technical skills, and soft skills using NLP keyword matching.' },
+    { q: 'How does Baalebos scan my resume?', a: 'We extract the text of your resume, list the requirements in the job description, and check each one for evidence in your resume, recognising equivalent spellings such as K8s and Kubernetes. The refined PDF is always one page, with no watermark or branding.' },
     { q: 'Is Baalebos free?', a: 'The free plan includes two resume scans per month. Your completed resume includes a PDF preview and download. See Plans for current limits.' },
     { q: 'Is my resume stored or shared?', a: 'Your resume is processed securely and only used to generate your analysis. Resume text is sent to the configured AI provider for processing. Generated documents are stored in your account.' },
     { q: 'What file formats are supported?', a: 'We support PDF and DOCX file formats. For best results, use a clean single-column PDF.' },
@@ -311,6 +311,13 @@ export default function AtsResultView({ data: initialData }) {
               Your resume scored <span className="font-black text-slate-900">{Math.round(overall_score)}%</span> match
               on <span className="font-black text-slate-900">{job_title}</span>. {scoreTip}
             </p>
+            {data.scores && typeof data.scores.before === 'number' && (
+              <p className="text-sm text-slate-600" aria-label="Score before and after refinement">
+                Before refinement: <span className="font-black text-slate-900">{Math.round(data.scores.before)}%</span>
+                {' → '}After: <span className="font-black text-emerald-700">{Math.round(data.scores.after)}%</span>
+                <span className="block text-xs text-slate-400 mt-1">Only evidence already in your resume was used. Unsupported requirements are listed below as questions.</span>
+              </p>
+            )}
             <div className="flex gap-8 pt-2 border-t border-slate-100">
               <StatBox label="Keywords Matched" value={keywords_matched} color="text-emerald-600" />
               <StatBox label="Keywords Missing" value={keywords_missing} color="text-rose-500" />
