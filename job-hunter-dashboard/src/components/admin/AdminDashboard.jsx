@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { errorText } from '../../lib/session';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const h = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -56,8 +57,7 @@ export default function AdminDashboard() {
       const { data } = await axios.post(`${API}/admin/resume-diagnostic`, {}, { headers: h(), timeout: 300000 });
       setAIReport(data);
     } catch (error) {
-      const detail = error.response?.data?.detail;
-      setAIError(typeof detail === 'string' ? detail : 'The diagnostic could not complete. Please try again.');
+      setAIError(errorText(error, 'The diagnostic could not complete. Please try again.'));
     } finally { setTestingAI(false); }
   };
 

@@ -3,6 +3,7 @@
 // =============================================================================
 import React, { useState } from 'react';
 import axios from 'axios';
+import { errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-800 bg-slate-900 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600';
@@ -21,7 +22,7 @@ export default function ForgotPassword() {
       await axios.post(`${API_BASE_URL}/auth/forgot-password`, { email });
       setSent(true);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
+      setError(errorText(err, 'Something went wrong. Please try again.'));
     } finally { setLoading(false); }
   };
 

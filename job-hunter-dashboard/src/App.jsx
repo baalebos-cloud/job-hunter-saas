@@ -11,7 +11,7 @@ import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
-import { signOut } from './lib/session'
+import { signOut, errorText } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
 import ForgotPassword from './components/auth/ForgotPassword'
@@ -188,7 +188,7 @@ function SettingsPage() {
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to save. Please try again.')
+      alert(errorText(err, 'Failed to save. Please try again.'))
     } finally { setSaving(false) }
   }
 

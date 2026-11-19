@@ -5,7 +5,7 @@
 // =============================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { clearSession } from '../lib/session';
+import { clearSession, errorText } from '../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -134,8 +134,7 @@ export default function ProfilePage() {
       });
       setVerificationMessage(data.message);
     } catch (error) {
-      const detail = error.response?.data?.detail;
-      setVerificationMessage(typeof detail === 'string' ? detail : 'Could not request verification. Please try again.');
+      setVerificationMessage(errorText(error, 'Could not request verification. Please try again.'));
     } finally { setSendingVerification(false); }
   };
 
@@ -145,7 +144,7 @@ export default function ProfilePage() {
       const res = await axios.patch(`${API_BASE_URL}/profile/me`, fields, { headers: { Authorization: `Bearer ${token}` } });
       setProfile(res.data);
       return true;
-    } catch (e) { alert(e.response?.data?.detail || 'Failed to save changes.'); return false; }
+    } catch (e) { alert(errorText(e, 'Failed to save changes.')); return false; }
     finally { setSaving(false); }
   };
 
@@ -173,7 +172,7 @@ export default function ProfilePage() {
       const res = await axios.post(`${API_BASE_URL}/profile/skills/other`, { name: newSkill.trim() }, { headers: { Authorization: `Bearer ${token}` } });
       setProfile(p => ({ ...p, other_skills: [...p.other_skills, res.data] }));
       setNewSkill('');
-    } catch (e) { alert(e.response?.data?.detail || 'Failed to add skill.'); }
+    } catch (e) { alert(errorText(e, 'Failed to add skill.')); }
   };
 
   const removeOtherSkill = async (id) => {
@@ -189,7 +188,7 @@ export default function ProfilePage() {
       const res = await axios.post(`${API_BASE_URL}/profile/languages`, { name: newLang.trim(), proficiency: newLangProf }, { headers: { Authorization: `Bearer ${token}` } });
       setProfile(p => ({ ...p, languages: [...p.languages, res.data] }));
       setNewLang('');
-    } catch (e) { alert(e.response?.data?.detail || 'Failed to add language.'); }
+    } catch (e) { alert(errorText(e, 'Failed to add language.')); }
   };
 
   const removeLanguage = async (id) => {

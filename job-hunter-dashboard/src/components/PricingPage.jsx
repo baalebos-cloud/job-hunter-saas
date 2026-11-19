@@ -4,6 +4,7 @@
 // =============================================================================
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { errorText } from '../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://job-hunter-saas-production-bb41.up.railway.app/api/v1';
 
@@ -103,7 +104,7 @@ export default function PricingPage() {
       );
       window.location.href = res.data.checkout_url;
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to start checkout. Please try again.');
+      alert(errorText(err, 'Failed to start checkout. Please try again.'));
     } finally {
       setUpgrading('');
     }

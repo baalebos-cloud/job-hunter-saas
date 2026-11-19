@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { errorText } from '../../lib/session';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const h = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -74,7 +75,7 @@ export default function HRPortal() {
       loadJobs();
       setTab('my-jobs');
     } catch (e) {
-      setMsg(`❌ ${e.response?.data?.detail || 'Failed to post job'}`);
+      setMsg(`❌ ${errorText(e, 'Failed to post job')}`);
     } finally { setPosting(false); }
   };
 
