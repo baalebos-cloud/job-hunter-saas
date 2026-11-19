@@ -28,21 +28,33 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate
 
 FONT_DIRECTORY = Path(__file__).resolve().parents[1] / 'assets' / 'fonts'
-FONT_REGULAR = 'ResumeSans'
-FONT_BOLD = 'ResumeSansBold'
-pdfmetrics.registerFont(TTFont(FONT_REGULAR, str(FONT_DIRECTORY / 'DejaVuSans.ttf')))
-pdfmetrics.registerFont(TTFont(FONT_BOLD, str(FONT_DIRECTORY / 'DejaVuSans-Bold.ttf')))
-pdfmetrics.registerFontFamily(FONT_REGULAR, normal=FONT_REGULAR, bold=FONT_BOLD, italic=FONT_REGULAR, boldItalic=FONT_BOLD)
+# Carlito is metric-compatible with Calibri. DejaVu Sans covers far more
+# scripts and is used for the whole document when Carlito lacks a glyph, so a
+# resume never mixes fonts or silently loses characters.
+FONT_FAMILIES = {
+    'Carlito': ('Carlito-Regular.ttf', 'Carlito-Bold.ttf', 'Carlito-Italic.ttf', 'Carlito-BoldItalic.ttf'),
+    'DejaVuSans': ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf', 'DejaVuSans-Oblique.ttf', 'DejaVuSans-BoldOblique.ttf'),
+}
+PRIMARY_FONT, FALLBACK_FONT = 'Carlito', 'DejaVuSans'
+for _family, (_regular, _bold, _italic, _bold_italic) in FONT_FAMILIES.items():
+    for _suffix, _file in (('', _regular), ('-Bold', _bold), ('-Italic', _italic), ('-BoldItalic', _bold_italic)):
+        pdfmetrics.registerFont(TTFont(_family + _suffix, str(FONT_DIRECTORY / _file)))
+    pdfmetrics.registerFontFamily(_family, normal=_family, bold=f'{_family}-Bold',
+                                  italic=f'{_family}-Italic', boldItalic=f'{_family}-BoldItalic')
 
-TEXT_COLOR = colors.HexColor('#111111')
-RULE_COLOR = colors.HexColor('#444444')
+ACCENT_COLOR = colors.HexColor('#1F4E79')   # name, headings and rules only; carries no meaning
+TEXT_COLOR = colors.HexColor('#1A1A1A')
+MUTED_COLOR = colors.HexColor('#555555')
+MUTED_HEX = '#555555'
 
 REGIONS = ('US', 'CA', 'UK', 'EU', 'NG', 'OTHER')
 LETTER_REGIONS = {'US', 'CA'}
@@ -239,11 +251,12 @@ def _projects(value) -> list[dict]:
     for item in value if isinstance(value, list) else ([value] if value else []):
         if isinstance(item, str):
             if _text(item):
-                entries.append({'title': _text(item), 'tech': '', 'bullets': []})
+                entries.append({'title': _text(item), 'subtitle': '', 'tech': '', 'bullets': []})
             continue
         if not isinstance(item, dict):
             continue
         entry = {'title': _pick(item, 'title', 'name'),
+                 'subtitle': _pick(item, 'subtitle', 'tagline', 'summary'),
                  'tech': _pick(item, 'tech', 'technologies', 'stack', 'tools'),
                  'bullets': _lines(item.get('bullets') or item.get('description'))}
         if entry['title'] or entry['bullets']:
@@ -477,6 +490,8 @@ def _unsupported_characters(data: dict) -> list[str]:
     return sorted({c for c in text if ord(c) > 0x7f and not unicodedata.combining(c)
                    and unicodedata.category(c)[0] in 'LNPS' and _font_for(c) == ''})
 
+class EntryLine(Flowable):
+    """Entry text on the left, dates right-aligned on the same first line.
 
 def _styles(layout: Layout) -> dict[str, ParagraphStyle]:
     # splitLongWords + uriWasteReduce wrap long URLs/tokens without inserting
@@ -497,61 +512,82 @@ def _styles(layout: Layout) -> dict[str, ParagraphStyle]:
     }
 
 
-def _story(data: dict, layout: Layout) -> list:
-    s = _styles(layout)
+def _bullet_markup(text: str) -> str:
+    """Bold a short lead-in written as "Label: sentence" (at most six words, no full stop)."""
+    head, sep, tail = text.partition(': ')
+    if sep and tail and 2 <= len(head) <= 48 and len(head.split()) <= 6 and '.' not in head:
+        return f'<b>{_clean(head)}:</b> {_clean(tail)}'
+    return _clean(text)
+
+
+def _muted(text: str, font: str) -> str:
+    return f"<font name='{font}' color='{MUTED_HEX}'>{_clean(text)}</font>"
+
+
+def _tech_line(value: str) -> str:
+    return ' · '.join(_split_skills(value))
+
+
+def _story(data: dict, layout: Layout, font: str) -> list:
+    s = _styles(layout, font)
     story = []
 
     def heading(title):
         story.append(Paragraph(title, s['heading']))
         story.append(HRFlowable(width='100%', thickness=0.6, color=RULE_COLOR, spaceBefore=0, spaceAfter=2))
 
-    def entry_line(primary, *rest):
-        parts = [f'<b>{_clean(primary)}</b>'] if primary else []
-        parts += [_clean(p) for p in rest if _text(p)]
-        if parts:
-            story.append(Paragraph(' | '.join(parts), s['entry']))
+    def entry(primary, secondary, right, keep_with_next):
+        left = f'<b>{_clean(primary)}</b>' if primary else ''
+        if secondary:
+            left += ('  ' + _muted('|  ' + secondary, font)) if left else _muted(secondary, font)
+        if left or right:
+            story.append(EntryLine(left, right, s['entry'], f'{font}-Italic', keep_with_next))
 
-    def bullets(items):
+    def bullets(items, labels=True):
         for item in items:
-            story.append(Paragraph(_clean(item), s['bullet'], bulletText='\u2022'))
+            markup = _bullet_markup(item) if labels else _clean(item)
+            story.append(Paragraph(markup, s['bullet'], bulletText='•'))
 
     story.append(Paragraph(_clean(data['name']), s['name']))
     if data['title']:
-        story.append(Paragraph(_clean(data['title']), s['contact']))
+        story.append(Paragraph(_clean(data['title']), s['title']))
     if data['contact']:
         story.append(Paragraph(_clean(data['contact']), s['contact']))
 
     if data['summary']:
-        heading('SUMMARY')
+        heading('Professional Summary')
         story.append(Paragraph(_clean(data['summary']), s['body']))
-    if data['experience']:
-        heading('EXPERIENCE')
-        for job in data['experience']:
-            entry_line(job['role'], job['company'], job['location'], job['dates'])
-            bullets(job['bullets'])
-            if job['environment']:
-                story.append(Paragraph('<b>Tools:</b> ' + _clean(job['environment']), s['body']))
     if data['skills']:
-        heading('SKILLS')
+        heading('Core Skills')
         for category, values in data['skills'].items():
             line = _clean(', '.join(values))
             if not (category == 'Skills' and len(data['skills']) == 1):
                 line = f'<b>{_clean(category)}:</b> ' + line
-            story.append(Paragraph(line, s['body']))
-    if data['education']:
-        heading('EDUCATION')
-        for edu in data['education']:
-            entry_line(edu['degree'], edu['institution'], edu['location'], edu['year'])
-    if data['certifications']:
-        heading('CERTIFICATIONS')
-        bullets(data['certifications'])
+            story.append(Paragraph(line, s['skill']))
+    if data['experience']:
+        heading('Professional Experience')
+        for job in data['experience']:
+            organisation = ' · '.join(p for p in (job['company'], job['location']) if p)
+            entry(job['role'], organisation, job['dates'], bool(job['bullets'] or job['environment']))
+            bullets(job['bullets'])
+            if job['environment']:
+                story.append(Paragraph('<b>Tools:</b> ' + _clean(_tech_line(job['environment'])), s['body']))
     if data['projects']:
-        heading('PROJECTS')
+        heading('Selected Projects')
         for project in data['projects']:
-            entry_line(project['title'], project['tech'])
+            entry(project['title'], project['subtitle'], '', True)
+            if project['tech']:
+                story.append(Paragraph(_clean(_tech_line(project['tech'])), s['meta']))
             bullets(project['bullets'])
+    if data['certifications']:
+        heading('Certifications')
+        bullets(data['certifications'], labels=False)  # "AWS Educate: ..." is a name, not a label
+    if data['education']:
+        heading('Education')
+        for edu in data['education']:
+            entry(edu['degree'], ' · '.join(p for p in (edu['institution'], edu['location']) if p), edu['year'], False)
     if data['additional_information']:
-        heading('ADDITIONAL INFORMATION')
+        heading('Additional Information')
         for line in data['additional_information'].splitlines():
             story.append(Paragraph(_clean(line), s['body']))
     return story
@@ -573,7 +609,7 @@ def _render(data: dict, layout: Layout, pagesize) -> tuple[bytes, int]:
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=pagesize, leftMargin=layout.margin, rightMargin=layout.margin,
-        topMargin=layout.margin, bottomMargin=layout.margin,
+        topMargin=layout.margin * 0.8, bottomMargin=layout.margin * 0.8,
         title=f"{data['name']} - Resume", author=data['name'], subject='Resume', creator='',
         producer='', keywords='', lang='en', displayDocTitle=1,
         # Otherwise ReportLab references a non-embedded Helvetica as the canvas default.
@@ -684,7 +720,7 @@ def export_resume(resume_data, region: str | None = None, page_size: str | None 
     keywords = [k for k in (priority_keywords or []) if isinstance(k, str) and k.strip()]
 
     warnings = []
-    missing = _unsupported_characters(data)
+    font, missing = choose_font(data)
     if missing:
         warnings.append('Some characters are not supported by the installed resume fonts and may not display: '
                         + ''.join(missing[:20]))
