@@ -114,7 +114,8 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
         stage = 'score_exported_pdf'
         analysis = score_requirements(exported, job_description, requirements)
         analysis.update(original_score=before['overall_score'], confirmation_questions=rewrite.get('confirmation_questions',[]),
-                        suggestions_applied=rewrite.get('suggestions_applied',[]), job_title=job_title, job_description=job_description,
+                        suggestions_applied=rewrite.get('suggestions_applied',[]), rewrite_guard=rewrite.get('rewrite_guard', {}),
+                        job_title=job_title, job_description=job_description,
                         task_id=task_id, resume_id=task_id, status='success',
                         # Missing requirements are suggestions only; they enter the
                         # resume solely through /regenerate with explicit confirmation.

@@ -1,6 +1,8 @@
 """Validation and repeatable requirement coverage for resume preparation."""
 import re
 
+from backend.app.utils.skill_terms import find_terms
+
 
 def normalize(value):
     return re.sub(r'\s+', ' ', str(value or '')).strip().casefold()
@@ -21,27 +23,46 @@ def validate_resume(data):
     return data
 
 
-def merge_rewrite(original, rewritten, source):
-    """Keep history, omit unsupported skill additions, reject invented numbers.
+_NUMBER = re.compile(r'\d+(?:[.,]\d+)*(?:\s*%)?')
 
-    Removed additions become review questions in the rewrite metadata.
+
+def _numbers(text):
+    return {normalize(n) for n in _NUMBER.findall(str(text or ''))}
+
+
+def _introduces_claims(new_text, allowed_numbers, source_terms):
+    """True when tailored text adds a number or a named tool/practice the source lacks."""
+    return not _numbers(new_text) <= allowed_numbers or not set(find_terms(new_text)) <= source_terms
+
+
+def merge_rewrite(original, rewritten, source):
+    """Keep history, omit unsupported skill additions, revert invented claims.
+
+    A tailored summary or role that adds a number or a tool absent from the
+    source falls back to the original text instead of failing the upload.
+    Removed skill additions become review questions; ``rewrite_guard`` in the
+    rewrite metadata records what was reverted.
     """
     result = dict(original)
     experiences = rewritten.get('optimized_experience')
     if not isinstance(experiences, list) or len(experiences) != len(original['experience']):
         raise ValueError('Rewrite omitted experience entries.')
-    source_numbers = set(re.findall(r'\d+(?:[.,]\d+)*(?:\s*%)?', source))
-    source_numbers = {normalize(n) for n in source_numbers}
+    source_numbers = _numbers(source)
+    source_terms = set(find_terms(source))
+    guard = {'summary_reverted': False, 'roles_reverted': 0}
+    guarded = []
     for old, new in zip(original['experience'], experiences):
         for key in ('role', 'company', 'dates'):
             if normalize(old.get(key)) != normalize(new.get(key)):
                 raise ValueError(f'Rewrite changed an employment {key}.')
         if not isinstance(new.get('bullets'), list) or not new['bullets']:
             raise ValueError('Rewrite omitted employment details.')
-        old_numbers = {normalize(n) for n in re.findall(r'\d+(?:[.,]\d+)*(?:\s*%)?', ' '.join(old.get('bullets', [])))}
-        for number in re.findall(r'\d+(?:[.,]\d+)*(?:\s*%)?', ' '.join(new['bullets'])):
-            if normalize(number) not in old_numbers:
-                raise ValueError('Rewrite moved or invented a numeric achievement for an employer.')
+        # A number may only stay with the employer it was written for.
+        if _introduces_claims(' '.join(new['bullets']), _numbers(' '.join(old.get('bullets', []))), source_terms):
+            new = {**new, 'bullets': list(old.get('bullets', []))}
+            guard['roles_reverted'] += 1
+        guarded.append(new)
+    experiences = guarded
     skills = rewritten.get('optimized_skills', original['skills'])
     if not isinstance(skills, dict) or any(not isinstance(v, list) for v in skills.values()):
         raise ValueError('Invalid rewritten skills.')
@@ -66,6 +87,10 @@ def merge_rewrite(original, rewritten, source):
                 skills.setdefault(category, []).append(skill)
                 retained.add(normalize(skill))
     summary = rewritten.get('optimized_summary', original.get('summary', ''))
+    if summary != original.get('summary', '') and _introduces_claims(summary, source_numbers, source_terms):
+        summary = original.get('summary', '')
+        guard['summary_reverted'] = True
+    rewritten['rewrite_guard'] = guard
     if excluded:
         questions = rewritten.get('confirmation_questions', [])
         questions = list(questions) if isinstance(questions, list) else []

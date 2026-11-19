@@ -305,7 +305,30 @@ def test_rewrite_preserves_history_filters_new_skills_and_rejects_metrics():
     assert 'Terraform' in unsupported['confirmation_questions'][0]
     pdf_text = extract_text(generate_optimized_resume('input.pdf', resume_data=safe).getvalue(), 'output.pdf')
     assert 'Terraform' not in pdf_text
-    with pytest.raises(ValueError):merge_rewrite(base,{**rewrite,'optimized_summary':'Improved output by 90%'},source)
+    # An invented metric reverts the summary instead of failing the whole upload.
+    invented = {**rewrite, 'optimized_summary': 'Improved output by 90%'}
+    assert merge_rewrite(base, invented, source)['summary'] == base['summary']
+    assert invented['rewrite_guard'] == {'summary_reverted': True, 'roles_reverted': 0}
+
+
+def test_rewrite_guard_reverts_roles_with_invented_metrics_or_tools():
+    base = original()
+    base['experience'].append({'role': 'Analyst', 'company': 'Other', 'dates': '2024', 'bullets': ['Cut costs by 20%.']})
+    source = 'Candidate Engineer Example 2025 Built Python tools. Analyst Other 2024 Cut costs by 20%. Python developer'
+    rewrite = {'optimized_summary': 'Python developer', 'optimized_skills': base['skills'], 'optimized_experience': [
+        {**base['experience'][0], 'bullets': ['Built Python tools with Kubernetes.']},   # tool not in source
+        {**base['experience'][1], 'bullets': ['Cut cloud costs by 35%.']}]}              # invented metric
+    merged = merge_rewrite(base, rewrite, source)
+    assert [e['bullets'] for e in merged['experience']] == [['Built Python tools.'], ['Cut costs by 20%.']]
+    assert rewrite['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 2}
+    # A metric may not move to a different employer either.
+    moved = {**rewrite, 'optimized_experience': [
+        {**base['experience'][0], 'bullets': ['Built Python tools, cutting costs by 20%.']}, base['experience'][1]]}
+    assert merge_rewrite(base, moved, source)['experience'][0]['bullets'] == ['Built Python tools.']
+    # Safe rewording of evidence already in the source is kept.
+    safe = {**rewrite, 'optimized_experience': [
+        {**base['experience'][0], 'bullets': ['Developed internal Python tooling.']}, base['experience'][1]]}
+    assert merge_rewrite(base, safe, source)['experience'][0]['bullets'] == ['Developed internal Python tooling.']
 
 
 def test_pdf_preserves_sections_and_omits_optimizer_notes():
