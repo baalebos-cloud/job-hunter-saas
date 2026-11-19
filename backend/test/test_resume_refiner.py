@@ -31,6 +31,11 @@ def text_of(pdf):
     ('Built CI pipelines using Jenkins', 'Built CI pipelines using Jenkins'),
     ('Designed marketing assets with Canva', 'Designed marketing assets with Canva'),
     ('Led R&D on <5s cold starts', 'Led R&D on <5s cold starts'),
+    # The product's bare name is a watermark only as a whole line; beside other
+    # content it is a candidate's own project.
+    ('Baalebos AI', ''),
+    ('Baalebos Cloud', ''),
+    ('Baalebos AI | Multi-provider LLM gateway', 'Baalebos AI | Multi-provider LLM gateway'),
 ])
 def test_strip_watermarks_preserves_candidate_content(raw, expected):
     assert strip_watermarks_and_branding(raw) == expected
@@ -142,6 +147,21 @@ def test_sanitize_untrusted_text():
     report = sanitize_untrusted_text('Hi <script>steal()</script><para>there</para> /OpenAction <5s', report=True)
     assert report.text == 'Hi there <5s' and report.blocked >= 3
     assert sanitize_untrusted_text('ﬁle​') == 'file'
+    # Compatibility folding keeps superscripts and subscripts: they carry meaning.
+    assert sanitize_untrusted_text('Reported R² 0.662; cut CO₂ by 10³ t; ＡＷＳ') == 'Reported R² 0.662; cut CO₂ by 10³ t; AWS'
+
+
+def test_candidate_project_named_after_the_product_survives_export():
+    data = {'name': 'Ada Obi', 'contact': 'ada@example.com', 'summary': 'Engineer. Reported R² 0.662.',
+            'experience': [{'role': 'Engineer', 'company': 'Acme', 'dates': '2021 - Present', 'bullets': ['Built APIs.']}],
+            'projects': [{'title': 'Baalebos AI', 'subtitle': 'Multi-provider LLM gateway', 'tech': 'Python',
+                          'bullets': ['Published on PyPI as baalebos-ai v1.0.0.']}],
+            'skills': {'Skills': ['Python']}, 'education': [], 'certifications': [],
+            'additional_information': 'Baalebos AI'}   # a watermark-only line is still removed
+    text = text_of(export_resume(data, region='NG').pdf)
+    assert 'Baalebos AI | Multi-provider LLM gateway' in text.splitlines()
+    assert 'baalebos-ai v1.0.0' in text and 'R² 0.662' in text
+    assert 'ADDITIONAL INFORMATION' not in text
 
 
 @pytest.mark.parametrize('text,phrase,expected', [
