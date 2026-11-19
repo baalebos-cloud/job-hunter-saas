@@ -13,6 +13,16 @@ from backend.app.models.user import User
 from backend.app.models.subscription import Subscription, PLANS
 
 
+def is_plan_exempt(user) -> bool:
+    """Verified administrators and the platform owner are never limited by plan quotas.
+
+    Admin is the ``users.is_admin`` flag (set for the owner by
+    ``scripts/provision_owner.py``) or the RBAC owner role ``super_admin``.
+    """
+    return bool(user and getattr(user, "is_verified", False)
+                and (getattr(user, "is_admin", False) or getattr(user, "role", None) == "super_admin"))
+
+
 def _get_or_create_sub(user_id: int, db: Session) -> Subscription:
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
     if not sub:
@@ -31,11 +41,14 @@ def require_scan_quota(
     Enforce monthly scan limits based on plan.
     - Free:       2 scans/month
     - Pro/Enterprise: unlimited
+    - Verified admins / the owner: unlimited (``is_plan_exempt``)
     Raises 403 with upgrade message when limit is reached.
     Usage:
         @router.post("/upload")
         async def upload_resume(..., _=Depends(require_scan_quota)):
     """
+    if is_plan_exempt(current_user):
+        return current_user
     sub = _get_or_create_sub(current_user.id, db)
     plan_info = PLANS.get(sub.plan if sub.status == "active" else "free", PLANS["free"])
 
@@ -77,6 +90,8 @@ def require_pro(
         @router.get("/export/all")
         def export_all(..., _=Depends(require_pro)):
     """
+    if is_plan_exempt(current_user):
+        return current_user
     sub = _get_or_create_sub(current_user.id, db)
     if sub.status != 'active' or sub.plan not in ("pro", "enterprise"):
         raise HTTPException(
@@ -92,6 +107,8 @@ def require_pro(
 
 
 def consume_scan(user_id, db):
+    if is_plan_exempt(db.get(User, user_id)):
+        return  # unlimited: nothing to count against a quota
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).with_for_update().first()
     if not sub: raise HTTPException(409, "Subscription not initialized")
     limit = PLANS.get(sub.plan if sub.status == 'active' else 'free', PLANS['free'])['scans_per_month']
@@ -101,7 +118,9 @@ def consume_scan(user_id, db):
 
 
 def remaining_scans(user_id, db):
-    """Scans left this month, or None for unlimited plans."""
+    """Scans left this month, or None for unlimited plans and exempt users."""
+    if is_plan_exempt(db.get(User, user_id)):
+        return None
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
     if not sub:
         return None

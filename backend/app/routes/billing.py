@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
+from backend.app.dependencies.plan_guard import is_plan_exempt
 from backend.app.models.user import User
 from backend.app.models.subscription import Subscription, PLANS
 
@@ -53,7 +54,8 @@ def get_billing_status(
         sub.reset_date = now
         db.commit()
 
-    scans_limit = plan_info["scans_per_month"]
+    exempt = is_plan_exempt(current_user)   # verified admins / the owner: no limits
+    scans_limit = -1 if exempt else plan_info["scans_per_month"]
     scans_left  = max(0, scans_limit - sub.scans_this_month) if scans_limit != -1 else -1
 
     return {
@@ -63,7 +65,8 @@ def get_billing_status(
         "scans_this_month": sub.scans_this_month,
         "scans_limit":      scans_limit,    # -1 = unlimited
         "scans_left":       scans_left,     # -1 = unlimited
-        "is_pro":           sub.plan in ("pro", "enterprise"),
+        "is_pro":           exempt or sub.plan in ("pro", "enterprise"),
+        "plan_exempt":      exempt,
         "price_monthly":    plan_info["price"],
     }
 
