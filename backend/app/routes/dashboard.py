@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from typing import List
 
-from backend.app.database import get_db
+from backend.app.database import get_db, get_read_db
 from backend.app.dependencies.auth import get_current_user  # FIX: was importing from wrong path
 from backend.app.models.user import User
 from backend.app.models.application import Application
@@ -33,11 +33,11 @@ def dashboard_stats(
 # Jobs
 # -----------------------------
 @router.get("/jobs")
-def get_all_jobs(db: Session = Depends(get_db)):
+def get_all_jobs(db: Session = Depends(get_read_db)):
     return list_jobs(db)
 
 @router.get("/jobs/{job_id}")
-def job_detail(job_id: int, db: Session = Depends(get_db)):
+def job_detail(job_id: int, db: Session = Depends(get_read_db)):
     job = get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

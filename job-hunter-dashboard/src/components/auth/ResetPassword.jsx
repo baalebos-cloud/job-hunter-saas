@@ -49,9 +49,7 @@ export default function ResetPassword() {
     if (form.password !== form.confirm) { setError('Passwords do not match.'); return; }
     setLoading(true); setError('');
     try {
-      await axios.post(`${API_BASE_URL}/auth/reset-password`, null, {
-        params: { token, new_password: form.password }
-      });
+      await axios.post(`${API_BASE_URL}/auth/reset-password`, { token, new_password: form.password });
       setSuccess(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Reset failed. The link may have expired.');

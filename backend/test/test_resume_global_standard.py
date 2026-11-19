@@ -20,7 +20,7 @@ from backend.app.models.subscription import Subscription
 from backend.app.models.user import User
 from backend.app.services.auth_service import create_access_token
 from backend.app.utils.pdf_generator import (
-    ResumeExportError, download_filename, export_resume, generate_optimized_resume,
+    MIN_BODY_FONT, ResumeExportError, download_filename, export_resume, generate_optimized_resume,
     merge_confirmed_keywords, normalize_dates, normalize_resume_data, resolve_region)
 
 YORUBA_NAME = 'Ọlájídé Ẹ̀bùn Adéwálé'
@@ -113,10 +113,10 @@ def long_resume():
 def test_ats_structure_fonts_and_page_count(data):
     result = export_resume(data, region='NG')
     with pdfplumber.open(io.BytesIO(result.pdf)) as doc:
-        assert 1 <= len(doc.pages) <= 2 and len(doc.pages) == result.pages
+        assert len(doc.pages) == 1 == result.pages
         for page in doc.pages:
             assert page.find_tables() == []
-            assert min(c['size'] for c in page.chars) >= 10
+            assert min(c['size'] for c in page.chars) >= MIN_BODY_FONT == 9
             assert not page.images
         text = '\n'.join(p.extract_text() for p in doc.pages)
     assert '(cid:' not in text
@@ -143,7 +143,7 @@ def _fonts(pdf):
 
 def test_strict_one_page_keeps_every_employer_degree_and_certification():
     data = long_resume()
-    result = export_resume(data, max_pages=1, priority_keywords=['Python'])
+    result = export_resume(data, priority_keywords=['Python'])
     assert result.pages == 1 and result.condensed
     text = pdf_text(result.pdf)
     for job in data['experience']:
@@ -180,8 +180,20 @@ def test_long_unbroken_tokens_do_not_break_layout():
     assert export_resume(resume(contact='renee@example.com | ' + url)).pages == 1
 
 
-def test_unsupported_glyphs_are_reported_not_silently_dropped():
-    result = export_resume(resume(name='田中太郎'))
+@pytest.mark.parametrize('name', ['田中太郎', 'محمد علي', 'Renée 김민준'])
+def test_non_latin_names_use_fallback_fonts(name):
+    pytest.importorskip('arabic_reshaper')
+    from backend.app.utils.pdf_generator import _fallback
+    if _fallback('ResumeCJK') is None or _fallback('ResumeArabic') is None:
+        pytest.skip('fallback fonts not installed (Dockerfile installs fonts-noto-core, fonts-wqy-zenhei)')
+    result = export_resume(resume(name=name))
+    assert not result.warnings
+    import unicodedata
+    assert unicodedata.normalize('NFKC', name) in unicodedata.normalize('NFKC', pdf_text(result.pdf))
+
+
+def test_glyphs_without_any_font_are_reported_not_silently_dropped():
+    result = export_resume(resume(name='Ada \U00012000'))
     assert any('not supported' in w for w in result.warnings)
 
 
@@ -237,7 +249,7 @@ def db():
 @pytest.fixture
 def client(db):
     from backend.app import main
-    main._rate_store.clear()
+    main.reset_rate_limits()
     return TestClient(app)
 
 

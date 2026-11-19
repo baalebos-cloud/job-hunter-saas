@@ -339,7 +339,7 @@ def test_scrape_run_persists_outcomes_for_cron_admin_and_worker_entrypoints(db, 
 
 
 def test_migration_is_repeatable_and_does_not_alert_on_historical_jobs():
-    path = ROOT / "alembic/versions/20261010_job_automation.py"
+    path = ROOT / "backend/alembic/versions/20261010_job_automation.py"
     spec = importlib.util.spec_from_file_location("job_automation_migration",path)
     migration = importlib.util.module_from_spec(spec); spec.loader.exec_module(migration)
     engine = create_engine("sqlite://")

@@ -25,6 +25,8 @@ class UserResponse(BaseModel):
     country: Optional[str] = None
     is_admin: Optional[bool] = False
     is_hr: Optional[bool] = False
+    role: Optional[str] = None
+    permissions: list[str] = []
 
     class Config:
         from_attributes = True
@@ -33,3 +35,4 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_in: Optional[int] = None

@@ -49,3 +49,54 @@ export function filenameFromDisposition(header, fallback = 'Resume.pdf') {
   if (star) { try { return decodeURIComponent(star[1]); } catch { /* fall through */ } }
   return fallback;
 }
+
+// ── Short-lived access tokens + HttpOnly refresh cookie ─────────────────────
+// Access tokens expire after 15 minutes. On a 401 the client calls
+// /auth/refresh once (the refresh token lives in an HttpOnly cookie the page
+// cannot read), stores the new access token and retries the request.
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const NO_REFRESH = ['/auth/login', '/auth/signup', '/auth/refresh', '/auth/logout', '/hr-auth/login', '/auth/admin/login'];
+let refreshing = null;
+
+export function refreshAccessToken(axios) {
+  if (!refreshing) {
+    refreshing = axios.post(`${API_BASE}/auth/refresh`, null, { withCredentials: true, _skipAuthRefresh: true })
+      .then(res => { localStorage.setItem('token', res.data.access_token); return res.data.access_token; })
+      .finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+export function installAuthInterceptors(axios) {
+  // Lets the browser store/send the refresh cookie on cross-origin auth calls.
+  axios.defaults.withCredentials = true;
+  axios.interceptors.response.use(undefined, async error => {
+    const config = error.config || {};
+    const url = config.url || '';
+    if (error.response?.status !== 401 || config._retried || config._skipAuthRefresh
+        || NO_REFRESH.some(path => url.includes(path)) || !localStorage.getItem('token')) {
+      return Promise.reject(error);
+    }
+    try {
+      const token = await refreshAccessToken(axios);
+      config._retried = true;
+      config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+      return axios(config);
+    } catch {
+      clearSession();
+      if (!window.location.pathname.startsWith('/login')) window.location.href = '/login';
+      return Promise.reject(error);
+    }
+  });
+}
+
+// Revokes the access token and refresh-token family server-side, then clears
+// local state. Never blocks sign-out on a network error.
+export async function signOut(axios, redirect = '/login') {
+  const token = localStorage.getItem('token');
+  try {
+    if (token) await axios.post(`${API_BASE}/auth/logout`, null, { headers: { Authorization: `Bearer ${token}` }, _skipAuthRefresh: true });
+  } catch { /* still sign out locally */ }
+  clearSession();
+  window.location.href = redirect;
+}

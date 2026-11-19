@@ -98,3 +98,12 @@ def consume_scan(user_id, db):
     if limit != -1 and sub.scans_this_month >= limit:
         raise HTTPException(403, "Monthly scan limit reached")
     sub.scans_this_month += 1
+
+
+def remaining_scans(user_id, db):
+    """Scans left this month, or None for unlimited plans."""
+    sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+    if not sub:
+        return None
+    limit = PLANS.get(sub.plan if sub.status == 'active' else 'free', PLANS['free'])['scans_per_month']
+    return None if limit == -1 else max(limit - (sub.scans_this_month or 0), 0)

@@ -6,8 +6,48 @@ def normalize(value):
     return re.sub(r'\s+', ' ', str(value or '')).strip().casefold()
 
 
+# Canonical technology synonyms. Matching any member counts as evidence for
+# the whole group (same fact, different spelling) - never for a different skill.
+SYNONYM_GROUPS = [
+    {'kubernetes', 'k8s'}, {'postgresql', 'postgres', 'psql'}, {'javascript', 'js', 'ecmascript'},
+    {'typescript', 'ts'}, {'amazon web services', 'aws'}, {'google cloud platform', 'gcp', 'google cloud'},
+    {'microsoft azure', 'azure'}, {'ci/cd', 'cicd', 'ci-cd', 'ci / cd'}, {'node.js', 'nodejs', 'node js'},
+    {'react', 'react.js', 'reactjs'}, {'vue', 'vue.js', 'vuejs'}, {'next.js', 'nextjs'},
+    {'c#', 'csharp', 'c sharp'}, {'.net', 'dotnet', 'dot net'}, {'c++', 'cpp'},
+    {'machine learning', 'ml'}, {'artificial intelligence', 'ai'}, {'golang', 'go lang'},
+    {'mongodb', 'mongo'}, {'elasticsearch', 'elastic search'}, {'github actions', 'gh actions'},
+    {'infrastructure as code', 'iac'}, {'site reliability engineering', 'sre'}, {'amazon s3', 's3'},
+    {'amazon ec2', 'ec2'}, {'microsoft sql server', 'sql server', 'mssql'}, {'scikit-learn', 'sklearn'},
+]
+_SYNONYMS = {}
+for _group in SYNONYM_GROUPS:
+    for _member in _group:
+        _SYNONYMS[_member] = _group
+
+# Token boundaries that understand technology names: "C" must not match
+# "C++"/"C#", "Java" must not match "JavaScript", "R" must not match "R&D",
+# while ".NET", "C++", "CI/CD", "Node.js" and slash/hyphen lists
+# ("Terraform/Ansible", "Java-based") match as whole tokens.
+_LEFT = r'(?<![a-z0-9_.+#&])'
+_RIGHT = r'(?![a-z_+#&]|\.[a-z0-9])'
+
+
+def _pattern(phrase):
+    escaped = re.escape(phrase).replace(r'\ ', r'\s+')
+    left = _LEFT if re.match(r'[a-z0-9]', phrase) else r'(?<![a-z0-9_])'
+    return left + escaped + _RIGHT
+
+
+def phrase_variants(phrase):
+    key = normalize(phrase)
+    return sorted(_SYNONYMS.get(key, {key}), key=len, reverse=True)
+
+
 def contains(text, phrase):
-    return bool(re.search(r'(?<!\w)' + re.escape(normalize(phrase)) + r'(?!\w)', normalize(text)))
+    haystack = normalize(text)
+    if not normalize(phrase):
+        return False
+    return any(re.search(_pattern(variant), haystack) for variant in phrase_variants(phrase))
 
 
 def validate_resume(data):
