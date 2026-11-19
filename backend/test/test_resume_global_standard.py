@@ -116,7 +116,8 @@ def test_ats_structure_fonts_and_page_count(data):
         assert len(doc.pages) == 1 == result.pages
         for page in doc.pages:
             assert page.find_tables() == []
-            assert min(c['size'] for c in page.chars) >= MIN_BODY_FONT == 9
+            # pdfplumber derives sizes from text matrices; 9pt can read as 8.999999.
+            assert round(min(c['size'] for c in page.chars), 3) >= MIN_BODY_FONT == 9
             assert not page.images
         text = '\n'.join(p.extract_text() for p in doc.pages)
     assert '(cid:' not in text
@@ -216,12 +217,12 @@ def test_entry_line_carries_location_dates_and_project_subtitle():
     data = resume(experience=[{'role': 'Senior AI Trainer', 'company': 'micro1', 'location': 'Remote (Contract)',
                                'dates': 'Sep 2026 – Present', 'environment': 'Python, pytest',
                                'bullets': ['Quality evaluation: Assess AI outputs against written guidelines.']}],
-                  projects=[{'title': 'Baalebos AI', 'subtitle': 'Multi-provider LLM gateway',
+                  projects=[{'title': 'Gateway', 'subtitle': 'Multi-provider LLM gateway',
                              'tech': 'Python, Groq, PyPI', 'bullets': ['Packaged and released: Published on PyPI.']}],
                   certifications=['AWS Educate: Introduction to Generative AI'])
     lines = pdf_text(export_resume(data).pdf).splitlines()
     assert 'Senior AI Trainer | micro1 · Remote (Contract) Sep 2026 - Present' in lines
-    assert 'Baalebos AI | Multi-provider LLM gateway' in lines
+    assert 'Gateway | Multi-provider LLM gateway' in lines
     assert 'Python · Groq · PyPI' in lines and 'Tools: Python · pytest' in lines
 
 
@@ -235,6 +236,9 @@ def test_bullet_labels_are_bold_only_in_experience_and_projects():
     assert font['Docker-based'].endswith('Carlito-Bold') and font['pipelines.'].endswith('Carlito-Regular')
     assert font['Educate:'].endswith('Carlito-Regular')     # a certification name, not a label
     assert font['Cut'].endswith('Carlito-Regular')          # a lead-in containing "." is a sentence
+    # Role is bold; employer and dates on the same line are regular weight.
+    assert font['Engineer'].endswith('Carlito-Bold') and font['Example'].endswith('Carlito-Regular')
+    assert font['2025'].endswith('Carlito-Italic')
 
 
 # ── normalize_resume_data ────────────────────────────────────────────────────
@@ -323,6 +327,8 @@ def test_upload_confirm_regenerate_and_download_flow(client, db, pipeline):
     task_id = res.json()['task_id']
     assert result['task_id'] == task_id and result['suggested_skills'] == ['Terraform']
     assert result['document']['page_size'] == 'A4' and result['document']['region'] == 'NG'
+    assert result['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 0}
+    assert result['document']['font'] in ('Carlito', 'DejaVuSans')
     record = db.query(Resume).one()
     assert 'Terraform' not in pdf_text(record.content)
     assert db.query(Subscription).one().scans_this_month == 1

@@ -78,7 +78,9 @@ def run_pipeline(content: bytes, filename: str, job_description: str, job_title:
         original_score=before['overall_score'],
         scores={'before': before['overall_score'], 'after': analysis['overall_score']},
         confirmation_questions=rewrite.get('confirmation_questions', []),
-        suggestions_applied=rewrite.get('suggestions_applied', []), job_title=job_title,
+        suggestions_applied=rewrite.get('suggestions_applied', []),
+        # What the guard reverted to source wording (invented numbers or tools).
+        rewrite_guard=rewrite.get('rewrite_guard', {}), job_title=job_title,
         job_description=clean_jd, task_id=task_id, resume_id=task_id, status='success',
         # Missing requirements are suggestions only; they enter the resume
         # solely through /regenerate with explicit confirmation.
