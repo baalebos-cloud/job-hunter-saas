@@ -7,8 +7,15 @@ class Contract(BaseModel):
     model_config = ConfigDict(strict=True, extra='forbid')
 
 
-class Skills(Contract):
-    Skills: list[str]
+class SkillGroup(Contract):
+    """One skill category as the resume names it (e.g. "CI/CD"), with its items.
+
+    Strict JSON-schema mode cannot express a dict with arbitrary keys, so
+    categories travel as a list of groups; ats_engine converts them to the
+    ``{category: [items]}`` dict the rest of the pipeline uses.
+    """
+    category: str
+    items: list[str]
 
 
 class Experience(Contract):
@@ -43,7 +50,7 @@ class ExtractedResume(Contract):
     summary: str
     experience: list[ExtractedExperience]
     projects: list[Project]
-    skills: Skills
+    skills: list[SkillGroup]
     certifications: list[str]
     education: list[Education]
     additional_information: str
@@ -52,7 +59,7 @@ class ExtractedResume(Contract):
 class ResumeRewrite(Contract):
     optimized_summary: str
     optimized_experience: list[Experience]
-    optimized_skills: Skills
+    optimized_skills: list[SkillGroup]
     confirmation_questions: list[str]
     suggestions_applied: list[str]
 
