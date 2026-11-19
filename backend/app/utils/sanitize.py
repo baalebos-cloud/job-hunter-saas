@@ -37,10 +37,23 @@ class SanitizeReport:
     blocked: int
 
 
+def _compatibility_fold(text: str) -> str:
+    """NFKC, except superscripts and subscripts keep their meaning.
+
+    Folding ligatures, full-width forms and similar look-alikes is wanted;
+    turning "R²" into "R2" or "CO₂" into "CO2" changes what the text says.
+    """
+    out = []
+    for char in unicodedata.normalize('NFC', text):
+        tag = unicodedata.decomposition(char).split(' ', 1)[0]
+        out.append(char if tag in ('<super>', '<sub>') else unicodedata.normalize('NFKC', char))
+    return unicodedata.normalize('NFC', ''.join(out))
+
+
 def sanitize_untrusted_text(value, *, report: bool = False):
-    """Return NFKC-normalised text without markup, control characters or
-    PDF action tokens. Visible prose (including "R&D" and "<5s") is kept."""
-    text = unicodedata.normalize('NFKC', str(value or ''))
+    """Return compatibility-folded text without markup, control characters or
+    PDF action tokens. Visible prose (including "R&D", "<5s" and "R²") is kept."""
+    text = _compatibility_fold(str(value or ''))
     blocked = 0
     for pattern in (_ACTIVE_BLOCKS, _ACTIVE_OPEN, _TAG, _ENTITY_SCRIPT, _PDF_TOKENS):
         text, count = pattern.subn(' ', text)
@@ -75,11 +88,17 @@ BRANDS = [
     r'google\s+docs?\s+templates?', r'indeed\s+resume\s+builder', r'linkedin\s+resume\s+builder',
 ]
 _BRAND = r'(?:' + '|'.join(BRANDS) + r')'
-# Domains of resume builders and this product, removed wherever they stand alone.
-_BUILDER_ONLY = re.compile(
-    r'^\s*(?:www\.)?(?:baalebos(?:\s+cloud)?(?:\s+ai)?|baalebo\.xyz|resume\.io|zety\.com|novoresume\.com|kickresume\.com|'
+# Domains of resume builders and this product: removed wherever a segment is only the domain.
+_BUILDER_DOMAIN_ONLY = re.compile(
+    r'^\s*(?:www\.)?(?:baalebo\.xyz|resume\.io|zety\.com|novoresume\.com|kickresume\.com|'
     r'enhancv\.com|resumegenius\.com|myperfectresume\.com|livecareer\.com|resumelab\.com|flowcv\.com|visualcv\.com)\s*$',
     re.IGNORECASE)
+# This product's bare name is a watermark only when it is a whole line on its own. Next to
+# other content ("Baalebos AI | Multi-provider LLM gateway") it is a candidate's own project.
+_PRODUCT_NAME_ONLY = re.compile(r'^\s*(?:www\.)?baalebos(?:\s+cloud)?(?:\s+ai)?\s*$', re.IGNORECASE)
+# Fields that name an entry (a project, employer, school or role). A bare product name
+# there is the candidate's content, not a watermark.
+ENTRY_NAME_FIELDS = frozenset({'title', 'subtitle', 'role', 'company', 'degree', 'institution'})
 _BRANDING_PHRASE = re.compile(
     r'(?:\b(?:powered|generated|created|made|designed|built|optimi[sz]ed|formatted|written|crafted|enhanced|'
     r'tailored|produced|exported|rewritten|polished|template)\s+(?:by|with|using|on|via|in|from|through)\s+'
@@ -105,12 +124,14 @@ _COMMENTARY_INLINE = re.compile(
 _SEPARATORS = re.compile(r'(\s*[|\u2022\u00b7\u25cf\u2016]\s*)')
 
 
-def strip_watermarks_and_branding(value) -> str:
+def strip_watermarks_and_branding(value, *, keep_product_name: bool = False) -> str:
     """Remove branding, watermarks, page counters and optimiser commentary.
 
     Lines are split into segments on "|", "•" and "·" so that real
     content sharing a line survives:
     "Senior Software Engineer | Powered by Baalebos Cloud" -> "Senior Software Engineer".
+    A line that is only this product's name is dropped unless
+    ``keep_product_name`` (used for fields that name an entry).
     """
     out_lines = []
     for line in str(value or '').splitlines():
@@ -122,6 +143,8 @@ def strip_watermarks_and_branding(value) -> str:
             if cleaned:
                 kept.append((separators[index - 1] if index and kept else '', cleaned))
         text = ''.join(sep + seg for sep, seg in kept).strip()
+        if text and not keep_product_name and _PRODUCT_NAME_ONLY.match(text):
+            text = ''
         if text:
             out_lines.append(text)
         elif not line.strip():
@@ -130,7 +153,7 @@ def strip_watermarks_and_branding(value) -> str:
 
 
 def _clean_segment(segment: str) -> str:
-    if _COMMENTARY.match(segment) or _PAGE_COUNTER.match(segment) or _BUILDER_ONLY.match(segment):
+    if _COMMENTARY.match(segment) or _PAGE_COUNTER.match(segment) or _BUILDER_DOMAIN_ONLY.match(segment):
         return ''
     segment = _COMMENTARY_INLINE.sub('', segment)
     segment = _BRANDING_PHRASE.sub('', segment)
@@ -138,17 +161,18 @@ def _clean_segment(segment: str) -> str:
     segment = re.sub(r'\(\s*\)|\[\s*\]', '', segment)
     segment = re.sub(r'\s{2,}', ' ', segment)
     segment = re.sub(r'^[\s,;:\-\u2013\u2014]+|[\s,;:\-\u2013\u2014]+$', '', segment)
-    if _BUILDER_ONLY.match(segment):
+    if _BUILDER_DOMAIN_ONLY.match(segment):
         return ''
     return segment
 
 
-def clean_resume_strings(data):
+def clean_resume_strings(data, _field: str | None = None):
     """Apply sanitisation + branding removal to every string in a structure."""
     if isinstance(data, str):
-        return strip_watermarks_and_branding(sanitize_untrusted_text(data))
+        return strip_watermarks_and_branding(sanitize_untrusted_text(data),
+                                             keep_product_name=_field in ENTRY_NAME_FIELDS)
     if isinstance(data, list):
-        return [item for item in (clean_resume_strings(v) for v in data) if item not in ('', None, [], {})]
+        return [item for item in (clean_resume_strings(v, _field) for v in data) if item not in ('', None, [], {})]
     if isinstance(data, dict):
-        return {k: clean_resume_strings(v) for k, v in data.items()}
+        return {k: clean_resume_strings(v, k) for k, v in data.items()}
     return data
