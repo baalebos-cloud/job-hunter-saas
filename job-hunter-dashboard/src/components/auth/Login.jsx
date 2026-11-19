@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
-import { startSession } from '../../lib/session';
+import { startSession, errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -27,7 +27,7 @@ export default function Login() {
       if (token?.trim()) { startSession(token); window.location.href = destination; }
       else setError('Login succeeded but no token received.');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid email or password.');
+      setError(errorText(err, 'Invalid email or password.'));
     } finally { setLoading(false); }
   };
 

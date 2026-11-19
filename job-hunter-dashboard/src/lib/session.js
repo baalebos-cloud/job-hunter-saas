@@ -23,6 +23,37 @@ const STATUS_MESSAGES = {
   429: 'Too many requests. Please wait a moment and try again.',
 };
 
+// Text for a FastAPI `detail`, which is not always a string:
+//   * plain HTTPException             -> "Use PDF or DOCX."
+//   * plan limits (plan_guard)        -> { error, message, upgrade_url, ... }
+//   * request validation errors (422) -> [{ loc: ['body', 'email'], msg: '...' }, ...]
+// Returns null when there is nothing readable, so callers can fall back.
+export function detailText(detail) {
+  if (typeof detail === 'string') return detail.trim() || null;
+  if (Array.isArray(detail)) {
+    const parts = detail.map(item => {
+      if (!item?.msg) return null;
+      const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : '';
+      return field && field !== 'body' ? `${String(field).replace(/_/g, ' ')}: ${item.msg}` : item.msg;
+    }).filter(Boolean);
+    return parts.length ? parts.join('; ') : null;
+  }
+  if (detail && typeof detail.message === 'string') {
+    return detail.upgrade_url ? `${detail.message} Upgrade your plan on the Pricing page to continue.` : detail.message;
+  }
+  return null;
+}
+
+// Synchronous readable message for an axios error (JSON responses).
+export function errorText(err, fallback = 'Something went wrong. Please retry.') {
+  const text = detailText(err?.response?.data?.detail);
+  if (text) return text;
+  if (!err?.response) {
+    return err?.code === 'ECONNABORTED' ? 'The request timed out. Please retry.' : 'Network error. Check your connection and retry.';
+  }
+  return fallback;
+}
+
 // Readable message for an axios error, including responseType: 'blob' errors
 // whose JSON body arrives as a Blob.
 export async function apiErrorMessage(err, fallback = 'Something went wrong. Please retry.') {
@@ -32,7 +63,8 @@ export async function apiErrorMessage(err, fallback = 'Something went wrong. Ple
   if (!detail && data instanceof Blob) {
     try { detail = JSON.parse(await data.text())?.detail; } catch { /* not JSON */ }
   }
-  if (typeof detail === 'string' && status !== 401) return detail;
+  const text = detailText(detail);
+  if (text && status !== 401) return text;
   if (STATUS_MESSAGES[status]) return STATUS_MESSAGES[status];
   if (status >= 500) return `The server could not complete this request (error ${status}). Please retry shortly.`;
   if (!err?.response) return 'Network error. Check your connection and retry.';

@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-800 bg-slate-900 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600';
@@ -52,7 +53,7 @@ export default function ResetPassword() {
       await axios.post(`${API_BASE_URL}/auth/reset-password`, { token, new_password: form.password });
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Reset failed. The link may have expired.');
+      setError(errorText(err, 'Reset failed. The link may have expired.'));
     } finally { setLoading(false); }
   };
 

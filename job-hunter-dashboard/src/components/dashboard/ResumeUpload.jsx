@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -109,8 +110,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
         alert("Server received the file but didn't return a result.");
       }
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Upload failed. Please try again.';
-      alert(typeof msg === 'string' ? msg : 'Check all fields and try again.');
+      alert(errorText(err, 'Upload failed. Please try again.'));
     } finally {
       setUploading(false);
     }

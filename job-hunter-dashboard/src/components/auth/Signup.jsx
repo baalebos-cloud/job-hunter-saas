@@ -4,7 +4,7 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { startSession } from '../../lib/session';
+import { startSession, errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -104,7 +104,7 @@ export default function Signup() {
       }
 
     } catch (err) {
-      setError(err.response?.data?.detail || 'Signup failed. Please try again.');
+      setError(errorText(err, 'Signup failed. Please try again.'));
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -38,7 +39,7 @@ export default function VerifyEmail() {
       })
       .catch(err => {
         setStatus('error');
-        setMessage(err.response?.data?.detail || 'Verification failed. The link may have expired.');
+        setMessage(errorText(err, 'Verification failed. The link may have expired.'));
       });
   }, []);
 
