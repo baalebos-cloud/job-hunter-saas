@@ -5,11 +5,14 @@ Rules enforced here:
   ``strip_watermarks_and_branding``; no footer, page counter, watermark layer,
   producer/creator tag or generator comment is written. ``improvements`` and
   ``score`` are accepted for backwards compatibility and ignored.
-* No tables, images or colour-coded meaning. Text is selectable, uses an
-  embedded Unicode TTF (DejaVu Sans, Noto/WenQuanYi fallbacks for other
-  scripts) and real text bullets.
-* Section order: Summary, Experience, Skills, Education, Certifications,
-  Projects (empty sections omitted).
+* No tables, images or colour-coded meaning (one accent colour for the name
+  and headings only). Text is selectable and uses embedded TTFs: Carlito,
+  or DejaVu Sans for the whole document when Carlito lacks a glyph the text
+  needs, with Noto/WenQuanYi fallbacks for other scripts. Real text bullets;
+  dates sit right-aligned on the entry line as a separate text run.
+* Section order: Professional Summary, Core Skills, Professional Experience,
+  Selected Projects, Certifications, Education, Additional Information
+  (empty sections omitted).
 * Page size follows the candidate's region: US Letter for US/CA, A4 otherwise.
 * Strictly one page: standard (10pt) -> balanced (9.5pt) -> compact (9pt)
   profiles, then secondary content is condensed. Employers, titles, dates,
@@ -17,6 +20,7 @@ Rules enforced here:
 """
 from __future__ import annotations
 
+import contextvars
 import copy
 import os
 import re
@@ -38,18 +42,20 @@ from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate
 
 FONT_DIRECTORY = Path(__file__).resolve().parents[1] / 'assets' / 'fonts'
 # Carlito is metric-compatible with Calibri. DejaVu Sans covers far more
-# scripts and is used for the whole document when Carlito lacks a glyph, so a
-# resume never mixes fonts or silently loses characters.
+# Latin (e.g. Yoruba dot-below letters), so a document Carlito cannot fully
+# draw uses DejaVu throughout rather than mixing fonts inside names.
 FONT_FAMILIES = {
     'Carlito': ('Carlito-Regular.ttf', 'Carlito-Bold.ttf', 'Carlito-Italic.ttf', 'Carlito-BoldItalic.ttf'),
     'DejaVuSans': ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf', 'DejaVuSans-Oblique.ttf', 'DejaVuSans-BoldOblique.ttf'),
 }
-PRIMARY_FONT, FALLBACK_FONT = 'Carlito', 'DejaVuSans'
+PRIMARY_FONT, WIDE_LATIN_FONT = 'Carlito', 'DejaVuSans'
 for _family, (_regular, _bold, _italic, _bold_italic) in FONT_FAMILIES.items():
     for _suffix, _file in (('', _regular), ('-Bold', _bold), ('-Italic', _italic), ('-BoldItalic', _bold_italic)):
         pdfmetrics.registerFont(TTFont(_family + _suffix, str(FONT_DIRECTORY / _file)))
     pdfmetrics.registerFontFamily(_family, normal=_family, bold=f'{_family}-Bold',
                                   italic=f'{_family}-Italic', boldItalic=f'{_family}-BoldItalic')
+# The base family of the document being rendered; fallbacks are relative to it.
+_DOCUMENT_FONT = contextvars.ContextVar('resume_document_font', default=PRIMARY_FONT)
 
 ACCENT_COLOR = colors.HexColor('#1F4E79')   # name, headings and rules only; carries no meaning
 TEXT_COLOR = colors.HexColor('#1A1A1A')
@@ -374,13 +380,14 @@ class ExportResult:
     page_size: str
     region: str
     layout: str
+    font: str = PRIMARY_FONT
     condensed: bool = False
     condensed_items: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def info(self) -> dict:
         return {'pages': self.pages, 'page_size': self.page_size, 'region': self.region, 'layout': self.layout,
-                'condensed': self.condensed, 'condensed_items': list(self.condensed_items),
+                'font': self.font, 'condensed': self.condensed, 'condensed_items': list(self.condensed_items),
                 'warnings': list(self.warnings)}
 
 
@@ -411,9 +418,24 @@ def _font_dirs():
     return extra + FONT_SEARCH_DIRS
 
 
-@lru_cache(maxsize=1)
-def _primary_coverage() -> frozenset:
-    return frozenset(pdfmetrics.getFont(FONT_REGULAR).face.charWidths)
+@lru_cache(maxsize=None)
+def _coverage(family: str) -> frozenset:
+    return frozenset(pdfmetrics.getFont(family).face.charWidths)
+
+
+def choose_font(data: dict) -> str:
+    """Carlito unless it lacks characters DejaVu Sans can draw; then DejaVu."""
+    text = _all_text(data)
+    lacking = {ord(c) for c in text if ord(c) >= 0x80 and not c.isspace()} - _coverage(PRIMARY_FONT)
+    return WIDE_LATIN_FONT if lacking & _coverage(WIDE_LATIN_FONT) else PRIMARY_FONT
+
+
+def _all_text(data: dict) -> str:
+    parts = [data['name'], data['title'], data['contact'], data['summary'], data['additional_information']]
+    parts += [item for category, values in data['skills'].items() for item in (category, ' '.join(values))]
+    for section in ('experience', 'projects', 'education'):
+        parts += [str(v) for entry in data[section] for v in entry.values()]
+    return ' '.join(parts + data['certifications'])
 
 
 @lru_cache(maxsize=None)
@@ -438,7 +460,7 @@ def _font_for(char: str):
     """Return None for the primary font, a fallback font name, or '' if no
     installed font can render the character."""
     code = ord(char)
-    if code < 0x80 or code in _primary_coverage():
+    if code < 0x80 or code in _coverage(_DOCUMENT_FONT.get()):
         return None
     for font_name, _, _ in FALLBACK_FONTS:
         coverage = _fallback(font_name)
@@ -490,25 +512,76 @@ def _unsupported_characters(data: dict) -> list[str]:
     return sorted({c for c in text if ord(c) > 0x7f and not unicodedata.combining(c)
                    and unicodedata.category(c)[0] in 'LNPS' and _font_for(c) == ''})
 
+
+class SectionHeading(Flowable):
+    """Bold accent-coloured caps over a thin rule, kept with the content that follows."""
+
+    def __init__(self, text: str, font: str, size: float, space_before: float):
+        super().__init__()
+        self.text, self.font, self.size = text.upper(), font, size
+        self.keepWithNext = 1
+        self.spaceBefore, self.spaceAfter = space_before, 3
+
+    def wrap(self, available_width, available_height):
+        self.width = available_width
+        return available_width, self.size + 4
+
+    def draw(self):
+        canvas = self.canv
+        canvas.setFillColor(ACCENT_COLOR)
+        canvas.setFont(self.font, self.size)
+        canvas.drawString(0, 4.5, self.text)
+        canvas.setStrokeColor(ACCENT_COLOR)
+        canvas.setLineWidth(0.8)
+        canvas.line(0, 1.5, self.width, 1.5)
+
+
 class EntryLine(Flowable):
     """Entry text on the left, dates right-aligned on the same first line.
 
-def _styles(layout: Layout) -> dict[str, ParagraphStyle]:
+    Drawn as two text runs, not a table, so ATS parsers read it in order.
+    """
+
+    def __init__(self, left_markup: str, right: str, style: ParagraphStyle, right_font: str, keep_with_next: bool):
+        super().__init__()
+        self.left_markup, self.right, self.style, self.right_font = left_markup, right, style, right_font
+        self.keepWithNext = 1 if keep_with_next else 0
+        self.spaceBefore = style.spaceBefore
+
+    def wrap(self, available_width, available_height):
+        self.width = available_width
+        right_width = stringWidth(self.right, self.right_font, self.style.fontSize) if self.right else 0
+        self.paragraph = Paragraph(self.left_markup, self.style)
+        _, self.height = self.paragraph.wrap(available_width - (right_width + 12 if self.right else 0), available_height)
+        return available_width, self.height
+
+    def draw(self):
+        self.paragraph.drawOn(self.canv, 0, 0)
+        if self.right:
+            ascent = pdfmetrics.getAscentDescent(self.style.fontName, self.style.fontSize)[0]
+            self.canv.setFont(self.right_font, self.style.fontSize)
+            self.canv.setFillColor(MUTED_COLOR)
+            self.canv.drawRightString(self.width, self.height - ascent, self.right)
+
+
+def _styles(layout: Layout, font: str) -> dict[str, ParagraphStyle]:
     # splitLongWords + uriWasteReduce wrap long URLs/tokens without inserting
     # characters into the extractable text (which would corrupt ATS parsing).
-    base = dict(fontName=FONT_REGULAR, fontSize=layout.body, leading=layout.leading, textColor=TEXT_COLOR,
+    bold, italic = f'{font}-Bold', f'{font}-Italic'
+    base = dict(fontName=font, fontSize=layout.body, leading=layout.leading, textColor=TEXT_COLOR,
                 splitLongWords=1, uriWasteReduce=0.3)
     return {
-        'name': ParagraphStyle('Name', **{**base, 'fontName': FONT_BOLD, 'fontSize': layout.title,
-                                          'leading': layout.title * 1.2, 'spaceAfter': 1}),
-        'contact': ParagraphStyle('Contact', **base),
-        'heading': ParagraphStyle('Heading', **{**base, 'fontName': FONT_BOLD, 'fontSize': layout.body + 1,
-                                                'leading': layout.leading + 1, 'spaceBefore': layout.section_gap,
-                                                'spaceAfter': 1, 'keepWithNext': True}),
-        'entry': ParagraphStyle('Entry', **{**base, 'spaceBefore': layout.entry_gap, 'keepWithNext': True}),
+        'name': ParagraphStyle('Name', **{**base, 'fontName': bold, 'fontSize': layout.title,
+                                          'leading': layout.title * 1.2, 'textColor': ACCENT_COLOR,
+                                          'alignment': TA_CENTER}),
+        'title': ParagraphStyle('Title', **{**base, 'textColor': MUTED_COLOR, 'alignment': TA_CENTER}),
+        'contact': ParagraphStyle('Contact', **{**base, 'textColor': MUTED_COLOR, 'alignment': TA_CENTER}),
         'body': ParagraphStyle('Body', **base),
-        'bullet': ParagraphStyle('Bullet', **{**base, 'leftIndent': 12, 'bulletIndent': 2,
-                                              'bulletFontName': FONT_REGULAR, 'bulletFontSize': layout.body}),
+        'skill': ParagraphStyle('Skill', **{**base, 'spaceAfter': 1}),
+        'entry': ParagraphStyle('Entry', **{**base, 'fontName': bold, 'spaceBefore': layout.entry_gap + 2}),
+        'meta': ParagraphStyle('Meta', **{**base, 'fontName': italic, 'textColor': MUTED_COLOR, 'spaceAfter': 1}),
+        'bullet': ParagraphStyle('Bullet', **{**base, 'leftIndent': 14, 'bulletIndent': 4, 'spaceAfter': 1,
+                                              'bulletFontName': font, 'bulletFontSize': layout.body}),
     }
 
 
@@ -521,6 +594,7 @@ def _bullet_markup(text: str) -> str:
 
 
 def _muted(text: str, font: str) -> str:
+    """Regular-weight muted text inside a bold entry line."""
     return f"<font name='{font}' color='{MUTED_HEX}'>{_clean(text)}</font>"
 
 
@@ -533,10 +607,13 @@ def _story(data: dict, layout: Layout, font: str) -> list:
     story = []
 
     def heading(title):
-        story.append(Paragraph(title, s['heading']))
-        story.append(HRFlowable(width='100%', thickness=0.6, color=RULE_COLOR, spaceBefore=0, spaceAfter=2))
+        story.append(SectionHeading(title, f'{font}-Bold', layout.body, layout.section_gap + 3))
 
     def entry(primary, secondary, right, keep_with_next):
+        # Dates in a script the base font lacks stay in the paragraph, which
+        # handles font fallback; plain dates are drawn right-aligned.
+        if right and any(_font_for(c) for c in right):
+            secondary, right = ' · '.join(p for p in (secondary, right) if p), ''
         left = f'<b>{_clean(primary)}</b>' if primary else ''
         if secondary:
             left += ('  ' + _muted('|  ' + secondary, font)) if left else _muted(secondary, font)
@@ -606,15 +683,16 @@ def _scrub_generator_tags(pdf: bytes) -> bytes:
 
 
 def _render(data: dict, layout: Layout, pagesize) -> tuple[bytes, int]:
+    font = _DOCUMENT_FONT.get()
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=pagesize, leftMargin=layout.margin, rightMargin=layout.margin,
-        topMargin=layout.margin * 0.8, bottomMargin=layout.margin * 0.8,
+        topMargin=layout.margin, bottomMargin=layout.margin,
         title=f"{data['name']} - Resume", author=data['name'], subject='Resume', creator='',
         producer='', keywords='', lang='en', displayDocTitle=1,
         # Otherwise ReportLab references a non-embedded Helvetica as the canvas default.
-        initialFontName=FONT_REGULAR, initialFontSize=layout.body, initialLeading=layout.leading)
-    doc.build(_story(data, layout))
+        initialFontName=font, initialFontSize=layout.body, initialLeading=layout.leading)
+    doc.build(_story(data, layout, font))
     return _scrub_generator_tags(buffer.getvalue()), doc.page
 
 
@@ -708,6 +786,17 @@ def export_resume(resume_data, region: str | None = None, page_size: str | None 
     if not has_exportable_content(data):
         raise ResumeExportError('Resume content could not be read, so no resume was generated. '
                                 'Please retry or upload a text-based PDF or DOCX.')
+    font = choose_font(data)
+    token = _DOCUMENT_FONT.set(font)
+    try:
+        result = _export(data, region, page_size, priority_keywords)
+    finally:
+        _DOCUMENT_FONT.reset(token)
+    result.font = font
+    return result
+
+
+def _export(data: dict, region, page_size, priority_keywords) -> ExportResult:
     region = resolve_region(region)
     data = apply_region_rules(data, region)
     if page_size:
@@ -720,7 +809,7 @@ def export_resume(resume_data, region: str | None = None, page_size: str | None 
     keywords = [k for k in (priority_keywords or []) if isinstance(k, str) and k.strip()]
 
     warnings = []
-    font, missing = choose_font(data)
+    missing = _unsupported_characters(data)
     if missing:
         warnings.append('Some characters are not supported by the installed resume fonts and may not display: '
                         + ''.join(missing[:20]))
