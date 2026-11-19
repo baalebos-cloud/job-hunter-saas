@@ -118,3 +118,46 @@ def test_text_recovery_preserves_validation_and_retry_bound(monkeypatch, caplog,
         assert calls[2]['messages'] == calls[0]['messages']
         assert calls[2]['extra_body']['max_completion_tokens'] == calls[0]['extra_body']['max_completion_tokens']
     assert 'private-source-content' not in caplog.text
+
+
+def _provider(monkeypatch, body):
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content=json.dumps(body)))])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(ats_engine, 'get_client', lambda: (client, 'openai/gpt-oss-20b'))
+    monkeypatch.setattr(ats_engine.settings, 'GROQ_API_KEY', 'synthetic-test-key')
+    return calls
+
+
+def extracted(**overrides):
+    data = {'name': 'Ada Obi', 'title': 'DevOps Engineer', 'contact': 'ada@example.com', 'summary': 'Engineer.',
+            'experience': [{'role': 'DevOps Engineer', 'company': 'Acme', 'location': 'Remote', 'dates': '2025',
+                            'bullets': ['Built pipelines.'], 'environment': ''}],
+            'projects': [], 'certifications': ['AWS Certified Cloud Practitioner'],
+            'education': [{'degree': 'BSc', 'institution': 'NOUN', 'year': '2025'}], 'additional_information': '',
+            'skills': [{'category': 'Containers', 'items': ['Docker', 'Docker Compose']},
+                       {'category': 'CI/CD', 'items': ['GitHub Actions', 'Jenkins']},
+                       {'category': 'Containers', 'items': ['Docker', 'Dockerfiles']}]}
+    data.update(overrides)
+    return data
+
+
+def test_skill_categories_survive_extraction(monkeypatch):
+    calls = _provider(monkeypatch, extracted())
+    data = ats_engine.extract_resume_data('Ada Obi ada@example.com DevOps Engineer at Acme. Built pipelines with Docker.')
+    # Categories keep their names and order; repeats merge without duplicates.
+    assert data['skills'] == {'Containers': ['Docker', 'Docker Compose', 'Dockerfiles'], 'CI/CD': ['GitHub Actions', 'Jenkins']}
+    schema = calls[0]['response_format']['json_schema']['schema']
+    assert schema['properties']['skills']['type'] == 'array'
+    prompt = calls[0]['messages'][1]['content']
+    assert 'Degrees and diplomas go only in education' in prompt and 'skill categories' in prompt
+
+
+def test_legacy_skill_dict_from_provider_is_still_accepted(monkeypatch):
+    _provider(monkeypatch, valid_rewrite())   # optimized_skills as {"Skills": [...]}
+    assert ats_engine._json('Return JSON.', contract=ResumeRewrite)['optimized_skills'] == {'Skills': ['Python', 'Terraform']}
+    _provider(monkeypatch, {**valid_rewrite(), 'optimized_skills': [{'category': '', 'items': ['Python']}]})
+    assert ats_engine._json('Return JSON.', contract=ResumeRewrite)['optimized_skills'] == {'Skills': ['Python']}
