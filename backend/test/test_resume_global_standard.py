@@ -20,7 +20,7 @@ from backend.app.models.subscription import Subscription
 from backend.app.models.user import User
 from backend.app.services.auth_service import create_access_token
 from backend.app.utils.pdf_generator import (
-    ResumeExportError, download_filename, export_resume, generate_optimized_resume,
+    MIN_BODY_FONT, ResumeExportError, download_filename, export_resume, generate_optimized_resume,
     merge_confirmed_keywords, normalize_dates, normalize_resume_data, resolve_region)
 
 YORUBA_NAME = 'Ọlájídé Ẹ̀bùn Adéwálé'
@@ -113,17 +113,18 @@ def long_resume():
 def test_ats_structure_fonts_and_page_count(data):
     result = export_resume(data, region='NG')
     with pdfplumber.open(io.BytesIO(result.pdf)) as doc:
-        assert 1 <= len(doc.pages) <= 2 and len(doc.pages) == result.pages
+        assert len(doc.pages) == 1 == result.pages
         for page in doc.pages:
             assert page.find_tables() == []
-            assert min(c['size'] for c in page.chars) >= 10
+            assert min(c['size'] for c in page.chars) >= MIN_BODY_FONT == 9
             assert not page.images
         text = '\n'.join(p.extract_text() for p in doc.pages)
     assert '(cid:' not in text
     for font in _fonts(result.pdf):
         assert font.get('/FontFile2') or font.get('/FontFile') or font.get('/FontFile3'), font
-    # Standard section order.
-    order = [text.index(h) for h in ('SUMMARY', 'EXPERIENCE', 'SKILLS', 'EDUCATION', 'CERTIFICATIONS', 'PROJECTS')]
+    # Section order: skills ahead of experience, education last.
+    order = [text.index(h) for h in ('PROFESSIONAL SUMMARY', 'CORE SKILLS', 'PROFESSIONAL EXPERIENCE',
+                                     'SELECTED PROJECTS', 'CERTIFICATIONS', 'EDUCATION')]
     assert order == sorted(order)
 
 
@@ -143,7 +144,7 @@ def _fonts(pdf):
 
 def test_strict_one_page_keeps_every_employer_degree_and_certification():
     data = long_resume()
-    result = export_resume(data, max_pages=1, priority_keywords=['Python'])
+    result = export_resume(data, priority_keywords=['Python'])
     assert result.pages == 1 and result.condensed
     text = pdf_text(result.pdf)
     for job in data['experience']:
@@ -180,9 +181,60 @@ def test_long_unbroken_tokens_do_not_break_layout():
     assert export_resume(resume(contact='renee@example.com | ' + url)).pages == 1
 
 
-def test_unsupported_glyphs_are_reported_not_silently_dropped():
-    result = export_resume(resume(name='田中太郎'))
+@pytest.mark.parametrize('name', ['田中太郎', 'محمد علي', 'Renée 김민준'])
+def test_non_latin_names_use_fallback_fonts(name):
+    pytest.importorskip('arabic_reshaper')
+    from backend.app.utils.pdf_generator import _fallback
+    if _fallback('ResumeCJK') is None or _fallback('ResumeArabic') is None:
+        pytest.skip('fallback fonts not installed (Dockerfile installs fonts-noto-core, fonts-wqy-zenhei)')
+    result = export_resume(resume(name=name))
+    assert not result.warnings
+    import unicodedata
+    assert unicodedata.normalize('NFKC', name) in unicodedata.normalize('NFKC', pdf_text(result.pdf))
+
+
+def test_glyphs_without_any_font_are_reported_not_silently_dropped():
+    result = export_resume(resume(name='Ada \U00012000'))
     assert any('not supported' in w for w in result.warnings)
+
+
+def _font_names(pdf: bytes) -> set[str]:
+    with pdfplumber.open(io.BytesIO(pdf)) as doc:
+        return {c['fontname'].split('+')[-1] for page in doc.pages for c in page.chars}
+
+
+@pytest.mark.parametrize('name,family', [('Renée Müller', 'Carlito'), ('Анна Иванова', 'Carlito'),
+                                         (YORUBA_NAME, 'DejaVuSans')])
+def test_carlito_by_default_whole_document_falls_back_to_dejavu(name, family):
+    result = export_resume(resume(name=name))
+    assert result.info()['font'] == family and not result.warnings
+    assert {f.split('-')[0] for f in _font_names(result.pdf)} == {family}
+    assert name in pdf_text(result.pdf)
+
+
+def test_entry_line_carries_location_dates_and_project_subtitle():
+    data = resume(experience=[{'role': 'Senior AI Trainer', 'company': 'micro1', 'location': 'Remote (Contract)',
+                               'dates': 'Sep 2026 – Present', 'environment': 'Python, pytest',
+                               'bullets': ['Quality evaluation: Assess AI outputs against written guidelines.']}],
+                  projects=[{'title': 'Baalebos AI', 'subtitle': 'Multi-provider LLM gateway',
+                             'tech': 'Python, Groq, PyPI', 'bullets': ['Packaged and released: Published on PyPI.']}],
+                  certifications=['AWS Educate: Introduction to Generative AI'])
+    lines = pdf_text(export_resume(data).pdf).splitlines()
+    assert 'Senior AI Trainer | micro1 · Remote (Contract) Sep 2026 - Present' in lines
+    assert 'Baalebos AI | Multi-provider LLM gateway' in lines
+    assert 'Python · Groq · PyPI' in lines and 'Tools: Python · pytest' in lines
+
+
+def test_bullet_labels_are_bold_only_in_experience_and_projects():
+    data = resume(experience=[{'role': 'Engineer', 'company': 'Example', 'dates': '2025', 'environment': '',
+                               'bullets': ['Docker-based CI/CD: Built pipelines.', 'Cut latency vs. baseline: by caching.']}],
+                  certifications=['AWS Educate: Introduction to Generative AI'])
+    with pdfplumber.open(io.BytesIO(export_resume(data).pdf)) as doc:
+        words = doc.pages[0].extract_words(extra_attrs=['fontname'])
+    font = {w['text']: w['fontname'] for w in words}
+    assert font['Docker-based'].endswith('Carlito-Bold') and font['pipelines.'].endswith('Carlito-Regular')
+    assert font['Educate:'].endswith('Carlito-Regular')     # a certification name, not a label
+    assert font['Cut'].endswith('Carlito-Regular')          # a lead-in containing "." is a sentence
 
 
 # ── normalize_resume_data ────────────────────────────────────────────────────
@@ -237,7 +289,7 @@ def db():
 @pytest.fixture
 def client(db):
     from backend.app import main
-    main._rate_store.clear()
+    main.reset_rate_limits()
     return TestClient(app)
 
 

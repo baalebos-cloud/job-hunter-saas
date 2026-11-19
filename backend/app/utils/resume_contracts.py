@@ -19,11 +19,13 @@ class Experience(Contract):
 
 
 class ExtractedExperience(Experience):
+    location: str
     environment: str
 
 
 class Project(Contract):
     title: str
+    subtitle: str
     tech: str
     bullets: list[str]
 

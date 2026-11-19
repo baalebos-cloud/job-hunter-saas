@@ -1,43 +1,60 @@
 """ATS-friendly, single-column resume export.
 
-Rules enforced here (see docs in the PR "fix/resume-global-standard"):
-* Only candidate content is rendered. Optimizer notes, scores, branding and
-  "AI optimised" labels never enter the document; ``improvements`` and
+Rules enforced here:
+* Zero watermarks/branding (hard invariant): every field passes through
+  ``strip_watermarks_and_branding``; no footer, page counter, watermark layer,
+  producer/creator tag or generator comment is written. ``improvements`` and
   ``score`` are accepted for backwards compatibility and ignored.
 * No tables, images or colour-coded meaning. Text is selectable, uses an
-  embedded Unicode TTF (DejaVu Sans) and real text bullets.
+  embedded Unicode TTF (DejaVu Sans, Noto/WenQuanYi fallbacks for other
+  scripts) and real text bullets.
 * Section order: Summary, Experience, Skills, Education, Certifications,
   Projects (empty sections omitted).
 * Page size follows the candidate's region: US Letter for US/CA, A4 otherwise.
-* An adaptive fitting pass tightens layout (never below 10pt body text) to
-  fit the page budget; content is only condensed when a strict one-page
-  document is explicitly requested.
+* Strictly one page: standard (10pt) -> balanced (9.5pt) -> compact (9pt)
+  profiles, then secondary content is condensed. Employers, titles, dates,
+  degrees and certifications are never removed. Verified with pypdf.
 """
 from __future__ import annotations
 
+import copy
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate
 
 FONT_DIRECTORY = Path(__file__).resolve().parents[1] / 'assets' / 'fonts'
-FONT_REGULAR = 'ResumeSans'
-FONT_BOLD = 'ResumeSansBold'
-pdfmetrics.registerFont(TTFont(FONT_REGULAR, str(FONT_DIRECTORY / 'DejaVuSans.ttf')))
-pdfmetrics.registerFont(TTFont(FONT_BOLD, str(FONT_DIRECTORY / 'DejaVuSans-Bold.ttf')))
-pdfmetrics.registerFontFamily(FONT_REGULAR, normal=FONT_REGULAR, bold=FONT_BOLD, italic=FONT_REGULAR, boldItalic=FONT_BOLD)
+# Carlito is metric-compatible with Calibri. DejaVu Sans covers far more
+# scripts and is used for the whole document when Carlito lacks a glyph, so a
+# resume never mixes fonts or silently loses characters.
+FONT_FAMILIES = {
+    'Carlito': ('Carlito-Regular.ttf', 'Carlito-Bold.ttf', 'Carlito-Italic.ttf', 'Carlito-BoldItalic.ttf'),
+    'DejaVuSans': ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf', 'DejaVuSans-Oblique.ttf', 'DejaVuSans-BoldOblique.ttf'),
+}
+PRIMARY_FONT, FALLBACK_FONT = 'Carlito', 'DejaVuSans'
+for _family, (_regular, _bold, _italic, _bold_italic) in FONT_FAMILIES.items():
+    for _suffix, _file in (('', _regular), ('-Bold', _bold), ('-Italic', _italic), ('-BoldItalic', _bold_italic)):
+        pdfmetrics.registerFont(TTFont(_family + _suffix, str(FONT_DIRECTORY / _file)))
+    pdfmetrics.registerFontFamily(_family, normal=_family, bold=f'{_family}-Bold',
+                                  italic=f'{_family}-Italic', boldItalic=f'{_family}-BoldItalic')
 
-TEXT_COLOR = colors.HexColor('#111111')
-RULE_COLOR = colors.HexColor('#444444')
+ACCENT_COLOR = colors.HexColor('#1F4E79')   # name, headings and rules only; carries no meaning
+TEXT_COLOR = colors.HexColor('#1A1A1A')
+MUTED_COLOR = colors.HexColor('#555555')
+MUTED_HEX = '#555555'
 
 REGIONS = ('US', 'CA', 'UK', 'EU', 'NG', 'OTHER')
 LETTER_REGIONS = {'US', 'CA'}
@@ -234,11 +251,12 @@ def _projects(value) -> list[dict]:
     for item in value if isinstance(value, list) else ([value] if value else []):
         if isinstance(item, str):
             if _text(item):
-                entries.append({'title': _text(item), 'tech': '', 'bullets': []})
+                entries.append({'title': _text(item), 'subtitle': '', 'tech': '', 'bullets': []})
             continue
         if not isinstance(item, dict):
             continue
         entry = {'title': _pick(item, 'title', 'name'),
+                 'subtitle': _pick(item, 'subtitle', 'tagline', 'summary'),
                  'tech': _pick(item, 'tech', 'technologies', 'stack', 'tools'),
                  'bullets': _lines(item.get('bullets') or item.get('description'))}
         if entry['title'] or entry['bullets']:
@@ -330,20 +348,23 @@ def merge_confirmed_keywords(data: dict, keywords) -> dict:
 
 @dataclass(frozen=True)
 class Layout:
+    name: str
     body: float
     leading: float
     margin: float
-    name: float
+    title: float
     section_gap: float
     entry_gap: float
 
 
+# Progressive profiles: content is fitted by layout first, trimmed last.
 LAYOUTS = (
-    Layout(body=10.5, leading=13.5, margin=54, name=17, section_gap=9, entry_gap=5),   # 0.75in margins
-    Layout(body=10, leading=12.5, margin=43, name=16, section_gap=6, entry_gap=3),     # 0.6in margins
-    Layout(body=10, leading=12, margin=36, name=15, section_gap=4, entry_gap=2),       # 0.5in margins
+    Layout('standard', body=10, leading=12.4, margin=36, title=16, section_gap=6, entry_gap=3),
+    Layout('balanced', body=9.5, leading=11.6, margin=28, title=15, section_gap=4.5, entry_gap=2),
+    Layout('compact', body=9, leading=10.8, margin=24, title=14, section_gap=3.5, entry_gap=1.5),
 )
-MIN_BODY_FONT = 10
+MIN_BODY_FONT = 9
+MAX_PAGES = 1
 
 
 @dataclass
@@ -352,144 +373,338 @@ class ExportResult:
     pages: int
     page_size: str
     region: str
-    layout_pass: int
+    layout: str
     condensed: bool = False
+    condensed_items: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def info(self) -> dict:
-        return {'pages': self.pages, 'page_size': self.page_size, 'region': self.region,
-                'layout_pass': self.layout_pass, 'condensed': self.condensed, 'warnings': list(self.warnings)}
+        return {'pages': self.pages, 'page_size': self.page_size, 'region': self.region, 'layout': self.layout,
+                'condensed': self.condensed, 'condensed_items': list(self.condensed_items),
+                'warnings': list(self.warnings)}
+
+
+# ── Unicode font fallback ────────────────────────────────────────────────────
+# DejaVu Sans covers Latin (incl. Yoruba), Greek and Cyrillic. Other scripts
+# fall back to Noto / WenQuanYi fonts installed in the image (Dockerfile:
+# fonts-noto-core, fonts-wqy-zenhei). Extra directories: RESUME_FONT_DIRS.
+FALLBACK_FONTS = (
+    ('ResumeNoto', 'NotoSans-Regular.ttf', None),
+    ('ResumeArabic', 'NotoSansArabic-Regular.ttf', None),
+    ('ResumeHebrew', 'NotoSansHebrew-Regular.ttf', None),
+    ('ResumeDevanagari', 'NotoSansDevanagari-Regular.ttf', None),
+    ('ResumeBengali', 'NotoSansBengali-Regular.ttf', None),
+    ('ResumeTamil', 'NotoSansTamil-Regular.ttf', None),
+    ('ResumeThai', 'NotoSansThai-Regular.ttf', None),
+    ('ResumeEthiopic', 'NotoSansEthiopic-Regular.ttf', None),
+    ('ResumeArmenian', 'NotoSansArmenian-Regular.ttf', None),
+    ('ResumeGeorgian', 'NotoSansGeorgian-Regular.ttf', None),
+    ('ResumeCJK', 'wqy-zenhei.ttc', 0),
+)
+FONT_SEARCH_DIRS = [FONT_DIRECTORY, Path('/usr/share/fonts/truetype/noto'), Path('/usr/share/fonts/truetype/wqy'),
+                    Path('/usr/share/fonts/truetype/noto-cjk')]
+_RTL = re.compile(r'[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufefc]')
+
+
+def _font_dirs():
+    extra = [Path(p) for p in os.getenv('RESUME_FONT_DIRS', '').split(os.pathsep) if p]
+    return extra + FONT_SEARCH_DIRS
+
+
+@lru_cache(maxsize=1)
+def _primary_coverage() -> frozenset:
+    return frozenset(pdfmetrics.getFont(FONT_REGULAR).face.charWidths)
+
+
+@lru_cache(maxsize=None)
+def _fallback(name: str):
+    """Register a fallback font on first use; returns its coverage or None."""
+    for font_name, filename, index in FALLBACK_FONTS:
+        if font_name != name:
+            continue
+        for directory in _font_dirs():
+            path = directory / filename
+            if path.is_file():
+                try:
+                    font = TTFont(font_name, str(path), subfontIndex=index) if index is not None else TTFont(font_name, str(path))
+                    pdfmetrics.registerFont(font)
+                    return frozenset(font.face.charWidths)
+                except Exception:  # unreadable/CFF font: try the next location
+                    continue
+    return None
+
+
+def _font_for(char: str):
+    """Return None for the primary font, a fallback font name, or '' if no
+    installed font can render the character."""
+    code = ord(char)
+    if code < 0x80 or code in _primary_coverage():
+        return None
+    for font_name, _, _ in FALLBACK_FONTS:
+        coverage = _fallback(font_name)
+        if coverage and code in coverage:
+            return font_name
+    return ''
+
+
+def _visual_order(run: str) -> str:
+    """Shape and reorder right-to-left runs (Arabic/Hebrew) for ReportLab."""
+    if not _RTL.search(run):
+        return run
+    try:
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        return get_display(arabic_reshaper.reshape(run))
+    except Exception:
+        return run
 
 
 def _clean(value) -> str:
-    """Escape candidate text for ReportLab's mini-markup parser."""
-    return escape(_text(value))
+    """Escape candidate text for ReportLab markup, switching to fallback fonts
+    for scripts the primary font cannot render."""
+    text = _text(value)
+    if all(ord(c) < 0x80 for c in text):
+        return escape(text)
+    runs, current, buffer = [], None, []
+    for char in text:
+        font = current if unicodedata.combining(char) and buffer else _font_for(char)
+        font = None if font == '' else font
+        if font != current and buffer:
+            runs.append((current, ''.join(buffer)))
+            buffer = []
+        current = font
+        buffer.append(char)
+    if buffer:
+        runs.append((current, ''.join(buffer)))
+    out = []
+    for font, run in runs:
+        piece = escape(_visual_order(run) if font else run)
+        out.append(f'<font name="{font}">{piece}</font>' if font else piece)
+    return ''.join(out)
 
 
 def _unsupported_characters(data: dict) -> list[str]:
-    font = pdfmetrics.getFont(FONT_REGULAR).face
-    widths = getattr(font, 'charWidths', {})
     text = ' '.join([data['name'], data['title'], data['contact'], data['summary'], data['additional_information']]
-                    + [str(v) for e in data['experience'] for v in e.values()])
-    missing = sorted({c for c in text if ord(c) > 0x7f and not unicodedata.combining(c) and ord(c) not in widths
-                      and unicodedata.category(c)[0] in 'LNPS'})
-    return missing
+                    + [str(v) for e in data['experience'] for v in e.values()]
+                    + [str(v) for e in data['education'] for v in e.values()])
+    return sorted({c for c in text if ord(c) > 0x7f and not unicodedata.combining(c)
+                   and unicodedata.category(c)[0] in 'LNPS' and _font_for(c) == ''})
 
+class EntryLine(Flowable):
+    """Entry text on the left, dates right-aligned on the same first line.
 
 def _styles(layout: Layout) -> dict[str, ParagraphStyle]:
-    base = dict(fontName=FONT_REGULAR, fontSize=layout.body, leading=layout.leading, textColor=TEXT_COLOR, splitLongWords=1)
+    # splitLongWords + uriWasteReduce wrap long URLs/tokens without inserting
+    # characters into the extractable text (which would corrupt ATS parsing).
+    base = dict(fontName=FONT_REGULAR, fontSize=layout.body, leading=layout.leading, textColor=TEXT_COLOR,
+                splitLongWords=1, uriWasteReduce=0.3)
     return {
-        'name': ParagraphStyle('Name', **{**base, 'fontName': FONT_BOLD, 'fontSize': layout.name,
-                                          'leading': layout.name * 1.25, 'spaceAfter': 2}),
+        'name': ParagraphStyle('Name', **{**base, 'fontName': FONT_BOLD, 'fontSize': layout.title,
+                                          'leading': layout.title * 1.2, 'spaceAfter': 1}),
         'contact': ParagraphStyle('Contact', **base),
         'heading': ParagraphStyle('Heading', **{**base, 'fontName': FONT_BOLD, 'fontSize': layout.body + 1,
                                                 'leading': layout.leading + 1, 'spaceBefore': layout.section_gap,
                                                 'spaceAfter': 1, 'keepWithNext': True}),
         'entry': ParagraphStyle('Entry', **{**base, 'spaceBefore': layout.entry_gap, 'keepWithNext': True}),
         'body': ParagraphStyle('Body', **base),
-        'bullet': ParagraphStyle('Bullet', **{**base, 'leftIndent': 13, 'bulletIndent': 2,
+        'bullet': ParagraphStyle('Bullet', **{**base, 'leftIndent': 12, 'bulletIndent': 2,
                                               'bulletFontName': FONT_REGULAR, 'bulletFontSize': layout.body}),
     }
 
 
-def _story(data: dict, layout: Layout) -> list:
-    s = _styles(layout)
+def _bullet_markup(text: str) -> str:
+    """Bold a short lead-in written as "Label: sentence" (at most six words, no full stop)."""
+    head, sep, tail = text.partition(': ')
+    if sep and tail and 2 <= len(head) <= 48 and len(head.split()) <= 6 and '.' not in head:
+        return f'<b>{_clean(head)}:</b> {_clean(tail)}'
+    return _clean(text)
+
+
+def _muted(text: str, font: str) -> str:
+    return f"<font name='{font}' color='{MUTED_HEX}'>{_clean(text)}</font>"
+
+
+def _tech_line(value: str) -> str:
+    return ' · '.join(_split_skills(value))
+
+
+def _story(data: dict, layout: Layout, font: str) -> list:
+    s = _styles(layout, font)
     story = []
 
     def heading(title):
         story.append(Paragraph(title, s['heading']))
-        story.append(HRFlowable(width='100%', thickness=0.6, color=RULE_COLOR, spaceBefore=0, spaceAfter=3))
+        story.append(HRFlowable(width='100%', thickness=0.6, color=RULE_COLOR, spaceBefore=0, spaceAfter=2))
 
-    def entry_line(primary, *rest):
-        parts = [f'<b>{_clean(primary)}</b>'] if primary else []
-        parts += [_clean(p) for p in rest if _text(p)]
-        if parts:
-            story.append(Paragraph(' | '.join(parts), s['entry']))
+    def entry(primary, secondary, right, keep_with_next):
+        left = f'<b>{_clean(primary)}</b>' if primary else ''
+        if secondary:
+            left += ('  ' + _muted('|  ' + secondary, font)) if left else _muted(secondary, font)
+        if left or right:
+            story.append(EntryLine(left, right, s['entry'], f'{font}-Italic', keep_with_next))
 
-    def bullets(items):
+    def bullets(items, labels=True):
         for item in items:
-            story.append(Paragraph(_clean(item), s['bullet'], bulletText='\u2022'))
+            markup = _bullet_markup(item) if labels else _clean(item)
+            story.append(Paragraph(markup, s['bullet'], bulletText='•'))
 
     story.append(Paragraph(_clean(data['name']), s['name']))
     if data['title']:
-        story.append(Paragraph(_clean(data['title']), s['contact']))
+        story.append(Paragraph(_clean(data['title']), s['title']))
     if data['contact']:
         story.append(Paragraph(_clean(data['contact']), s['contact']))
 
     if data['summary']:
-        heading('SUMMARY')
+        heading('Professional Summary')
         story.append(Paragraph(_clean(data['summary']), s['body']))
-    if data['experience']:
-        heading('EXPERIENCE')
-        for job in data['experience']:
-            entry_line(job['role'], job['company'], job['location'], job['dates'])
-            bullets(job['bullets'])
-            if job['environment']:
-                story.append(Paragraph('<b>Tools:</b> ' + _clean(job['environment']), s['body']))
     if data['skills']:
-        heading('SKILLS')
+        heading('Core Skills')
         for category, values in data['skills'].items():
             line = _clean(', '.join(values))
             if not (category == 'Skills' and len(data['skills']) == 1):
                 line = f'<b>{_clean(category)}:</b> ' + line
-            story.append(Paragraph(line, s['body']))
-    if data['education']:
-        heading('EDUCATION')
-        for edu in data['education']:
-            entry_line(edu['degree'], edu['institution'], edu['location'], edu['year'])
-    if data['certifications']:
-        heading('CERTIFICATIONS')
-        bullets(data['certifications'])
+            story.append(Paragraph(line, s['skill']))
+    if data['experience']:
+        heading('Professional Experience')
+        for job in data['experience']:
+            organisation = ' · '.join(p for p in (job['company'], job['location']) if p)
+            entry(job['role'], organisation, job['dates'], bool(job['bullets'] or job['environment']))
+            bullets(job['bullets'])
+            if job['environment']:
+                story.append(Paragraph('<b>Tools:</b> ' + _clean(_tech_line(job['environment'])), s['body']))
     if data['projects']:
-        heading('PROJECTS')
+        heading('Selected Projects')
         for project in data['projects']:
-            entry_line(project['title'], project['tech'])
+            entry(project['title'], project['subtitle'], '', True)
+            if project['tech']:
+                story.append(Paragraph(_clean(_tech_line(project['tech'])), s['meta']))
             bullets(project['bullets'])
+    if data['certifications']:
+        heading('Certifications')
+        bullets(data['certifications'], labels=False)  # "AWS Educate: ..." is a name, not a label
+    if data['education']:
+        heading('Education')
+        for edu in data['education']:
+            entry(edu['degree'], ' · '.join(p for p in (edu['institution'], edu['location']) if p), edu['year'], False)
     if data['additional_information']:
-        heading('ADDITIONAL INFORMATION')
+        heading('Additional Information')
         for line in data['additional_information'].splitlines():
             story.append(Paragraph(_clean(line), s['body']))
     return story
+
+
+# ReportLab writes its name into a PDF comment in the header and trailer.
+# Blank them in place (same length, so xref offsets stay valid).
+_GENERATOR_COMMENTS = (b'ReportLab Generated PDF document http://www.reportlab.com',
+                       b'ReportLab generated PDF document -- digest (http://www.reportlab.com)')
+
+
+def _scrub_generator_tags(pdf: bytes) -> bytes:
+    for marker in _GENERATOR_COMMENTS:
+        pdf = pdf.replace(marker, b' ' * len(marker))
+    return pdf
 
 
 def _render(data: dict, layout: Layout, pagesize) -> tuple[bytes, int]:
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=pagesize, leftMargin=layout.margin, rightMargin=layout.margin,
-        topMargin=layout.margin, bottomMargin=layout.margin,
+        topMargin=layout.margin * 0.8, bottomMargin=layout.margin * 0.8,
         title=f"{data['name']} - Resume", author=data['name'], subject='Resume', creator='',
         producer='', keywords='', lang='en', displayDocTitle=1,
         # Otherwise ReportLab references a non-embedded Helvetica as the canvas default.
         initialFontName=FONT_REGULAR, initialFontSize=layout.body, initialLeading=layout.leading)
     doc.build(_story(data, layout))
-    return buffer.getvalue(), doc.page
+    return _scrub_generator_tags(buffer.getvalue()), doc.page
 
 
-def _condense(data: dict, keep: int, priority_keywords) -> dict:
-    """Trim bullets to ``keep`` per role/project, preferring ones that mention
-    priority keywords. Never removes an employer, degree or certification."""
-    keys = [k.casefold() for k in priority_keywords or [] if k]
+# ── Strict one-page condensing ───────────────────────────────────────────────
 
-    def pick(items):
-        if len(items) <= keep:
-            return items
-        ranked = sorted(range(len(items)), key=lambda i: (-sum(k in items[i].casefold() for k in keys), i))
-        chosen = sorted(ranked[:keep])
-        return [items[i] for i in chosen]
-    return {**data,
-            'experience': [{**e, 'bullets': pick(e['bullets'])} for e in data['experience']],
-            'projects': [{**p, 'bullets': pick(p['bullets'])} for p in data['projects']]}
+def _bullet_priority(text: str, keywords) -> float:
+    from backend.app.utils.resume_quality import contains
+    score = sum(1 for k in keywords if contains(text, k))
+    if re.search(r'\d', text):
+        score += 0.5  # quantified achievements are kept preferentially
+    return score
+
+
+def _first_sentences(text: str, count: int) -> str:
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return ' '.join(sentences[:count]).strip()
+
+
+def _condense_steps(data: dict, keywords):
+    """Yield (description, data) with progressively less secondary content.
+
+    Never removes an employer, job title, employment date, degree or
+    certification. Order: tool lines, summary, secondary projects, trailing
+    low-priority bullets from the oldest roles, additional information.
+    """
+    data = copy.deepcopy(data)
+    for job in reversed(data['experience']):
+        if job['environment']:
+            job['environment'] = ''
+            yield 'Removed tool lists already covered by Skills', data
+    for count in (2, 1):
+        shorter = _first_sentences(data['summary'], count)
+        if data['summary'] and shorter != data['summary']:
+            data['summary'] = shorter
+            yield f'Shortened summary to {count} sentence{"s" if count > 1 else ""}', data
+    for floor in (1, 0):
+        for project in reversed(data['projects'][1:]):
+            while len(project['bullets']) > floor:
+                project['bullets'] = _drop_lowest(project['bullets'], keywords)
+                yield f'Shortened project "{project["title"]}"', data
+    if data['projects'] and len(data['projects'][0]['bullets']) > 1:
+        data['projects'][0]['bullets'] = data['projects'][0]['bullets'][:1]
+        yield 'Shortened main project', data
+    for floor in (4, 3, 2, 1):
+        # Oldest roles first; the most recent role keeps the most detail.
+        for job in reversed(data['experience']):
+            while len(job['bullets']) > floor:
+                job['bullets'] = _drop_lowest(job['bullets'], keywords)
+                yield f'Shortened {job["role"]} at {job["company"]}', data
+    while len(data['projects']) > 1:
+        removed = data['projects'].pop()
+        yield f'Removed secondary project "{removed["title"]}"', data
+    if data['additional_information']:
+        data['additional_information'] = ''
+        yield 'Removed additional information', data
+    for job in reversed(data['experience'][1:]):
+        if job['bullets']:
+            job['bullets'] = []
+            yield f'Kept only title, employer and dates for {job["role"]} at {job["company"]}', data
+    if data['projects']:
+        data['projects'] = []
+        yield 'Removed projects', data
+
+
+def _drop_lowest(bullets: list[str], keywords) -> list[str]:
+    scores = [(_bullet_priority(b, keywords), -i) for i, b in enumerate(bullets)]
+    drop = scores.index(min(scores))  # lowest priority; ties remove the later bullet
+    return bullets[:drop] + bullets[drop + 1:]
+
+
+def _page_count(pdf: bytes) -> int:
+    from pypdf import PdfReader
+    return len(PdfReader(BytesIO(pdf)).pages)
+
+
+def strip_branding(data: dict) -> dict:
+    """Branding/watermark removal on every rendered field."""
+    from backend.app.utils.sanitize import clean_resume_strings
+    return normalize_resume_data(clean_resume_strings(data))
 
 
 def export_resume(resume_data, region: str | None = None, page_size: str | None = None,
-                  max_pages: int = 2, priority_keywords=None) -> ExportResult:
-    """Render the resume and report page metrics.
+                  priority_keywords=None, **_ignored) -> ExportResult:
+    """Render a strictly one-page resume and report what was done to fit it.
 
-    ``max_pages=1`` enables strict one-page mode: after layout tightening, the
-    lowest-relevance bullets are condensed. ``max_pages=2`` (default) only
-    tightens layout and warns if the document still exceeds two pages.
+    Layout profiles are tried first (standard -> balanced -> compact); only if
+    the compact profile still overflows is secondary content condensed. The
+    page count is verified with pypdf before returning.
     """
-    data = normalize_resume_data(resume_data)
+    data = strip_branding(resume_data)
     if not has_exportable_content(data):
         raise ResumeExportError('Resume content could not be read, so no resume was generated. '
                                 'Please retry or upload a text-based PDF or DOCX.')
@@ -502,48 +717,54 @@ def export_resume(resume_data, region: str | None = None, page_size: str | None 
     else:
         size_name = 'LETTER' if region in LETTER_REGIONS else 'A4'
     pagesize = LETTER if size_name == 'LETTER' else A4
-    target = 1 if max_pages == 1 else 2
+    keywords = [k for k in (priority_keywords or []) if isinstance(k, str) and k.strip()]
 
     warnings = []
-    missing = _unsupported_characters(data)
+    font, missing = choose_font(data)
     if missing:
-        warnings.append('Some characters are not supported by the resume font and may not display: ' + ''.join(missing[:20]))
+        warnings.append('Some characters are not supported by the installed resume fonts and may not display: '
+                        + ''.join(missing[:20]))
 
-    pdf, pages, used, condensed = b'', 0, 0, False
-    # Try to fit on one page with layout changes only; never drop content here.
-    for index, layout in enumerate(LAYOUTS, start=1):
+    pdf, pages, layout = b'', 0, LAYOUTS[0]
+    for layout in LAYOUTS:
         pdf, pages = _render(data, layout, pagesize)
-        used = index
-        if pages <= 1:
+        if pages <= MAX_PAGES:
             break
-    if pages > 1 and target == 2:
-        # Two pages are acceptable: use the most readable layout that fits two.
-        for index, layout in enumerate(LAYOUTS, start=1):
-            pdf, pages = _render(data, layout, pagesize)
-            used = index
-            if pages <= 2:
+    condensed_items = []
+    if pages > MAX_PAGES:
+        for description, candidate in _condense_steps(data, keywords):
+            if not condensed_items or condensed_items[-1] != description:
+                condensed_items.append(description)
+            pdf, pages = _render(candidate, layout, pagesize)
+            if pages <= MAX_PAGES:
                 break
-    if pages > 1 and target == 1:
-        for keep in (4, 3, 2, 1):
-            pdf, pages = _render(_condense(data, keep, priority_keywords), LAYOUTS[-1], pagesize)
-            condensed = True
-            if pages <= 1:
-                break
-    if pages > target:
-        warnings.append(f'The resume is {pages} pages; most recruiters expect {"one page" if target == 1 else "one to two pages"}.')
-    return ExportResult(pdf=pdf, pages=pages, page_size=size_name, region=region,
-                        layout_pass=used, condensed=condensed, warnings=warnings)
+    if pages > MAX_PAGES or _page_count(pdf) != MAX_PAGES:
+        raise ResumeExportError('The resume could not be fitted on one page without removing employers, '
+                                'titles, dates, degrees or certifications. Please shorten the source resume.')
+    if condensed_items:
+        warnings.append('To fit one page, some lower-priority content was shortened: '
+                        + '; '.join(condensed_items[:6]) + ('...' if len(condensed_items) > 6 else '') + '.')
+    _record_fit(layout.name, bool(condensed_items))
+    return ExportResult(pdf=pdf, pages=1, page_size=size_name, region=region, layout=layout.name,
+                        condensed=bool(condensed_items), condensed_items=condensed_items, warnings=warnings)
+
+
+def _record_fit(layout: str, condensed: bool):
+    try:
+        from backend.app.core.metrics import PDF_SINGLE_PAGE_PASS
+        PDF_SINGLE_PAGE_PASS.labels(layout=layout, condensed=str(condensed).lower()).inc()
+    except Exception:
+        pass
 
 
 def generate_optimized_resume(filename=None, score=0, improvements=None, resume_data=None,
-                              region=None, page_size=None, max_pages=2, priority_keywords=None):
+                              region=None, page_size=None, priority_keywords=None, **_ignored):
     """Backward-compatible wrapper returning a BytesIO.
 
     ``score`` and ``improvements`` are deliberately ignored: optimizer notes
     and scores must never be printed on a candidate's resume.
     """
-    result = export_resume(resume_data, region=region, page_size=page_size,
-                           max_pages=max_pages, priority_keywords=priority_keywords)
+    result = export_resume(resume_data, region=region, page_size=page_size, priority_keywords=priority_keywords)
     buffer = BytesIO(result.pdf)
     buffer.export_info = result.info()
     buffer.seek(0)

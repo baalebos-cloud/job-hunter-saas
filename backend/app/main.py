@@ -1,7 +1,9 @@
 import io
+import logging
+import re
 import os
 import time
-from collections import defaultdict
+import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -18,6 +20,9 @@ from backend.app.routes import referral as referral_router
 from backend.app.routes import hr_auth as hr_auth_router
 from backend.app.routes import profile as profile_router
 from backend.app.routes import automation as automation_router
+from backend.app.routes import rbac as rbac_router
+from backend.app.routes import privacy as privacy_router
+from backend.app.routes import governance as governance_router
 from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
@@ -27,6 +32,10 @@ from backend.app.models.application import Application     # noqa: F401
 from backend.app.models.subscription import Subscription   # noqa: F401
 from backend.app.models.referral import Referral           # noqa: F401
 from backend.app.models.automation import AutomationEvent, ScrapeRun, AutomationState  # noqa: F401
+from backend.app.models.security import RefreshToken, RbacRole, RbacPermission  # noqa: F401
+from backend.app.models.audit import AuditLog, ErasureTombstone  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Baalebos Cloud AI v2",
@@ -36,55 +45,67 @@ app = FastAPI(
     openapi_url=None if os.getenv("ENVIRONMENT") == "production" else "/openapi.json",
 )
 
-# ── Rate limiting (in-memory) ─────────────────────────────────────────────────
-# Tracks: {ip: [(timestamp, count)]}
-_rate_store: dict = defaultdict(list)
-
+# ── Rate limiting (Redis sliding window, trusted-proxy client IP) ────────────
 RATE_LIMITS = {
     "/api/v1/auth/login":        (10,  60),   # 10 requests per 60 seconds
+    "/api/v1/auth/admin/login":  (10,  60),
+    "/api/v1/hr-auth/login":     (10,  60),
     "/api/v1/auth/signup":       (5,   60),   # 5 requests per 60 seconds
+    "/api/v1/auth/forgot-password": (5, 300),
+    "/api/v1/auth/refresh":      (30,  60),
     # Read-only resume endpoints are owner-scoped; allow 2s status polling
     # (30/min) plus previews. Specific prefixes must precede "/api/v1/resume".
     "/api/v1/resume/status":     (120, 60),
     "/api/v1/resume/preview":    (60,  60),
     "/api/v1/resume/download":   (60,  60),
     "/api/v1/resume":            (20,  60),   # 20 requests per 60 seconds
+    "/api/v1/privacy/export":    (5,  3600),
+    "/api/v1/governance/summary": (60, 60),
     "/api/v1/billing/webhook":   (200, 60),   # Stripe webhooks — never throttle
     "default":                   (100, 60),   # 100 requests per 60 seconds
 }
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    from backend.app.core.client_ip import client_ip
+    return client_ip(request)
+
+
+def reset_rate_limits():
+    """Test helper: clear the in-memory fallback store."""
+    from backend.app.core.kv_store import memory_store
+    memory_store().clear()
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    ip = _get_client_ip(request)
+    from backend.app.core.rate_limit import hit
     path = request.url.path
-    now = time.time()
-
-    # Find matching rate limit rule
-    limit, window = RATE_LIMITS.get("default")
+    limit, window = RATE_LIMITS["default"]
     for route_prefix, (lim, win) in RATE_LIMITS.items():
         if route_prefix != "default" and path.startswith(route_prefix):
             limit, window = lim, win
             break
-
-    key = f"{ip}:{path}"
-    # Clean old entries
-    _rate_store[key] = [t for t in _rate_store[key] if now - t < window]
-    if len(_rate_store[key]) >= limit:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Too many requests. Please slow down."},
-            headers={"Retry-After": str(window)}
-        )
-    _rate_store[key].append(now)
+    allowed, retry_after = hit(f"{_get_client_ip(request)}:{path}", limit, window)
+    if not allowed:
+        return JSONResponse(status_code=429, content={"detail": "Too many requests. Please slow down."},
+                            headers={"Retry-After": str(retry_after)})
     return await call_next(request)
+
+
+def _trace_id(request: Request | None = None) -> str:
+    existing = getattr(getattr(request, "state", None), "trace_id", None) if request else None
+    return existing or uuid.uuid4().hex
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Opaque 500s: a trace ID for support, details only in server logs."""
+    trace_id = _trace_id(request)
+    logger.error('unhandled_exception trace_id=%s path=%s error_type=%s', trace_id, request.url.path,
+                 type(exc).__name__, exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "trace_id": trace_id},
+                        headers={"X-Trace-Id": trace_id})
 
 
 @app.middleware("http")
@@ -102,59 +123,90 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup_event():
+    """No DDL at startup: schema changes run before deploy via
+    ``python -m backend.scripts.migrate`` (alembic upgrade head). This only
+    reports drift so a missed migration is visible immediately."""
     try:
-        Base.metadata.create_all(bind=engine)
-        print("✅ Database tables created/verified")
-        # Add new columns if they don't exist (safe migration)
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
         from sqlalchemy import text
+        from pathlib import Path
+        head = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))).get_current_head()
         with engine.connect() as conn:
-            migrations = [
-                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS resume_id INTEGER REFERENCES resumes(id)",
-                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS job_snapshot JSON",
-                "ALTER TABLE applications ADD COLUMN IF NOT EXISTS submission_method VARCHAR",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR UNIQUE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_hr BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS hr_approved BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS posted_by_hr BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_user_id INTEGER",
-                # Email verification / password reset
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP",
-                # Profile page fields
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS available_for_work BOOLEAN DEFAULT TRUE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS expected_pay_hourly FLOAT",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS about TEXT",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_url VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_filename VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS notice_period_days INTEGER",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alerts_enabled BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alerts_enabled_at TIMESTAMP",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_alert_work_type VARCHAR NOT NULL DEFAULT 'all'",
-                "CREATE INDEX IF NOT EXISTS ix_jobs_first_seen_at ON jobs (first_seen_at)",
-            ]
-            for sql in migrations:
-                try:
-                    conn.execute(text(sql))
-                    conn.commit()
-                except Exception:
-                    pass  # column already exists
-        print("✅ DB migrations applied")
-    except Exception as e:
-        print(f"⚠️ DB startup warning: {e}")
+            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        if current != head:
+            logger.error("schema_out_of_date current=%s head=%s - run python -m backend.scripts.migrate", current, head)
+    except Exception as exc:
+        logger.warning("schema_version_check_skipped error_type=%s", type(exc).__name__)
+
+
+# ── Observability: trace IDs, metrics, structured audit trail ─────────────────
+_TRACE_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+_UNAUDITED = ("/health", "/metrics", "/api/v1/health")
+
+
+def _incoming_trace_id(request: Request) -> str:
+    traceparent = request.headers.get("traceparent", "")
+    parts = traceparent.split("-")
+    if len(parts) == 4 and len(parts[1]) == 32 and all(c in "0123456789abcdef" for c in parts[1]):
+        return parts[1]
+    candidate = request.headers.get("x-request-id", "")
+    return candidate.replace("-", "")[:32] if _TRACE_ID.match(candidate) else uuid.uuid4().hex
+
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):
+    """Outermost middleware: every request (incl. 429s and 500s) gets a trace
+    ID, Prometheus metrics, a fleet-wide window sample and an audit record."""
+    from backend.app.core import metrics
+    from backend.app.services.audit import build_request_entry, emit
+    request.state.trace_id = _incoming_trace_id(request)
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Trace-Id"] = request.state.trace_id
+        return response
+    finally:
+        path = request.url.path
+        if not path.startswith(_UNAUDITED) and path != "/":
+            elapsed = time.perf_counter() - started
+            route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+            metrics.HTTP_REQUESTS.labels(request.method, route, str(status)).inc()
+            metrics.HTTP_LATENCY.labels(request.method, route).observe(elapsed)
+            if status == 429:
+                metrics.RATE_LIMITED.labels(route).inc()
+            metrics.record_request(route, status, elapsed * 1000)
+            emit(build_request_entry(trace_id=request.state.trace_id, user=getattr(request.state, "user", None),
+                                     method=request.method, route=route, status=status,
+                                     latency_ms=elapsed * 1000, ip=_get_client_ip(request)))
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics(request: Request, db: Session = Depends(get_db)):
+    """Prometheus scrape endpoint: METRICS_TOKEN bearer for scrapers, or a
+    signed-in user with metrics:read."""
+    import hmac
+    from fastapi.responses import Response as RawResponse
+    from backend.app.core.metrics import render
+    token = os.getenv("METRICS_TOKEN", "")
+    supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    allowed = bool(token) and bool(supplied) and hmac.compare_digest(supplied.encode(), token.encode())
+    if not allowed and supplied:
+        from backend.app.dependencies.auth import decode_access_token
+        from backend.app.dependencies.roles import has_permission
+        try:
+            claims = decode_access_token(supplied)
+            user = db.query(User).filter(User.email == claims["sub"]).first()
+            allowed = bool(user) and int(claims.get("tv", 0)) == int(user.token_version or 0) \
+                and has_permission(db, user, "metrics:read")
+        except HTTPException:
+            allowed = False
+    if not allowed:
+        raise HTTPException(status_code=401, detail="Metrics require authorization")
+    return RawResponse(render(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
 
 # --- SCHEMAS ---
 class AnalysisRequest(BaseModel):
@@ -206,6 +258,12 @@ app.include_router(referral_router.router, prefix="/api/v1/referral",  tags=["Re
 app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR Auth"])
 app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Profile"])
 app.include_router(automation_router.router, prefix="/api/v1/automation", tags=["Automation"])
+app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
+app.include_router(privacy_router.router, prefix="/api/v1/privacy", tags=["Privacy"])
+app.include_router(governance_router.router, prefix="/api/v1/governance", tags=["Governance"])
+
+from backend.app.core.telemetry import init_tracing  # noqa: E402
+init_tracing(app)
 
 # Admin login is under /api/v1/auth/admin/login (already in auth router)
 
@@ -213,11 +271,12 @@ app.include_router(automation_router.router, prefix="/api/v1/automation", tags=[
 @app.post("/api/v1/ai/analyze", tags=["AI Engine"])
 async def analyze_resume_against_job(payload: AnalysisRequest, current_user=Depends(auth.get_current_user)):
     try:
-        result = await ai_engine.analyze_resume(payload.resume_text, payload.job_description)
-        return result
-    except Exception as e:
-        print(f"Detailed Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return await ai_engine.analyze_resume(payload.resume_text, payload.job_description)
+    except Exception as exc:
+        # Never echo exception text: it can contain provider or candidate data.
+        trace_id = _trace_id()
+        logger.error('ai_analyze_failed trace_id=%s error_type=%s', trace_id, type(exc).__name__)
+        raise HTTPException(status_code=500, detail=f"Analysis failed. Reference: {trace_id}")
 
 @app.get("/")
 @app.get("/health")
@@ -229,13 +288,13 @@ async def health_check():
 @app.post("/api/v1/cron/scrape")
 @app.get("/api/v1/cron/scrape")
 async def cron_scrape(request: Request):
-    """Cron-safe endpoint — accepts secret via query param or header for Railway cron."""
-    secret = (
-        request.headers.get("X-Cron-Secret", "")
-        or request.query_params.get("secret", "")
-    )
-    expected = os.getenv("CRON_SECRET", os.getenv("ADMIN_SECRET_KEY", ""))
-    if not expected or secret != expected:
+    """Cron-safe endpoint. The secret is accepted only in the X-Cron-Secret
+    header (query strings end up in access logs) and compared in constant time."""
+    import hmac
+    from backend.app.core.config import settings
+    supplied = request.headers.get("X-Cron-Secret", "")
+    expected = settings.CRON_SECRET or os.getenv("CRON_SECRET", os.getenv("ADMIN_SECRET_KEY", ""))
+    if not expected or not supplied or not hmac.compare_digest(supplied.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Forbidden")
     from fastapi.concurrency import run_in_threadpool
     from backend.app.utils.global_scraper import scrape_global_jobs

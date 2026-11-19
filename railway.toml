@@ -7,6 +7,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "backend/Dockerfile"
 
 [deploy]
+# Schema changes run before the new release receives traffic (no DDL at startup).
+preDeployCommand = ["python -m backend.scripts.migrate"]
 startCommand = "/app/start.sh"
 healthcheckPath = "/health"
 healthcheckTimeout = 60

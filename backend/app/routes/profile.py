@@ -6,7 +6,7 @@
 import os
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import Request, Response, APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -189,6 +189,14 @@ def link_resume_to_profile(
     db: Session = Depends(get_db)
 ):
     """Link an already-uploaded optimized resume as the profile's public resume."""
+    from backend.app.utils.url_safety import validate_public_https_url, UnsafeUrl
+    try:
+        resume_url = validate_public_https_url(resume_url)
+    except UnsafeUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    filename = (filename or '').strip()[:255]
+    if not filename or any(c in filename for c in '/\\\x00'):
+        raise HTTPException(status_code=422, detail="Provide a plain file name.")
     current_user.resume_url      = resume_url
     current_user.resume_filename = filename
     db.commit()
@@ -356,9 +364,20 @@ def delete_language(
 # ── DELETE /profile/me — delete account ───────────────────────────────────────
 @router.delete("/me")
 def delete_my_account(
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    db.delete(current_user)
-    db.commit()
-    return {"message": "Account deleted."}
+    """GDPR Art. 17: transactional erasure of the account and every linked
+    record, stored resume objects and avatar; sessions are revoked."""
+    from backend.app.routes.privacy import erase_and_revoke
+    from backend.app.services.auth_service import clear_refresh_cookie
+    if current_user.role == "super_admin":
+        from backend.app.models.user import User as UserModel
+        others = db.query(UserModel).filter(UserModel.role == "super_admin", UserModel.id != current_user.id).count()
+        if not others:
+            raise HTTPException(status_code=409, detail="Assign another super_admin before deleting this account.")
+    result = erase_and_revoke(request, db, current_user, requested_by="self")
+    clear_refresh_cookie(response)
+    return {"message": "Account deleted.", "objects_pending": result["objects_pending"]}

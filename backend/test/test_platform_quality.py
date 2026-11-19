@@ -29,7 +29,7 @@ def db(monkeypatch):
     Base.metadata.create_all(engine)
     session=sessionmaker(bind=engine)()
     monkeypatch.setattr('backend.app.services.job_automation.SessionLocal', sessionmaker(bind=engine))
-    users=[User(email='jayeolaoluwadamilare@gmail.com',full_name='Owner',hashed_password='x',is_admin=True,is_verified=True),
+    users=[User(email='jayeolaoluwadamilare@gmail.com',full_name='Owner',hashed_password='x',is_admin=True,role='super_admin',is_verified=True),
            User(email='candidate@example.com',full_name='Candidate',hashed_password='x',is_verified=True),
            User(email='hr@example.com',full_name='HR',hashed_password='x',is_hr=True,is_verified=True,hr_approved=True),
            User(email='pending@example.com',hashed_password='x',is_hr=True,is_verified=True,hr_approved=False)]
@@ -56,7 +56,9 @@ def test_resend_verification_reports_delivery_acceptance(client, db, monkeypatch
     response = client.post('/api/v1/auth/resend-verification', headers=headers(user.email))
     assert response.status_code == (200 if accepted else 503)
     assert calls[0]['to_email'] == user.email
-    assert calls[0]['token'] == user.verification_token
+    from backend.app.services.auth_service import hash_token
+    assert hash_token(calls[0]['token']) == user.verification_token  # only the hash is stored
+    assert calls[0]['token'] not in response.text
     assert not user.is_verified
     assert user.verification_token not in response.text
 
@@ -113,7 +115,7 @@ def test_owner_and_hr_boundaries(client,db):
     application=Application(user_id=2,job_id=job.id,status='submitted_internal');db.add(application);db.commit()
     assert client.get(f'/api/v1/hr/jobs/{job.id}/applications',headers=headers('hr@example.com')).status_code==404
     assert client.patch(f'/api/v1/hr/applications/{application.id}/status?new_status=offer',headers=headers('hr@example.com')).status_code==404
-    assert client.patch(f'/api/v1/admin/users/2/make-admin',headers=headers('jayeolaoluwadamilare@gmail.com')).status_code==403
+    assert client.patch(f'/api/v1/admin/users/2/make-admin',headers=headers('jayeolaoluwadamilare@gmail.com')).status_code==410  # replaced by RBAC
 
 
 def test_signup_cannot_self_assign_hr(client,db,monkeypatch):
@@ -305,7 +307,30 @@ def test_rewrite_preserves_history_filters_new_skills_and_rejects_metrics():
     assert 'Terraform' in unsupported['confirmation_questions'][0]
     pdf_text = extract_text(generate_optimized_resume('input.pdf', resume_data=safe).getvalue(), 'output.pdf')
     assert 'Terraform' not in pdf_text
-    with pytest.raises(ValueError):merge_rewrite(base,{**rewrite,'optimized_summary':'Improved output by 90%'},source)
+    # An invented metric reverts the summary instead of failing the whole upload.
+    invented = {**rewrite, 'optimized_summary': 'Improved output by 90%'}
+    assert merge_rewrite(base, invented, source)['summary'] == base['summary']
+    assert invented['rewrite_guard'] == {'summary_reverted': True, 'roles_reverted': 0}
+
+
+def test_rewrite_guard_reverts_roles_with_invented_metrics_or_tools():
+    base = original()
+    base['experience'].append({'role': 'Analyst', 'company': 'Other', 'dates': '2024', 'bullets': ['Cut costs by 20%.']})
+    source = 'Candidate Engineer Example 2025 Built Python tools. Analyst Other 2024 Cut costs by 20%. Python developer'
+    rewrite = {'optimized_summary': 'Python developer', 'optimized_skills': base['skills'], 'optimized_experience': [
+        {**base['experience'][0], 'bullets': ['Built Python tools with Kubernetes.']},   # tool not in source
+        {**base['experience'][1], 'bullets': ['Cut cloud costs by 35%.']}]}              # invented metric
+    merged = merge_rewrite(base, rewrite, source)
+    assert [e['bullets'] for e in merged['experience']] == [['Built Python tools.'], ['Cut costs by 20%.']]
+    assert rewrite['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 2}
+    # A metric may not move to a different employer either.
+    moved = {**rewrite, 'optimized_experience': [
+        {**base['experience'][0], 'bullets': ['Built Python tools, cutting costs by 20%.']}, base['experience'][1]]}
+    assert merge_rewrite(base, moved, source)['experience'][0]['bullets'] == ['Built Python tools.']
+    # Safe rewording of evidence already in the source is kept.
+    safe = {**rewrite, 'optimized_experience': [
+        {**base['experience'][0], 'bullets': ['Developed internal Python tooling.']}, base['experience'][1]]}
+    assert merge_rewrite(base, safe, source)['experience'][0]['bullets'] == ['Developed internal Python tooling.']
 
 
 def test_pdf_preserves_sections_and_omits_optimizer_notes():

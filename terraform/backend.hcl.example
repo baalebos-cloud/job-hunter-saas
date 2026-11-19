@@ -1,0 +1,7 @@
+# Copy to backend.hcl (git-ignored) and fill in values from `terraform -chdir=bootstrap output`.
+bucket         = "jobhunter-tfstate-<account-id>"
+key            = "jobhunter/prod/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "jobhunter-tfstate-locks"
+encrypt        = true
+kms_key_id     = "arn:aws:kms:us-east-1:<account-id>:key/<key-id>"

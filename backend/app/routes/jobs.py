@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 import json
 
-from backend.app.database import get_db
+from backend.app.database import get_db, get_read_db
 from backend.app.models.job import Job
 from backend.app.models.user import User, OutreachMessage
 from backend.app.models.resume import Resume
@@ -68,7 +68,7 @@ def list_jobs(
     work_type: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_read_db)
 ):
     cutoff = datetime.utcnow() - timedelta(days=FRESHNESS_DAYS)
     q = db.query(Job).filter(Job.is_active == True, or_(Job.posted_by_hr.is_(True), Job.scraped_at >= cutoff, Job.scraped_at.is_(None)))
@@ -88,7 +88,7 @@ def list_jobs(
 def search_jobs(
     q: str = Query(..., min_length=1),
     country: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_read_db)
 ):
     cutoff = datetime.utcnow() - timedelta(days=FRESHNESS_DAYS)
     kw = f"%{q}%"
@@ -303,7 +303,7 @@ def get_hr_messages(
 
 
 @router.get('/detail/{job_id}', response_model=JobResponse)
-def job_detail(job_id: int, db: Session=Depends(get_db)):
+def job_detail(job_id: int, db: Session=Depends(get_read_db)):
     job=db.query(Job).filter(Job.id==job_id,Job.is_active==True).first()
     if not job: raise HTTPException(404,'Job not found')
     return job

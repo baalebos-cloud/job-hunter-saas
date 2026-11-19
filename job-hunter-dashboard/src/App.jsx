@@ -5,12 +5,13 @@ import axios from 'axios'
 import SEO from './components/SEO'
 
 import DashboardLayout from './components/layout/DashboardLayout'
+import GovernanceDashboard from './components/governance/GovernanceDashboard'
 import TalentOverview from './components/TalentOverview'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobFeed from './components/JobFeed'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
-import { clearSession } from './lib/session'
+import { signOut } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
 import ForgotPassword from './components/auth/ForgotPassword'
@@ -57,10 +58,23 @@ function RequireRole({ role, children }) {
     </div>
   )
 
-  const hasAccess = role === 'admin' ? profile?.is_admin : (profile?.is_admin || profile?.is_hr)
+  const GOVERNANCE = ['metrics:read', 'audit:read', 'users:read', 'reports:read']
+  const hasAccess = role === 'admin' ? profile?.is_admin
+    : role === 'governance' ? (profile?.permissions || []).some(p => GOVERNANCE.includes(p))
+    : (profile?.is_admin || profile?.is_hr)
   if (!hasAccess) return <Navigate to="/" replace />
 
   return children
+}
+
+function GovernancePage() {
+  const [permissions, setPermissions] = useState(null)
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then(r => setPermissions(r.data.permissions || [])).catch(() => setPermissions([]))
+  }, [])
+  if (!permissions) return <p role="status">Loading…</p>
+  return <GovernanceDashboard permissions={permissions} />
 }
 
 // ── Overview page (/) ─────────────────────────────────────────────────────────
@@ -86,7 +100,7 @@ function OptimizerPage() {
             setIsAnalyzing(false)
             localStorage.setItem('lastTaskId', res.data.result?.task_id || res.data.task_id || activeTaskId)
           } else if (res.data.status === 'failed') {
-            alert('Analysis failed. Please check your file format.')
+            alert(res.data.error || 'Analysis failed. Please retry.')
             setActiveTaskId(null)
             setIsAnalyzing(false)
           }
@@ -244,7 +258,7 @@ function SettingsPage() {
       <div className="bg-rose-950/20 border border-rose-900/30 rounded-3xl p-6">
         <p className="text-rose-400 font-black text-sm mb-1">Sign Out</p>
         <p className="text-slate-500 text-xs mb-4">You'll need to log in again to access your account.</p>
-        <button onClick={() => { clearSession(); window.location.href = '/login' }}
+        <button onClick={() => signOut(axios)}
           className="text-xs font-black px-5 py-2.5 rounded-xl bg-rose-900/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition-all uppercase tracking-widest">
           Sign Out of Account
         </button>
@@ -589,6 +603,9 @@ function App() {
         } />
         <Route path="/admin" element={
           <RequireRole role="admin"><DashboardLayout><AdminDashboard /></DashboardLayout></RequireRole>
+        } />
+        <Route path="/governance" element={
+          <RequireRole role="governance"><DashboardLayout><GovernancePage /></DashboardLayout></RequireRole>
         } />
         <Route path="/hr" element={
           <RequireRole role="hr"><DashboardLayout><HRPortal /></DashboardLayout></RequireRole>
