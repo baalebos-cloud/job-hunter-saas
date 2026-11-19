@@ -18,9 +18,7 @@ export default function ForgotPassword() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      await axios.post(`${API_BASE_URL}/auth/forgot-password`, null, {
-        params: { email }
-      });
+      await axios.post(`${API_BASE_URL}/auth/forgot-password`, { email });
       setSent(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.');

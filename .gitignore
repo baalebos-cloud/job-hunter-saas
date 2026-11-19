@@ -10,3 +10,23 @@ build/
 .DS_Store
 __pycache__/
 *.pyc
+
+# ── Never commit data, state or secrets ─────────────────────────────────────
+*.db
+*.db.bak
+*.sqlite3
+output/
+terraform/.terraform/
+terraform/**/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/**/*.tfstate
+terraform/**/*.tfstate.*
+terraform/tfplan
+terraform/**/tfplan
+*.tfplan
+terraform/backend.hcl
+*.tfvars
+!*.tfvars.example
+*.pem
+*.key

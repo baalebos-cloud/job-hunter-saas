@@ -8,7 +8,7 @@ import json
 from threading import Lock
 from time import monotonic
 
-from backend.app.database import get_db
+from backend.app.database import get_db, get_read_db
 from backend.app.dependencies.auth import get_current_user
 from backend.app.models.user import User
 from backend.app.models.job import Job
@@ -18,7 +18,7 @@ from backend.app.models.resume import Resume
 router = APIRouter(tags=["Admin"])
 
 
-from backend.app.dependencies.roles import require_admin
+from backend.app.dependencies.roles import require_admin, require_permission
 from backend.app.services.job_automation import automation_status, run_tick
 
 
@@ -35,7 +35,7 @@ def run_automation(db: Session = Depends(get_db), admin: User = Depends(require_
 
 
 @router.get("/stats")
-def admin_stats(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def admin_stats(db: Session = Depends(get_read_db), admin: User = Depends(require_admin)):
     return {
         "total_users":        db.query(User).count(),
         "total_jobs":         db.query(Job).count(),
@@ -52,20 +52,25 @@ def admin_stats(db: Session = Depends(get_db), admin: User = Depends(require_adm
 @router.get("/users")
 def list_users(
     skip: int = 0, limit: int = 50,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     admin: User = Depends(require_admin)
 ):
-    users = db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    # One aggregate query instead of lazy-loading every user's applications (N+1).
+    counts = (db.query(Application.user_id, func.count(Application.id).label("n"))
+                .group_by(Application.user_id).subquery())
+    rows = (db.query(User, func.coalesce(counts.c.n, 0))
+              .outerjoin(counts, counts.c.user_id == User.id)
+              .order_by(User.created_at.desc()).offset(skip).limit(min(max(limit, 1), 200)).all())
     return [
         {
             "id": u.id, "email": u.email, "full_name": u.full_name,
             "career_track": u.career_track, "country": u.country,
-            "is_admin": u.is_admin, "is_hr": u.is_hr,
+            "is_admin": u.role == "super_admin", "role": u.role, "is_hr": u.is_hr,
             "company_name": u.company_name,
             "created_at": u.created_at,
-            "applications": len(u.applications),
+            "applications": int(n),
         }
-        for u in users
+        for u, n in rows
     ]
 
 
@@ -83,15 +88,9 @@ def make_hr(user_id: int, db: Session = Depends(get_db), admin: User = Depends(r
 
 
 @router.patch("/users/{user_id}/make-admin")
-def make_admin(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.email.strip().lower() != admin.email.strip().lower():
-        raise HTTPException(403, "Only the owner may be an administrator")
-    user.is_admin = True
-    db.commit()
-    return {"message": f"{user.email} is now an admin"}
+def make_admin(user_id: int, admin: User = Depends(require_admin)):
+    """Replaced by RBAC role assignment (PUT /api/v1/rbac/users/{id}/role)."""
+    raise HTTPException(410, "Use PUT /api/v1/rbac/users/{id}/role to assign governance roles.")
 
 
 @router.delete("/users/{user_id}")
@@ -107,7 +106,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depen
 @router.get("/jobs")
 def list_all_jobs(
     skip: int = 0, limit: int = 50,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     admin: User = Depends(require_admin)
 ):
     jobs = db.query(Job).order_by(Job.scraped_at.desc()).offset(skip).limit(limit).all()
@@ -139,10 +138,13 @@ async def trigger_scrape(
 @router.get("/applications")
 def list_applications(
     skip: int = 0, limit: int = 50,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     admin: User = Depends(require_admin)
 ):
-    apps = db.query(Application).order_by(Application.created_at.desc()).offset(skip).limit(limit).all()
+    from sqlalchemy.orm import joinedload
+    # Eager-load user and job in the same query (was 2 lazy queries per row).
+    apps = (db.query(Application).options(joinedload(Application.user), joinedload(Application.job))
+              .order_by(Application.created_at.desc()).offset(skip).limit(min(max(limit, 1), 200)).all())
     return [
         {
             "id": a.id,
@@ -162,7 +164,7 @@ _probe_last_started = None
 
 
 @router.post("/resume-diagnostic")
-def resume_diagnostic(admin: User = Depends(require_admin)):
+def resume_diagnostic(admin: User = Depends(require_permission('system:diagnostics'))):
     """Owner-only, synthetic input; no database writes or candidate resumes."""
     global _probe_last_started
     if not _probe_lock.acquire(blocking=False):

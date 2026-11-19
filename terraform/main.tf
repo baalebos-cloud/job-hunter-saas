@@ -1,8 +1,11 @@
 # --- VARIABLES ---
-variable "project_name"     { default = "jobhunter" }
-variable "db_username"      { default = "postgres" }
-variable "db_password"      { default = "SuperDevOps_Cloud0544!?" }
-variable "db_name"          { default = "jobhunter" }
+variable "project_name" { default = "jobhunter" }
+variable "db_username" { default = "postgres" }
+variable "db_name" { default = "jobhunter" }
+# No database password variable: RDS generates the master password and keeps
+# it in AWS Secrets Manager (manage_master_user_password), encrypted with KMS.
+# Application secrets live in SSM Parameter Store (SecureString) under this path.
+variable "ssm_parameter_prefix" { default = "/jobhunter" }
 
 # --- DATA SOURCE FOR LATEST AMI ---
 data "aws_ami" "amazon_linux_2023" {
@@ -122,12 +125,12 @@ resource "aws_security_group" "rds_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
+    from_port = 5432
+    to_port   = 5432
+    protocol  = "tcp"
     # Allow the entire VPC internal range (10.0.0.0/16) 
     # to talk to the database
-    cidr_blocks = ["10.0.1.0/24", "10.0.2.0/24"] 
+    cidr_blocks = ["10.0.1.0/24", "10.0.2.0/24"]
   }
 
   egress {
@@ -145,18 +148,19 @@ resource "aws_db_subnet_group" "main" {
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier             = "jobhunter-db-instance"
-  engine                 = "postgres"
-  engine_version         = "16"
-  instance_class         = "db.t3.micro"
-  allocated_storage      = 20
-  db_name                = var.db_name
-  username               = var.db_username
-  password               = var.db_password
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  publicly_accessible    = false   # safer in private subnets
-  skip_final_snapshot    = true
+  identifier        = "jobhunter-db-instance"
+  engine            = "postgres"
+  engine_version    = "16"
+  instance_class    = "db.t3.micro"
+  allocated_storage = 20
+  db_name           = var.db_name
+  username          = var.db_username
+  # RDS-managed master credential, rotated by AWS and stored in Secrets Manager.
+  manage_master_user_password = true
+  db_subnet_group_name        = aws_db_subnet_group.main.name
+  vpc_security_group_ids      = [aws_security_group.rds_sg.id]
+  publicly_accessible         = false # safer in private subnets
+  skip_final_snapshot         = true
 }
 
 # --- COMPUTE LAYER ---
@@ -165,6 +169,14 @@ resource "aws_launch_template" "api" {
   image_id      = data.aws_ami.amazon_linux_2023.id
   instance_type = "t3.micro"
   key_name      = "devops-key"
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.api.name
+  }
+
+  metadata_options {
+    http_tokens = "required" # IMDSv2 only
+  }
 
   network_interfaces {
     associate_public_ip_address = true
@@ -183,21 +195,29 @@ resource "aws_launch_template" "api" {
 
               docker run -d --name redis -p 6379:6379 redis:alpine
 
-              # Fetch secrets from SSM Parameter Store
-              MAIL_PASSWORD=$(aws ssm get-parameter --name "/jobhunter/mail_password" --with-decryption --query "Parameter.Value" --output text)
-              OPENAI_API_KEY=$(aws ssm get-parameter --name "/jobhunter/openai_api_key" --with-decryption --query "Parameter.Value" --output text)
+              dnf install -y jq
+
+              # Secrets are fetched at boot with the instance role; none are in Terraform or Git.
+              ssm() { aws ssm get-parameter --name "${var.ssm_parameter_prefix}/$1" --with-decryption --query "Parameter.Value" --output text; }
+              MAIL_PASSWORD=$(ssm mail_password)
+              OPENAI_API_KEY=$(ssm openai_api_key)
+              SECRET_KEY=$(ssm secret_key)
+              DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "${aws_db_instance.postgres.master_user_secret[0].secret_arn}" --query SecretString --output text)
+              DB_USER=$(echo "$DB_SECRET" | jq -r .username)
+              DB_PASS=$(echo "$DB_SECRET" | jq -r .password | python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')
 
               docker run -d --name jobhunter-api -p 5000:8000 \
                 --restart always \
                 --link redis:redis \
-                -e DATABASE_URL="postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.postgres.address}:5432/${var.db_name}" \
+                -e DATABASE_URL="postgresql://$DB_USER:$DB_PASS@${aws_db_instance.postgres.address}:5432/${var.db_name}?sslmode=require" \
                 -e REDIS_URL="redis://redis:6379/0" \
-                -e SECRET_KEY="BAALEBOS_PROD_SECRET_2026" \
+                -e SECRET_KEY="$SECRET_KEY" \
                 -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-                -e MAIL_USERNAME="alldatatechsolu@gmail.com" \
+                -e MAIL_USERNAME="$(ssm mail_username)" \
                 -e MAIL_PASSWORD="$MAIL_PASSWORD" \
                 -e MAIL_SERVER="smtp.gmail.com" \
                 -e MAIL_PORT="587" \
+                -e TRUSTED_PROXY_CIDRS="${aws_vpc.main.cidr_block}" \
                 -e ENVIRONMENT="production" \
                 baalebos/jobhunter-api:latest
               EOF
@@ -211,8 +231,8 @@ resource "aws_autoscaling_group" "api" {
   min_size            = 2
   vpc_zone_identifier = [aws_subnet.public1.id, aws_subnet.public2.id]
 
-  target_group_arns   = [aws_lb_target_group.app_tg.arn]
-  health_check_type   = "ELB"
+  target_group_arns         = [aws_lb_target_group.app_tg.arn]
+  health_check_type         = "ELB"
   health_check_grace_period = 300
 
   launch_template {
@@ -223,7 +243,7 @@ resource "aws_autoscaling_group" "api" {
   tag {
     key                 = "Name"
     value               = "jobhunter-asg-instance"
-  propagate_at_launch = true
+    propagate_at_launch = true
   }
 }
 

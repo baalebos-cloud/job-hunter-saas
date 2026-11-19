@@ -1,7 +1,7 @@
 # =============================================================================
 # backend/app/models/user.py
 # =============================================================================
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
+from sqlalchemy import Index, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.app.database import Base
@@ -9,7 +9,9 @@ from backend.app.database import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = (Index('ix_users_verification_token', 'verification_token'),
+                      Index('ix_users_reset_token', 'reset_token'),
+                      {'extend_existing': True})
 
     id                  = Column(Integer, primary_key=True, index=True)
     email               = Column(String, unique=True, index=True, nullable=False)
@@ -43,6 +45,12 @@ class User(Base):
     job_alerts_enabled   = Column(Boolean, default=False, nullable=False)
     job_alerts_enabled_at = Column(DateTime, nullable=True)
     job_alert_work_type  = Column(String, default="all", nullable=False)
+
+    # RBAC governance role (super_admin, security_auditor, engineering_lead,
+    # compliance_officer, viewer); NULL for candidates and employers.
+    role                = Column(String, nullable=True, index=True)
+    # Incremented on password reset / "log out everywhere": invalidates JWTs.
+    token_version       = Column(Integer, default=0, nullable=False, server_default="0")
 
     created_at          = Column(DateTime, default=datetime.utcnow)
 

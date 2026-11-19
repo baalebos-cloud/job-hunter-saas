@@ -81,7 +81,7 @@ def matches_preferences(job, user):
 
 
 def _owners(db):
-    return [user for user in db.query(User).filter(User.is_admin.is_(True), User.is_verified.is_(True)).all() if is_owner(user)]
+    return [user for user in db.query(User).filter(User.role == 'super_admin', User.is_verified.is_(True)).all() if is_owner(user)]
 
 
 def queue_job_digests(db, now):
