@@ -11,6 +11,7 @@ import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobBoard from './components/jobs/JobBoard'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
+import HelpPage from './components/support/HelpPage'
 import { signOut, errorText } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
@@ -534,6 +535,9 @@ function App() {
         } />
         <Route path="/settings" element={
           <RequireAuth><DashboardLayout><SettingsPage /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/help" element={
+          <DashboardLayout><HelpPage /></DashboardLayout>
         } />
         <Route path="/pricing" element={
           <DashboardLayout><PricingPage /></DashboardLayout>
