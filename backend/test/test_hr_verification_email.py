@@ -115,3 +115,63 @@ def test_pending_list_shows_whether_each_employer_verified_their_email(db, resen
     assert client.post(f'/api/v1/hr-auth/approve/{ready.id}', headers=headers).status_code == 200
     db.refresh(ready)
     assert ready.hr_approved
+
+
+def _owner_headers(db):
+    from backend.app.services.auth_service import create_access_token
+    db.add(User(email='owner@baalebo.example', hashed_password='x', is_admin=True, role='super_admin', is_verified=True))
+    db.commit()
+    return {'Authorization': 'Bearer ' + create_access_token({'sub': 'owner@baalebo.example'})}
+
+
+def test_new_signup_alerts_admin_immediately_with_escaped_details(db, resend, monkeypatch):
+    from backend.app.core.config import settings
+    monkeypatch.setattr(settings, 'ADMIN_EMAIL', 'alerts@baalebo.example, second@baalebo.example')
+    payload = {**SIGNUP, 'company_name': '<a href="https://evil.example">Acme</a>',
+               'company_url': 'javascript:alert(1)', 'linkedin_url': 'https://linkedin.com/company/acme'}
+    assert TestClient(app).post('/api/v1/hr-auth/signup', json=payload).status_code == 200
+    alerts = [m for m in resend if m['to'] != [SIGNUP['email']]]
+    assert [m['to'] for m in alerts] == [['alerts@baalebo.example'], ['second@baalebo.example']]
+    html = alerts[0]['html']
+    assert alerts[0]['subject'].startswith('🔔 New employer awaiting approval')
+    assert '<a href="https://evil.example">' not in html and '&lt;a href=&quot;https://evil.example&quot;&gt;' in html
+    assert '/admin?tab=hr' in html and SIGNUP['email'] in html
+
+
+def test_admin_alert_falls_back_to_verified_admin_accounts(db, resend, monkeypatch):
+    from backend.app.core.config import settings
+    monkeypatch.setattr(settings, 'ADMIN_EMAIL', '')
+    _owner_headers(db)
+    db.add(User(email='unverified-admin@baalebo.example', hashed_password='x', is_admin=True, is_verified=False))
+    db.commit()
+    TestClient(app).post('/api/v1/hr-auth/signup', json=SIGNUP)
+    assert [m['to'] for m in resend if m['to'] != [SIGNUP['email']]] == [['owner@baalebo.example']]
+
+
+def test_approval_emails_the_employer_immediately(db, resend):
+    headers = _owner_headers(db)
+    db.add(User(email='ready@acme-hiring.example', full_name='Ada <b>R</b>', company_name='Acme',
+                hashed_password='x', is_hr=True, is_verified=True))
+    db.commit()
+    ready = db.query(User).filter_by(email='ready@acme-hiring.example').one()
+    assert TestClient(app).post(f'/api/v1/hr-auth/approve/{ready.id}', headers=headers).status_code == 200
+    assert len(resend) == 1
+    message = resend[0]
+    assert message['to'] == ['ready@acme-hiring.example'] and 'approved' in message['subject']
+    assert '/hr/login' in message['html'] and 'Ada &lt;b&gt;R&lt;/b&gt;' in message['html']
+
+
+def test_provision_owner_grants_admin_and_owner_role(db, monkeypatch):
+    from backend.scripts import provision_owner
+    db.add(User(email='me@baalebo.example', hashed_password='x', is_verified=True))
+    db.commit()
+
+    class Session:
+        def __enter__(self): return db
+        def __exit__(self, *exc): return False
+    monkeypatch.setattr(provision_owner, 'SessionLocal', Session)
+    provision_owner.provision(' Me@Baalebo.example ')
+    me = db.query(User).filter_by(email='me@baalebo.example').one()
+    assert me.is_admin and me.role == 'super_admin'
+    with pytest.raises(SystemExit):
+        provision_owner.provision('nobody@baalebo.example')
