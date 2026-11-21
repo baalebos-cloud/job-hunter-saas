@@ -27,6 +27,28 @@ EVENTS = {
     'admin.user_deleted': 'Admin deleted a user',
     'admin.job_deleted': 'Admin deleted a job',
     'admin.security_viewed': 'Admin viewed security events',
+    'admin.hr_rejected': 'Admin rejected an employer',
+    'admin.user_suspended': 'Admin suspended an account',
+    'admin.user_unsuspended': 'Admin restored an account',
+    'admin.sessions_revoked': 'Admin signed a user out everywhere',
+    'admin.password_reset_forced': 'Admin forced a password reset',
+    'admin.ip_blocked': 'Admin blocked an IP address',
+    'admin.ip_unblocked': 'Admin unblocked an IP address',
+    'admin.duplicate_dismissed': 'Admin marked accounts as not duplicates',
+    'admin.exported': 'Admin exported data',
+    'login.new_country': 'Sign-in from a new country',
+    'signup.rejected': 'Sign-up rejected',
+    'mfa.enabled': 'Two-step verification turned on',
+    'mfa.disabled': 'Two-step verification turned off',
+    'mfa.recovery_codes_reset': 'New recovery codes generated',
+    'alert.sent': 'Security alert emailed to the owner',
+}
+CATEGORIES = {
+    'signins': ('login.success', 'login.new_country'),
+    'failures': ('login.failed', 'login.blocked', 'login.denied', 'signup.rejected'),
+    'signups': ('signup', 'hr.signup', 'signup.rejected'),
+    'account': ('password.reset_requested', 'password.reset_completed', 'mfa.enabled', 'mfa.disabled',
+                'mfa.recovery_codes_reset'),
 }
 FAILURE_EVENTS = ('login.failed', 'login.blocked', 'login.denied')
 SUSPICIOUS_FAILURES = 5          # failed sign-ins from one IP within the window
@@ -74,18 +96,35 @@ def _serialize(e) -> dict:
             'details': e.details}
 
 
-def list_events(db, *, event: str | None = None, q: str | None = None, ip: str | None = None,
-                limit: int = 100, before_id: int | None = None) -> list[dict]:
+def _filtered(db, *, event=None, category=None, q=None, ip=None, user_id=None):
     from backend.app.models.security_event import SecurityEvent
     query = db.query(SecurityEvent)
     if event:
         query = query.filter(SecurityEvent.event == event)
+    elif not category:   # views of the log itself live in the audit log, not the main feed
+        query = query.filter(SecurityEvent.event != 'admin.security_viewed')
+    if category == 'admin':
+        query = query.filter(SecurityEvent.event.like('admin.%'), SecurityEvent.event != 'admin.security_viewed')
+    elif category == 'audit':
+        query = query.filter(SecurityEvent.event.like('admin.%') | (SecurityEvent.event == 'alert.sent'))
+    elif category in CATEGORIES:
+        query = query.filter(SecurityEvent.event.in_(CATEGORIES[category]))
+    if user_id:
+        query = query.filter(SecurityEvent.user_id == user_id)
     if ip:
         query = query.filter(SecurityEvent.ip == ip.strip())
     if q:
         term = f'%{q.strip().lower()}%'
         query = query.filter(SecurityEvent.email.ilike(term) | SecurityEvent.ip.ilike(term) |
                              SecurityEvent.country.ilike(term) | SecurityEvent.city.ilike(term))
+    return query
+
+
+def list_events(db, *, event: str | None = None, category: str | None = None, q: str | None = None,
+                ip: str | None = None, user_id: int | None = None, limit: int = 100,
+                before_id: int | None = None) -> list[dict]:
+    from backend.app.models.security_event import SecurityEvent
+    query = _filtered(db, event=event, category=category, q=q, ip=ip, user_id=user_id)
     if before_id:
         query = query.filter(SecurityEvent.id < before_id)
     return [_serialize(e) for e in query.order_by(SecurityEvent.id.desc()).limit(max(1, min(limit, 500)))]
@@ -135,3 +174,15 @@ def retention_days() -> int:
         return max(1, int(os.getenv('SECURITY_EVENT_RETENTION_DAYS', '90')))
     except ValueError:
         return 90
+
+
+def csv_rows(db, *, event=None, category=None, q=None, ip=None, user_id=None, limit: int = 10000):
+    from backend.app.models.security_event import SecurityEvent
+    yield ['time_utc', 'event', 'description', 'portal', 'account', 'ip', 'country', 'region', 'city',
+           'user_agent', 'details']
+    import json
+    query = _filtered(db, event=event, category=category, q=q, ip=ip, user_id=user_id)
+    for e in query.order_by(SecurityEvent.id.desc()).limit(max(1, min(limit, 50000))):
+        yield [e.ts.isoformat() + 'Z', e.event, EVENTS.get(e.event, e.event), e.portal or '', e.email or '',
+               e.ip or '', e.country or '', e.region or '', e.city or '', e.user_agent or '',
+               json.dumps(e.details) if e.details else '']

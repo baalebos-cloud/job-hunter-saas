@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import { startSession, errorText } from '../../lib/session';
+import MfaChallenge from './MfaChallenge';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -13,6 +14,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [mfaToken, setMfaToken] = useState(null);
 
   useEffect(() => {
     if (localStorage.getItem('token')) window.location.href = destination;
@@ -22,7 +24,8 @@ export default function Login() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      const res = await axios.post(`${API_BASE_URL}/auth/login`, form);
+      const res = await axios.post(`${API_BASE_URL}/auth/login`, form, { withCredentials: true });
+      if (res.data.mfa_required) { setMfaToken(res.data.mfa_token); return; }
       const token = res.data.access_token || res.data.token || null;
       if (token?.trim()) { startSession(token); window.location.href = destination; }
       else setError('Login succeeded but no token received.');
@@ -132,6 +135,10 @@ export default function Login() {
             </div>
           )}
 
+          {mfaToken ? (
+            <MfaChallenge mfaToken={mfaToken} onCancel={() => setMfaToken(null)}
+              onSuccess={(data) => { startSession(data.access_token); window.location.href = destination; }} />
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Email</label>
@@ -173,6 +180,7 @@ export default function Login() {
               ) : 'Sign In →'}
             </button>
           </form>
+          )}
 
           <div className="mt-6 pt-6 border-t border-slate-800 text-center space-y-3">
             <p className="text-sm text-slate-500 font-medium">

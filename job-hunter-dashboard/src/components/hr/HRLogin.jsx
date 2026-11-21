@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { startSession, errorText } from '../../lib/session';
+import MfaChallenge from '../auth/MfaChallenge';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -20,6 +21,7 @@ export default function HRLogin() {
   const [form, setForm]     = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
+  const [mfaToken, setMfaToken] = useState(null);
   const [emailError, setEmailError] = useState('');
   const [resendState, setResendState] = useState({ sending: false, message: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -55,7 +57,8 @@ export default function HRLogin() {
       const res = await axios.post(`${API_BASE_URL}/hr-auth/login`, {
         email:    form.email,
         password: form.password,
-      });
+      }, { withCredentials: true });
+      if (res.data.mfa_required) { setMfaToken(res.data.mfa_token); return; }
       const token = res.data.access_token;
       if (token) {
         startSession(token);
@@ -168,6 +171,10 @@ export default function HRLogin() {
             </div>
           )}
 
+          {mfaToken ? (
+            <MfaChallenge mfaToken={mfaToken} accent="blue" onCancel={() => setMfaToken(null)}
+              onSuccess={(data) => { startSession(data.access_token); window.location.href = data.redirect || '/hr'; }} />
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className={labelCls}>Company Work Email</label>
@@ -204,6 +211,7 @@ export default function HRLogin() {
               ) : 'Sign in to HR Portal →'}
             </button>
           </form>
+          )}
 
           <div className="mt-6 pt-6 border-t border-slate-800 space-y-3 text-center">
             <p className="text-sm text-slate-500">

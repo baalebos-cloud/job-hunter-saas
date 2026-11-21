@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
@@ -24,22 +25,289 @@ from backend.app.services import security_events
 
 
 # ── Security oversight (owner/admin only) ─────────────────────────────────────
+def _csv_response(rows, filename: str):
+    """Stream CSV; cells that a spreadsheet would run as formulas are neutralised."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    def safe(value):
+        text = '' if value is None else str(value)
+        return "'" + text if text[:1] in ('=', '+', '-', '@', '\t', '\r') else text
+
+    def generate():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        for row in rows:
+            writer.writerow([safe(v) for v in row])
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+    return StreamingResponse(generate(), media_type='text/csv; charset=utf-8',
+                             headers={'Content-Disposition': f'attachment; filename="{filename}"',
+                                      'Cache-Control': 'no-store'})
+
+
 @router.get("/security/summary")
 def security_summary(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """Last 24 hours: sign-ins, failures, sign-ups, unique IPs, suspicious IPs, top countries."""
-    return security_events.summary(db)
+    """Last 24 hours: sign-ins, failures, sign-ups, IPs, suspicious IPs, countries, posture."""
+    from backend.app.models.security import RefreshToken
+    from backend.app.services import admin_console, security_controls
+    summary = security_events.summary(db)
+    blocked = {b['ip'] for b in security_controls.blocked_ips(db) if b['active']}
+    for item in summary['suspicious_ips']:
+        item['blocked'] = item['ip'] in blocked
+    now = datetime.utcnow()
+    summary['active_sessions'] = (db.query(func.count(func.distinct(RefreshToken.family_id)))
+                                  .filter(RefreshToken.revoked_at.is_(None), RefreshToken.expires_at > now).scalar() or 0)
+    summary['posture'] = admin_console.posture(db)
+    summary['blocked_ips'] = security_controls.blocked_ips(db)
+    return summary
 
 
 @router.get("/security/events")
-def security_event_log(request: Request, event: Optional[str] = None, q: Optional[str] = None,
-                       ip: Optional[str] = None, limit: int = 100, before_id: Optional[int] = None,
+def security_event_log(request: Request, event: Optional[str] = None, category: Optional[str] = None,
+                       q: Optional[str] = None, ip: Optional[str] = None, user_id: Optional[int] = None,
+                       limit: int = 100, before_id: Optional[int] = None,
                        db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Full security events (IP, location, account). Every read is itself recorded."""
-    events = security_events.list_events(db, event=event, q=q, ip=ip, limit=limit, before_id=before_id)
+    events = security_events.list_events(db, event=event, category=category, q=q, ip=ip, user_id=user_id,
+                                         limit=limit, before_id=before_id)
     if before_id is None:  # record the first page of each search, not every scroll
+        filters = {'event': event, 'category': category, 'q': q, 'ip': ip, 'user_id': user_id}
         security_events.record('admin.security_viewed', request, user=admin,
-                               details={'filters': {k: v for k, v in {'event': event, 'q': q, 'ip': ip}.items() if v}})
+                               details={'filters': {k: v for k, v in filters.items() if v}})
     return {'events': events, 'next_before_id': events[-1]['id'] if len(events) == max(1, min(limit, 500)) else None}
+
+
+@router.get("/security/events.csv")
+def security_event_export(request: Request, event: Optional[str] = None, category: Optional[str] = None,
+                          q: Optional[str] = None, ip: Optional[str] = None, user_id: Optional[int] = None,
+                          db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    filters = {'event': event, 'category': category, 'q': q, 'ip': ip, 'user_id': user_id}
+    security_events.record('admin.exported', request, user=admin,
+                           details={'export': 'security_events', 'filters': {k: v for k, v in filters.items() if v}})
+    return _csv_response(security_events.csv_rows(db, **filters),
+                         f'security-events-{datetime.utcnow():%Y%m%d-%H%M}.csv')
+
+
+class BlockIPRequest(BaseModel):
+    ip: str
+    reason: str = ''
+    hours: Optional[int] = None      # None = until unblocked
+
+
+@router.get("/security/blocked-ips")
+def list_blocked_ips(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from backend.app.services import security_controls
+    return security_controls.blocked_ips(db)
+
+
+@router.post("/security/blocked-ips")
+def block_ip(payload: BlockIPRequest, request: Request, db: Session = Depends(get_db),
+             admin: User = Depends(require_admin)):
+    from backend.app.core.client_ip import client_ip
+    from backend.app.services import security_controls
+    if payload.ip.strip() == client_ip(request):
+        raise HTTPException(400, 'That is the address you are using now; blocking it would lock you out.')
+    if payload.hours is not None and not 1 <= payload.hours <= 24 * 365:
+        raise HTTPException(400, 'Choose between 1 hour and 1 year, or leave empty to block until removed.')
+    result = security_controls.block_ip(db, payload.ip, reason=payload.reason, hours=payload.hours, admin=admin)
+    security_events.record('admin.ip_blocked', request, user=admin,
+                           details={'target_ip': result['ip'], 'reason': payload.reason or None,
+                                    'hours': payload.hours})
+    return result
+
+
+@router.delete("/security/blocked-ips/{ip}")
+def unblock_ip(ip: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from backend.app.services import security_controls
+    if not security_controls.unblock_ip(db, ip):
+        raise HTTPException(404, 'That IP address is not blocked.')
+    security_events.record('admin.ip_unblocked', request, user=admin, details={'target_ip': ip})
+    return {'message': f'{ip} unblocked'}
+
+
+# ── Overview ──────────────────────────────────────────────────────────────────
+@router.get("/overview")
+def console_overview(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+    from backend.app.services import admin_console
+    return JSONResponse(jsonable_encoder(admin_console.overview(db)), headers={'Cache-Control': 'no-store'})
+
+
+# ── Accounts: search, controls, duplicates ───────────────────────────────────
+@router.get("/accounts")
+def search_accounts(q: Optional[str] = None, role: Optional[str] = None, status: Optional[str] = None,
+                    page: int = 1, page_size: int = 25, db: Session = Depends(get_read_db),
+                    admin: User = Depends(require_admin)):
+    from backend.app.services import admin_console
+    return admin_console.list_users(db, q=q, role=role, status=status, page=page, page_size=page_size)
+
+
+@router.get("/accounts.csv")
+def export_accounts(request: Request, q: Optional[str] = None, role: Optional[str] = None,
+                    status: Optional[str] = None, db: Session = Depends(get_read_db),
+                    admin: User = Depends(require_admin)):
+    from backend.app.services import admin_console
+    security_events.record('admin.exported', request, user=admin,
+                           details={'export': 'users', 'filters': {k: v for k, v in
+                                                                    {'q': q, 'role': role, 'status': status}.items() if v}})
+    return _csv_response(admin_console.users_csv(db, q=q, role=role, status=status),
+                         f'users-{datetime.utcnow():%Y%m%d-%H%M}.csv')
+
+
+def _target(db: Session, user_id: int, admin: User) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, 'User not found')
+    if user.id == admin.id:
+        raise HTTPException(400, 'You cannot do this to your own account.')
+    return user
+
+
+class SuspendRequest(BaseModel):
+    reason: str = ''
+
+
+@router.post("/users/{user_id}/suspend")
+def suspend_user(user_id: int, payload: SuspendRequest, request: Request, db: Session = Depends(get_db),
+                 admin: User = Depends(require_admin)):
+    from backend.app.services.auth_service import revoke_all_sessions
+    user = _target(db, user_id, admin)
+    user.suspended_at = datetime.utcnow()
+    user.suspended_reason = (payload.reason or '').strip()[:255] or None
+    revoke_all_sessions(db, user)
+    db.commit()
+    security_events.record('admin.user_suspended', request, user=admin,
+                           details={'target_user_id': user.id, 'target_email': user.email,
+                                    'reason': user.suspended_reason})
+    return {'message': f'{user.email} suspended and signed out everywhere'}
+
+
+@router.post("/users/{user_id}/unsuspend")
+def unsuspend_user(user_id: int, request: Request, db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    user = _target(db, user_id, admin)
+    user.suspended_at = None
+    user.suspended_reason = None
+    db.commit()
+    security_events.record('admin.user_unsuspended', request, user=admin,
+                           details={'target_user_id': user.id, 'target_email': user.email})
+    return {'message': f'{user.email} restored'}
+
+
+@router.post("/users/{user_id}/sign-out")
+def sign_out_user(user_id: int, request: Request, db: Session = Depends(get_db),
+                  admin: User = Depends(require_admin)):
+    from backend.app.services.auth_service import revoke_all_sessions
+    user = _target(db, user_id, admin)
+    revoke_all_sessions(db, user)
+    db.commit()
+    security_events.record('admin.sessions_revoked', request, user=admin,
+                           details={'target_user_id': user.id, 'target_email': user.email})
+    return {'message': f'{user.email} signed out of every device'}
+
+
+@router.post("/users/{user_id}/force-password-reset")
+def force_password_reset(user_id: int, request: Request, background_tasks: BackgroundTasks,
+                         db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from datetime import timedelta
+    from backend.app.services.auth_service import new_opaque_token, revoke_all_sessions
+    from backend.app.utils.email import send_password_reset_email
+    user = _target(db, user_id, admin)
+    raw, digest = new_opaque_token()
+    user.reset_token = digest
+    user.reset_token_expires = datetime.utcnow() + timedelta(hours=24)
+    user.force_password_reset = True
+    revoke_all_sessions(db, user)
+    db.commit()
+    background_tasks.add_task(send_password_reset_email, to_email=user.email, token=raw, full_name=user.full_name or "")
+    security_events.record('admin.password_reset_forced', request, user=admin,
+                           details={'target_user_id': user.id, 'target_email': user.email})
+    return {'message': f'{user.email} must set a new password; a reset link was emailed (valid 24 hours)'}
+
+
+@router.get("/duplicates")
+def list_duplicates(include_dismissed: bool = False, db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    from backend.app.services.account_integrity import duplicate_groups
+    return duplicate_groups(db, include_dismissed=include_dismissed)
+
+
+class DuplicateDismiss(BaseModel):
+    key: str
+
+
+@router.post("/duplicates/dismiss")
+def dismiss_duplicate(payload: DuplicateDismiss, request: Request, db: Session = Depends(get_db),
+                      admin: User = Depends(require_admin)):
+    from backend.app.models.security import DismissedDuplicate
+    key = payload.key.strip()[:160]
+    if not db.query(DismissedDuplicate).filter(DismissedDuplicate.group_key == key).first():
+        db.add(DismissedDuplicate(group_key=key, dismissed_by=admin.email))
+        db.commit()
+    security_events.record('admin.duplicate_dismissed', request, user=admin, details={'group': key})
+    return {'message': 'Marked as not duplicates'}
+
+
+class DuplicateReject(BaseModel):
+    user_ids: List[int]
+    action: str = 'suspend'          # suspend (reversible) | delete
+
+
+@router.post("/duplicates/reject")
+def reject_duplicates(payload: DuplicateReject, request: Request, db: Session = Depends(get_db),
+                      admin: User = Depends(require_admin)):
+    """Reject duplicate accounts: suspend them (reversible) or delete them."""
+    from backend.app.services.auth_service import revoke_all_sessions
+    from backend.app.services.security_controls import is_admin_account
+    if payload.action not in ('suspend', 'delete'):
+        raise HTTPException(400, 'Action must be suspend or delete.')
+    done = []
+    for user_id in dict.fromkeys(payload.user_ids):
+        user = _target(db, user_id, admin)
+        if is_admin_account(user):
+            raise HTTPException(400, f'{user.email} is an admin account; change its role first.')
+        target = {'target_user_id': user.id, 'target_email': user.email, 'reason': 'duplicate_account'}
+        if payload.action == 'delete':
+            db.delete(user)
+            db.commit()
+            security_events.record('admin.user_deleted', request, user=admin, details=target)
+        else:
+            user.suspended_at = datetime.utcnow()
+            user.suspended_reason = 'Duplicate account'
+            revoke_all_sessions(db, user)
+            db.commit()
+            security_events.record('admin.user_suspended', request, user=admin, details=target)
+        done.append(target['target_email'])
+    return {'message': f"{len(done)} duplicate account(s) {'deleted' if payload.action == 'delete' else 'suspended'}",
+            'accounts': done}
+
+
+# ── Employers ────────────────────────────────────────────────────────────────
+@router.get("/employers")
+def list_employers(status: str = 'pending', db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from backend.app.services.account_integrity import employer_card
+    base = db.query(User).filter(User.is_hr == True)  # noqa: E712
+    queries = {'pending': base.filter(User.hr_approved == False, User.hr_rejected_at.is_(None)),  # noqa: E712
+               'approved': base.filter(User.hr_approved == True),  # noqa: E712
+               'rejected': base.filter(User.hr_rejected_at.isnot(None))}
+    if status not in queries:
+        raise HTTPException(400, 'status must be pending, approved or rejected')
+    suspicious = {s['ip'] for s in security_events.summary(db)['suspicious_ips']}
+    rows = queries[status].order_by(User.created_at.asc() if status == 'pending' else User.created_at.desc()).limit(200)
+    return {'counts': {k: q.count() for k, q in queries.items()},
+            'items': [employer_card(db, u, suspicious) for u in rows]}
+
+
+# ── Jobs search ──────────────────────────────────────────────────────────────
+@router.get("/jobs/search")
+def search_jobs(q: Optional[str] = None, source: Optional[str] = None, status: str = 'active', page: int = 1,
+                page_size: int = 25, db: Session = Depends(get_read_db), admin: User = Depends(require_admin)):
+    from backend.app.services import admin_console
+    return admin_console.list_jobs(db, q=q, source=source, status=status, page=page, page_size=page_size)
 
 
 @router.get("/automation")
