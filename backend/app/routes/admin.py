@@ -302,7 +302,37 @@ def list_employers(status: str = 'pending', db: Session = Depends(get_db), admin
             'items': [employer_card(db, u, suspicious) for u in rows]}
 
 
-# ── Jobs search ──────────────────────────────────────────────────────────────
+# ── Clear scraped jobs (fresh start) ─────────────────────────────────────────
+class ClearJobsRequest(BaseModel):
+    confirm: str
+    refresh: bool = True
+
+
+def _refresh_jobs_in_background():
+    from backend.app.utils.global_scraper import scrape_global_jobs
+    try:
+        scrape_global_jobs()
+    except Exception as exc:  # the run records its own failure; never crash the worker thread
+        import logging
+        logging.getLogger(__name__).error("job_refresh_failed error_type=%s", type(exc).__name__)
+
+
+@router.post("/jobs/clear-scraped")
+def clear_scraped(payload: ClearJobsRequest, request: Request, background_tasks: BackgroundTasks,
+                  db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Delete every scraped listing (employer jobs are kept; listings with
+    applications are closed, not deleted) and optionally refill the board."""
+    if payload.confirm.strip() != "CLEAR JOBS":
+        raise HTTPException(400, 'Type CLEAR JOBS to confirm.')
+    from backend.app.utils.global_scraper import clear_scraped_jobs
+    result = clear_scraped_jobs(db)
+    security_events.record('admin.jobs_cleared', request, user=admin, details={**result, 'refresh': payload.refresh})
+    if payload.refresh:
+        background_tasks.add_task(_refresh_jobs_in_background)
+    return {**result, 'refreshing': payload.refresh}
+
+
+# ── Jobs search ────────────────────────────────────────────────────────────
 @router.get("/jobs/search")
 def search_jobs(q: Optional[str] = None, source: Optional[str] = None, status: str = 'active', page: int = 1,
                 page_size: int = 25, db: Session = Depends(get_read_db), admin: User = Depends(require_admin)):

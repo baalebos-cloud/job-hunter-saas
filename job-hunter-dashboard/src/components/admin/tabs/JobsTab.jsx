@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Trash2 } from 'lucide-react';
-import { adminDelete, adminGet, ago, message, num } from '../adminApi';
+import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
+import { adminDelete, adminGet, adminPost, ago, message, num } from '../adminApi';
 import { Banner, Button, Chip, Empty, Pager, SearchInput, Segmented, Select, Spinner, Stat, Td, Th, card } from '../ui';
 
 const APP_STATUS_TONE = { applied: 'green', interview: 'blue', offer: 'green', rejected: 'red', pending: 'slate' };
@@ -61,8 +61,28 @@ export default function JobsTab({ notify, confirm }) {
     errorText: (err) => message(err, 'Could not remove this job.'),
   });
 
+  const clearAll = () => confirm({
+    title: 'Clear all scraped jobs?', tone: 'red', confirmLabel: 'Clear and refresh',
+    body: <>Every scraped listing is removed and the scraper runs straight away to fill the board with fresh jobs.
+      Jobs posted by employers on Baalebos are kept, and listings people applied to stay in their application history.</>,
+    reasonLabel: 'Type CLEAR JOBS to confirm', reasonPlaceholder: 'CLEAR JOBS',
+    onConfirm: async (typed) => {
+      const r = await adminPost('/admin/jobs/clear-scraped', { confirm: typed, refresh: true });
+      notify(`${num(r.deleted)} scraped jobs removed${r.closed ? `, ${num(r.closed)} kept for application history` : ''}. Fresh jobs are loading (about a minute).`);
+      setPage(1); await load();
+    },
+    errorText: (err) => message(err, 'Could not clear jobs.'),
+  });
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">Scraped jobs older than 30 days, or no longer at their source, close automatically.</p>
+        <div className="flex gap-2">
+          <Button icon={RefreshCw} onClick={load}>Refresh</Button>
+          <Button variant="danger" icon={Trash2} onClick={clearAll}>Clear all scraped jobs…</Button>
+        </div>
+      </div>
       {data?.stats && (
         <div className="grid sm:grid-cols-3 gap-4">
           <Stat label="Live jobs" value={num(data.stats.live)} />

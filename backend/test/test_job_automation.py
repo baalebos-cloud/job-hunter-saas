@@ -313,7 +313,7 @@ def test_saver_keeps_valid_rows_when_one_row_is_invalid_and_preserves_first_seen
     stats = {"db_errors":0}
     assert scraper.save_jobs_to_db([{**base,"url":"https://example.com/1"},
                                     {**base,"location":["invalid"],"url":"https://example.com/bad"},
-                                    {**base,"url":"https://example.com/2"}],db,stats) == 2
+                                    {**base,"title":"Platform Engineer","url":"https://example.com/2"}],db,stats) == 2
     assert db.query(Job).count() == 2 and stats["db_errors"] == 1
     first = db.query(Job).filter_by(url="https://example.com/1").first().first_seen_at
     assert scraper.save_jobs_to_db([{**base,"url":"https://example.com/1"}],db) == 0
@@ -325,17 +325,14 @@ def test_scrape_run_persists_outcomes_for_cron_admin_and_worker_entrypoints(db, 
     def source():
         if failed: raise TimeoutError("private-provider-error")
         return []
-    names = ["scrape_themuse","scrape_weworkremotely","scrape_greenhouse","scrape_lever","scrape_arbeitnow",
-             "scrape_skillsire","scrape_micro1","scrape_amazon_jobs","scrape_remoteok","scrape_jobstash"]
-    for name in names: monkeypatch.setattr(scraper,name,source)
-    monkeypatch.setattr(scraper,"SEARCH_TERMS",[]); monkeypatch.setattr(scraper,"TECH_ROLES",[])
+    monkeypatch.setattr(scraper, "SOURCES", [(name, source) for name, _ in scraper.SOURCES])
     monkeypatch.setattr(scraper,"SessionLocal",sessionmaker(bind=db.bind))
     result = scraper.scrape_global_jobs()
     record = db.get(ScrapeRun,result["run_id"])
     assert result["status"] == ("failed" if failed else "empty")
     assert record.status == result["status"] and record.finished_at is not None
-    assert len(result["source_results"]) == 10
-    assert result["failed_sources"] == (10 if failed else 0)
+    assert len(result["source_results"]) == len(scraper.SOURCES)
+    assert result["failed_sources"] == (len(scraper.SOURCES) if failed else 0)
 
 
 def test_migration_is_repeatable_and_does_not_alert_on_historical_jobs():
@@ -376,3 +373,40 @@ process.stdout.write('validated');'''
     maintenance = json.loads((ROOT / "workflows/n8n/maintenance.json").read_text())
     assert maintenance["active"] is False
     assert maintenance["connections"]["Process Notifications"]["main"][1][0]["node"] == "Report Maintenance Failure"
+
+
+def test_saver_keeps_one_listing_when_boards_share_a_role(db):
+    base = dict(company="Contoso", location="Remote", source="Board", description="Kubernetes Terraform AWS")
+    assert scraper.save_jobs_to_db([{**base, "title": "Senior DevOps Engineer", "url": "https://a.example/1"},
+                                    {**base, "title": "Senior DevOps Engineer - Remote (EU)", "url": "https://b.example/9"}], db) == 1
+    job = db.query(Job).one()
+    assert job.dedupe_key == "senior devops engineer|contoso" and {"Kubernetes", "Terraform", "AWS"} <= set(job.skills)
+
+
+def test_tech_filter_and_work_type_prefer_location():
+    assert scraper.is_tech_role("Senior Backend Engineer (Go)") and scraper.is_tech_role("Product Manager, AI")
+    assert not scraper.is_tech_role("Account Executive, DACH") and not scraper.is_tech_role("Sales Engineer")
+    assert not scraper.is_tech_role("Senior Optical Design Engineer") and not scraper.is_tech_role("Content Reviewer")
+    assert scraper._work_type("Remote - US", "SRE", "hybrid or remote welcome") == "remote"
+    assert scraper._money_range("70", "85", "USD", "hourly") == "$70–$85 / hour"
+    assert scraper._money_range(120000, 150000) == "$120k–$150k / year"
+
+
+def test_expiry_and_clear_keep_employer_jobs_and_application_history(db):
+    now = datetime.utcnow()
+    user = User(email="c@example.com", hashed_password="x"); db.add(user); db.flush()
+    old = Job(title="Old DevOps", company="A", url="https://x/old", is_active=True, first_seen_at=now - timedelta(days=40),
+              last_checked_at=now, posted_by_hr=False)
+    unseen = Job(title="Gone SRE", company="B", url="https://x/gone", is_active=True, first_seen_at=now,
+                 last_checked_at=now - timedelta(days=5), posted_by_hr=False)
+    fresh = Job(title="Fresh SRE", company="C", url="https://x/fresh", is_active=True, first_seen_at=now,
+                last_checked_at=now, posted_by_hr=False)
+    employer = Job(title="Employer role", company="D", is_active=True, posted_by_hr=True,
+                   first_seen_at=now - timedelta(days=90))
+    db.add_all([old, unseen, fresh, employer]); db.flush()
+    db.add(Application(user_id=user.id, job_id=fresh.id, status="applied")); db.commit()
+    assert scraper.expire_stale_jobs(db) == {"closed": 2, "purged": 0}
+    assert {j.title for j in db.query(Job).filter(Job.is_active == True)} == {"Fresh SRE", "Employer role"}
+    result = scraper.clear_scraped_jobs(db)
+    assert result == {"deleted": 2, "closed": 1, "kept_employer_jobs": 1}
+    assert {j.title for j in db.query(Job)} == {"Fresh SRE", "Employer role"}   # applied-to listing kept, closed
