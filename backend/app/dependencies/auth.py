@@ -45,6 +45,8 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
         raise _unauthorized("unknown_user")
     if int(payload.get("tv", 0)) != int(user.token_version or 0):
         raise _unauthorized("token_version")
+    if user.suspended_at is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been suspended.")
     # Exposed to the audit middleware (actor/role) without a second lookup.
     request.state.user = user
     request.state.token_claims = payload

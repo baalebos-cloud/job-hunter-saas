@@ -88,7 +88,7 @@ def test_admin_summary_flags_suspicious_ips_and_requires_admin(db):
     summary = client.get('/api/v1/admin/security/summary', headers=owner_headers()).json()
     assert summary['failed_sign_ins'] == 7 and summary['sign_ins'] == 1
     assert summary['suspicious_ips'] == [{'ip': '203.0.113.9', 'failures': 6, 'last_seen': summary['suspicious_ips'][0]['last_seen'],
-                                         'country': 'Testland', 'accounts': 3}]
+                                         'country': 'Testland', 'accounts': 3, 'blocked': False}]
     assert summary['top_countries'] == [{'country': 'Nigeria', 'sign_ins': 1}]
     assert summary['retention_days'] == 90
 

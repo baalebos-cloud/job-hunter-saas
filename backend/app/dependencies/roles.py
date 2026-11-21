@@ -102,7 +102,17 @@ def is_owner(user) -> bool:
     return bool(user and user.is_verified and getattr(user, 'role', None) == 'super_admin')
 
 
-require_admin = require_permission('admin:access')
+_require_admin_access = require_permission('admin:access')
+
+
+def require_admin(current_user=Depends(_require_admin_access)):
+    """Owner console access. With ADMIN_2FA_REQUIRED (default on) the account
+    must have two-step verification enabled; sign-in already demanded the code."""
+    from backend.app.services.mfa import admin_2fa_required
+    if admin_2fa_required() and not current_user.totp_enabled_at:
+        raise HTTPException(403, {'code': 'mfa_enrollment_required',
+                                  'message': 'Turn on two-step verification to use the Owner console.'})
+    return current_user
 
 
 def require_hr(current_user=Depends(get_current_user)):
