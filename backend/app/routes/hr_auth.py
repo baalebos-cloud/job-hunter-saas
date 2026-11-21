@@ -192,6 +192,7 @@ def _send_hr_approval_email(to_email: str, full_name: str, company_name: str):
 @router.post("/signup")
 def hr_signup(
     payload: HRSignupRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
@@ -223,6 +224,10 @@ def hr_signup(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    from backend.app.services import security_events
+    security_events.record('hr.signup', request, user=new_user, portal='hr',
+                           details={'company': new_user.company_name, 'domain': domain})
 
     # 4. Send email verification to HR
     background_tasks.add_task(
@@ -322,6 +327,11 @@ def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: 
     # Block free email logins at the HR portal
     _validate_company_email(payload.email)
     user = authenticate(db, request, payload.email, payload.password, hr_login_guard)
+    from backend.app.services import security_events
+    refusal = ('not_an_employer' if not user.is_hr else 'email_unverified' if not user.is_verified
+               else 'awaiting_approval' if not user.hr_approved else None)
+    if refusal:
+        security_events.record('login.denied', request, user=user, portal='hr', details={'reason': refusal})
 
     if not user.is_hr:
         raise HTTPException(
@@ -352,6 +362,7 @@ def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: 
 @router.post("/approve/{user_id}")
 def approve_hr_account(
     user_id: int,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
@@ -373,6 +384,9 @@ def approve_hr_account(
         raise HTTPException(400, "HR must verify their email before approval")
     user.hr_approved = True
     db.commit()
+    from backend.app.services import security_events
+    security_events.record('admin.hr_approved', request, user=admin,
+                           details={'target_user_id': user.id, 'target_email': user.email, 'company': user.company_name})
 
     background_tasks.add_task(
         _send_hr_approval_email,

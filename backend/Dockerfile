@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY . ./backend
 
-RUN printf '#!/bin/bash\nset -e\nexec uvicorn backend.app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --no-proxy-headers\n' > /app/start.sh && \
+RUN printf '#!/bin/bash\nset -e\npython -m backend.scripts.download_geoip || true\nexec uvicorn backend.app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --no-proxy-headers\n' > /app/start.sh && \
     printf '#!/bin/bash\nset -e\nexec celery -A backend.app.celery_app worker --loglevel=info --concurrency=2\n' > /app/start-worker.sh && \
     printf '#!/bin/bash\nset -e\nsleep 5\nexec celery -A backend.app.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule\n' > /app/start-beat.sh && \
     chmod +x /app/start.sh /app/start-worker.sh /app/start-beat.sh

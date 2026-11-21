@@ -23,6 +23,7 @@ from backend.app.models.job import Job
 from backend.app.models.referral import Referral
 from backend.app.models.resume import Resume
 from backend.app.models.security import RefreshToken
+from backend.app.models.security_event import SecurityEvent
 from backend.app.models.subscription import Subscription
 from backend.app.models.user import Education, OutreachMessage, User
 from backend.app.services import audit, resume_storage

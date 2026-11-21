@@ -33,6 +33,7 @@ def export_user_data(db, user) -> dict:
     from backend.app.models.referral import Referral
     from backend.app.models.resume import Resume
     from backend.app.models.security import RefreshToken
+    from backend.app.models.security_event import SecurityEvent
     from backend.app.models.subscription import Subscription
     from backend.app.models.user import OutreachMessage
     from backend.app.services.audit import actor_hash
@@ -69,6 +70,9 @@ def export_user_data(db, user) -> dict:
                                                                     RefreshToken.revoked_at.is_(None))],
         'security_audit_events': [_row(e, exclude={'actor_hash'}) for e in db.query(AuditLog)
                                   .filter(AuditLog.actor_hash == subject).order_by(AuditLog.ts.desc()).limit(1000)],
+        'security_events': [_row(e) for e in db.query(SecurityEvent).filter(
+                                or_(SecurityEvent.user_id == user.id, SecurityEvent.email == user.email))
+                            .order_by(SecurityEvent.ts.desc()).limit(1000)],
     }
 
 
@@ -83,6 +87,7 @@ def erase_user(db, user, requested_by: str = 'self') -> dict:
     from backend.app.models.referral import Referral
     from backend.app.models.resume import Resume
     from backend.app.models.security import RefreshToken
+    from backend.app.models.security_event import SecurityEvent
     from backend.app.models.subscription import Subscription
     from backend.app.models.user import OutreachMessage
     from backend.app.services import resume_storage
@@ -105,6 +110,8 @@ def erase_user(db, user, requested_by: str = 'self') -> dict:
         counts['applications'] = db.query(Application).filter(Application.user_id == user.id).delete(synchronize_session=False)
         counts['resumes'] = db.query(Resume).filter(Resume.owner_id == user.id).delete(synchronize_session=False)
         counts['refresh_tokens'] = db.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(synchronize_session=False)
+        counts['security_events'] = db.query(SecurityEvent).filter(
+            or_(SecurityEvent.user_id == user.id, SecurityEvent.email == user.email)).delete(synchronize_session=False)
         counts['subscriptions'] = db.query(Subscription).filter(Subscription.user_id == user.id).delete(synchronize_session=False)
         counts['notifications'] = db.query(AutomationEvent).filter(AutomationEvent.recipient_id == user.id).delete(synchronize_session=False)
         counts['referrals_made'] = db.query(Referral).filter(Referral.referrer_id == user.id).delete(synchronize_session=False)
@@ -153,6 +160,7 @@ def run_retention(db, now: datetime | None = None) -> dict:
     from backend.app.models.audit import AuditLog, ErasureTombstone
     from backend.app.models.resume import Resume
     from backend.app.models.security import RefreshToken
+    from backend.app.models.security_event import SecurityEvent
     from backend.app.services import resume_storage
     now = now or datetime.utcnow()
     result = {}
@@ -163,6 +171,10 @@ def run_retention(db, now: datetime | None = None) -> dict:
         from sqlalchemy import text
         db.execute(text("SET LOCAL app.audit_retention = 'on'"))  # the only path past the append-only trigger
     result['audit_logs'] = db.query(AuditLog).filter(AuditLog.ts < now - timedelta(days=audit_days)).delete(synchronize_session=False)
+    from backend.app.models.security_event import SecurityEvent
+    from backend.app.services.security_events import retention_days
+    result['security_events'] = db.query(SecurityEvent).filter(
+        SecurityEvent.ts < now - timedelta(days=retention_days())).delete(synchronize_session=False)
     resume_days = int(os.getenv('RESUME_RETENTION_DAYS', '0'))  # 0 = keep until the user deletes them
     expired_keys = []
     if resume_days > 0:
