@@ -1,0 +1,19 @@
+# Rendered at start-up by entrypoint.sh from environment variables.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: baalebos-api
+    scheme: ${API_SCHEME}
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
+    static_configs:
+      - targets: ["${API_TARGET}"]
+        labels:
+          service: baalebos-api

@@ -1,7 +1,7 @@
 """RBAC administration: policy matrix and governance-role assignment."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,7 @@ def list_role_holders(db: Session = Depends(get_db), _=Depends(require_permissio
 
 
 @router.put("/users/{user_id}/role")
-def assign_role(user_id: int, body: RoleAssignment, db: Session = Depends(get_db),
+def assign_role(user_id: int, body: RoleAssignment, request: Request, db: Session = Depends(get_db),
                 actor=Depends(require_permission('users:manage_roles'))):
     if body.role is not None and body.role not in ROLES:
         raise HTTPException(422, f"Unknown role. Choose one of: {', '.join(ROLES)}.")
@@ -69,6 +69,9 @@ def assign_role(user_id: int, body: RoleAssignment, db: Session = Depends(get_db
     revoke_all_sessions(db, user)
     db.commit()
     _audit(None, 'rbac.role_assigned', target_user_id=user.id, previous=previous, role=body.role, actor_id=actor.id)
+    from backend.app.services import security_events
+    security_events.record('admin.made_admin' if body.role == 'super_admin' else 'admin.role_changed', request, user=actor,
+                           details={'target_user_id': user.id, 'target_email': user.email, 'previous': previous, 'role': body.role})
     return {"id": user.id, "email": user.email, "role": user.role}
 
 

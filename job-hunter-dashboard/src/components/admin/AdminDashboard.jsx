@@ -2,6 +2,23 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { errorText } from '../../lib/session';
 
+const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || '';
+
+// Short device description from a User-Agent string (display only).
+function device(ua) {
+  if (!ua) return '—';
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iOS/.test(ua) ? 'iOS'
+    : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : /curl|python|httpx|bot|spider/i.test(ua) ? 'Script/bot' : '';
+  return [browser, os].filter(Boolean).join(' · ') || ua.slice(0, 40);
+}
+const EVENT_TONE = {
+  'login.success': 'bg-emerald-500/15 text-emerald-300', 'signup': 'bg-sky-500/15 text-sky-300',
+  'hr.signup': 'bg-sky-500/15 text-sky-300', 'login.failed': 'bg-rose-500/15 text-rose-300',
+  'login.blocked': 'bg-rose-500/25 text-rose-200', 'login.denied': 'bg-amber-500/15 text-amber-300',
+};
+
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const h = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
@@ -23,6 +40,12 @@ export default function AdminDashboard() {
   const [pendingHR, setPendingHR] = useState(null);
   const [hrError, setHrError] = useState('');
   const [approving, setApproving] = useState(null);
+  const [secSummary, setSecSummary] = useState(null);
+  const [secEvents, setSecEvents] = useState([]);
+  const [secNext, setSecNext] = useState(null);
+  const [secFilter, setSecFilter] = useState({ event: '', q: '', ip: '' });
+  const [secError, setSecError] = useState('');
+  const [secLoading, setSecLoading] = useState(false);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
@@ -40,6 +63,14 @@ export default function AdminDashboard() {
     if (t === 'users')   { const r = await axios.get(`${API}/admin/users`, { headers: h() }); setUsers(r.data); }
     if (t === 'jobs')    { const r = await axios.get(`${API}/admin/jobs`, { headers: h() }); setJobs(r.data); }
     if (t === 'apps')    { const r = await axios.get(`${API}/admin/applications`, { headers: h() }); setApps(r.data); }
+    if (t === 'security') {
+      setSecError('');
+      try {
+        const s = await axios.get(`${API}/admin/security/summary`, { headers: h() });
+        setSecSummary(s.data);
+        await loadSecurityEvents(secFilter);
+      } catch (error) { setSecError(errorText(error, 'Could not load security data.')); }
+    }
     if (t === 'hr') {
       setHrError('');
       try { const r = await axios.get(`${API}/hr-auth/pending`, { headers: h() }); setPendingHR(r.data); }
@@ -71,6 +102,19 @@ export default function AdminDashboard() {
       setAIError(errorText(error, 'The diagnostic could not complete. Please try again.'));
     } finally { setTestingAI(false); }
   };
+
+  const loadSecurityEvents = async (filter, beforeId = null) => {
+    setSecLoading(true); setSecError('');
+    try {
+      const params = { limit: 100, ...Object.fromEntries(Object.entries(filter).filter(([, v]) => v)) };
+      if (beforeId) params.before_id = beforeId;
+      const { data } = await axios.get(`${API}/admin/security/events`, { headers: h(), params });
+      setSecEvents(prev => (beforeId ? [...prev, ...data.events] : data.events));
+      setSecNext(data.next_before_id);
+    } catch (error) { setSecError(errorText(error, 'Could not load security events.')); }
+    finally { setSecLoading(false); }
+  };
+  const applySecFilter = (next) => { const f = { ...secFilter, ...next }; setSecFilter(f); loadSecurityEvents(f); };
 
   const approveHR = async (account) => {
     if (!confirm(`Approve ${account.company_name || account.email} as an employer? They will be able to post jobs.`)) return;
@@ -119,6 +163,7 @@ export default function AdminDashboard() {
     { id: 'ai', label: 'AI Resume Test' },
     { id: 'automation', label: 'Automation' },
     { id: 'hr', label: `🏢 HR Approvals${pendingHR?.length ? ` (${pendingHR.length})` : ''}` },
+    { id: 'security', label: `🛡️ Security${secSummary?.suspicious_ips?.length ? ` (${secSummary.suspicious_ips.length} ⚠)` : ''}` },
     { id: 'users', label: '👥 Users' },
     { id: 'jobs',  label: '💼 Jobs' },
     { id: 'apps',  label: '📋 Applications' },
@@ -159,6 +204,121 @@ export default function AdminDashboard() {
       </div>
 
       <div className="p-6">
+
+        {tab === 'security' && (
+          <section className="space-y-6 max-w-7xl">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="text-slate-400 text-sm max-w-3xl">
+                Sign-ins, sign-ups, password resets and admin actions with the full IP address and approximate location.
+                Visible to admins only; every view is recorded. Entries are deleted after {secSummary?.retention_days ?? 90} days
+                and when a user erases their account.
+              </p>
+              {GRAFANA_URL && (
+                <a href={GRAFANA_URL} target="_blank" rel="noopener noreferrer"
+                  className="text-xs font-black px-3 py-2 rounded-xl bg-orange-500/15 text-orange-300 hover:bg-orange-500/25">Open Grafana ↗</a>
+              )}
+            </div>
+            {secError && <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-sm font-bold">{secError}</div>}
+            {secSummary && !secSummary.geolocation_enabled && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-sm">
+                Location lookup is off. Set <code className="font-mono">MAXMIND_LICENSE_KEY</code> on the backend (free GeoLite2 licence) to show countries and cities.
+              </div>
+            )}
+            {secSummary && (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[['Sign-ins (24h)', secSummary.sign_ins, 'text-emerald-400'], ['Failed sign-ins', secSummary.failed_sign_ins, 'text-rose-400'],
+                  ['Sign-ups', secSummary.sign_ups, 'text-sky-400'], ['Unique IPs', secSummary.unique_ips, 'text-white'],
+                  ['Admin actions', secSummary.admin_actions, 'text-purple-400']].map(([label, value, tone]) => (
+                  <div key={label} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{label}</p>
+                    <p className={`text-2xl font-black mt-1 ${tone}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {secSummary && (
+              <div className="grid lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                  <h3 className="font-black text-white">Suspicious IPs <span className="text-slate-500 font-medium text-sm">· 5+ failed sign-ins in 24h</span></h3>
+                  {secSummary.suspicious_ips.length === 0 ? <p className="text-slate-500 text-sm mt-3">Nothing suspicious in the last 24 hours.</p> : (
+                    <table className="w-full text-sm mt-3">
+                      <thead><tr className="text-left text-xs uppercase tracking-widest text-slate-500">
+                        <th className="py-2">IP address</th><th>Failures</th><th>Accounts tried</th><th>Country</th><th>Last seen</th><th></th></tr></thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {secSummary.suspicious_ips.map(s => (
+                          <tr key={s.ip}>
+                            <td className="py-2 font-mono text-rose-300">{s.ip}</td><td className="font-bold text-white">{s.failures}</td>
+                            <td className="text-slate-300">{s.accounts}</td><td className="text-slate-400">{s.country || '—'}</td>
+                            <td className="text-slate-400 text-xs">{new Date(s.last_seen).toLocaleString()}</td>
+                            <td><button onClick={() => applySecFilter({ ip: s.ip, q: '', event: '' })} className="text-xs font-bold text-sky-400 hover:underline">Show events</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                  <h3 className="font-black text-white">Sign-ins by country <span className="text-slate-500 font-medium text-sm">· 24h</span></h3>
+                  {secSummary.top_countries.length === 0 ? <p className="text-slate-500 text-sm mt-3">No located sign-ins yet.</p> : (
+                    <ul className="mt-3 space-y-2">
+                      {secSummary.top_countries.map(c => (
+                        <li key={c.country} className="flex justify-between text-sm"><span className="text-slate-300">{c.country}</span><span className="font-bold text-white">{c.sign_ins}</span></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl">
+              <div className="p-4 flex flex-wrap gap-2 items-center border-b border-slate-800">
+                <h3 className="font-black text-white mr-auto">Event log</h3>
+                <select aria-label="Event type" value={secFilter.event} onChange={e => applySecFilter({ event: e.target.value })}
+                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+                  <option value="">All events</option>
+                  {Object.entries(secSummary?.event_types || {}).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                </select>
+                <form onSubmit={e => { e.preventDefault(); applySecFilter({ q: e.target.elements.q.value, ip: '' }); }} className="flex gap-2">
+                  <input name="q" defaultValue={secFilter.q} placeholder="Email, IP, country or city"
+                    className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-500 w-64" />
+                  <button className="text-xs font-black px-3 py-2 rounded-xl bg-slate-700 text-white hover:bg-slate-600">Search</button>
+                </form>
+                {(secFilter.event || secFilter.q || secFilter.ip) && (
+                  <button onClick={() => applySecFilter({ event: '', q: '', ip: '' })} className="text-xs font-bold text-slate-400 hover:text-white">
+                    Clear filters{secFilter.ip ? ` (IP ${secFilter.ip})` : ''}
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-800/50"><tr>{['Time', 'Event', 'Account', 'IP address', 'Location', 'Device', 'Details'].map(c => (
+                    <th key={c} className="px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-400">{c}</th>))}</tr></thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {secEvents.map(e => (
+                      <tr key={e.id} className="hover:bg-slate-800/30 align-top">
+                        <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{new Date(e.ts).toLocaleString()}</td>
+                        <td className="px-4 py-2.5"><span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${EVENT_TONE[e.event] || 'bg-slate-700 text-slate-300'}`}>{e.label}</span>
+                          {e.portal && <span className="ml-1 text-[10px] uppercase text-slate-500">{e.portal}</span>}</td>
+                        <td className="px-4 py-2.5 text-slate-300">{e.email || '—'}</td>
+                        <td className="px-4 py-2.5">{e.ip ? <button onClick={() => applySecFilter({ ip: e.ip, q: '', event: '' })} className="font-mono text-sky-300 hover:underline">{e.ip}</button> : '—'}</td>
+                        <td className="px-4 py-2.5 text-slate-400">{e.location || '—'}</td>
+                        <td className="px-4 py-2.5 text-slate-400 text-xs" title={e.user_agent || ''}>{device(e.user_agent)}</td>
+                        <td className="px-4 py-2.5 text-slate-500 text-xs">{e.details ? Object.entries(e.details).filter(([, v]) => v && typeof v !== 'object').map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(' · ') : ''}</td>
+                      </tr>
+                    ))}
+                    {!secLoading && secEvents.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No security events match.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              {secNext && (
+                <div className="p-4 border-t border-slate-800 text-center">
+                  <button onClick={() => loadSecurityEvents(secFilter, secNext)} disabled={secLoading} className="text-xs font-black px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
+                    {secLoading ? 'Loading…' : 'Load older events'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {tab === 'hr' && (
           <section className="max-w-6xl space-y-4">
