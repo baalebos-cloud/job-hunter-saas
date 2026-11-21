@@ -8,7 +8,7 @@ import DashboardLayout from './components/layout/DashboardLayout'
 import GovernanceDashboard from './components/governance/GovernanceDashboard'
 import TalentOverview from './components/TalentOverview'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
-import JobFeed from './components/JobFeed'
+import JobBoard from './components/jobs/JobBoard'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
 import { signOut, errorText } from './lib/session'
@@ -267,94 +267,16 @@ function SettingsPage() {
   )
 }
 
-// ── Job Feed page (/jobs) ─────────────────────────────────────────────────────
+// ── Job board page (/jobs) ────────────────────────────────────────────────────
 function JobsPage() {
-  const [jobs, setJobs]             = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [countryFilter, setCountry] = useState('')
-  const [workType, setWorkType]     = useState('')
-  const [search, setSearch]         = useState('')
   const token = localStorage.getItem('token')
-
-  const fetchJobs = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = {
-        ...(countryFilter ? { country: countryFilter } : {}),
-        ...(search       ? { search }                : {}),
-        ...(workType     ? { work_type: workType }   : {}),
-      }
-      const res = await axios.get(`${API_BASE_URL}/jobs/`, { params })
-      setJobs(Array.isArray(res.data) ? res.data : [])
-    } catch (err) { console.error(err) }
-    finally { setLoading(false) }
-  }, [countryFilter, workType, search])
-
-  useEffect(() => { fetchJobs() }, [fetchJobs])
-
   const handleApply = useCallback(async (jobId, jobUrl, resumeId) => {
     if (!token) { window.location.href = '/login'; return }
-    try {
-      const res = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, { resume_id: resumeId || null }, { headers: { Authorization: `Bearer ${token}` } })
-      return res.data
-    } catch (err) {
-      throw err
-    }
+    const res = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, { resume_id: resumeId || null },
+      { headers: { Authorization: `Bearer ${token}` } })
+    return res.data
   }, [token])
-
-  return (
-    <div>
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-3 mb-6">
-        {/* Search */}
-        <div className="relative flex-1">
-          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-          </svg>
-          <input type="text" placeholder="Search title, company, skill..."
-            value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-slate-200 bg-white text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 transition-all placeholder:text-slate-600" />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 font-black text-lg">×</button>
-          )}
-        </div>
-
-        {/* Country */}
-        <div className="relative">
-          <select value={countryFilter} onChange={e => setCountry(e.target.value)}
-            className="pl-4 pr-8 py-3 rounded-2xl border-2 border-slate-200 bg-white text-sm font-bold text-slate-600 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer min-w-[160px]">
-            <option value="">🌍 All Countries</option>
-            {['Nigeria','Ghana','Kenya','South Africa','United States','United Kingdom','Canada','Germany','France','Netherlands','India','Australia','Singapore','UAE','Brazil','Remote','Worldwide'].map(c => (
-              <option key={c} value={c} style={{ background: '#0f172a' }}>{c}</option>
-            ))}
-          </select>
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-xs">▾</span>
-        </div>
-      </div>
-
-      {/* Work type pills */}
-      <div className="flex gap-2 flex-wrap mb-6">
-        {[{v:'',l:'🌐 All'},{v:'remote',l:'🌍 Remote'},{v:'hybrid',l:'🏢 Hybrid'},{v:'onsite',l:'📍 On-site'}].map(({v,l}) => (
-          <button key={v} onClick={() => setWorkType(v)}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border-2 ${
-              workType === v
-                ? 'bg-emerald-600 text-slate-900 border-emerald-600 shadow-lg shadow-emerald-600/20'
-                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-600 hover:text-slate-900'
-            }`}>
-            {l}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        </div>
-      ) : (
-        <JobFeed jobs={jobs} onApply={handleApply} lastTaskId={localStorage.getItem('lastTaskId')} />
-      )}
-    </div>
-  )
+  return <JobBoard onApply={handleApply} lastTaskId={localStorage.getItem('lastTaskId')} />
 }
 
 // ── Landing page (public) ─────────────────────────────────────────────────────

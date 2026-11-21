@@ -45,7 +45,8 @@ export default function OperationsTab({ system, grafanaUrl, notify, onScrape, sc
             {last ? <Chip tone={last.status === 'success' ? 'green' : last.status === 'partial' ? 'amber' : 'red'}>{last.status}</Chip> : <Chip>No runs yet</Chip>}</div>
           <dl className="mt-4 space-y-2 text-[13px]">
             <div className="flex justify-between"><dt className="text-slate-500">Last run</dt><dd>{last ? ago(`${last.started_at}Z`) : '—'}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">Fetched / saved</dt><dd>{num(summary.total_scraped)} / {num(summary.total_saved)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Found / new</dt><dd>{num(summary.total_scraped)} / {num(summary.total_saved)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Closed (stale)</dt><dd>{num(summary.expired?.closed)}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Failing sources</dt><dd>{num(summary.failed_sources)}</dd></div>
           </dl>
           <div className="mt-auto pt-4"><Button variant="primary" icon={Play} busy={scraping} onClick={onScrape} className="w-full">Run now</Button></div>
@@ -81,9 +82,9 @@ export default function OperationsTab({ system, grafanaUrl, notify, onScrape, sc
         <div className={`${card} overflow-hidden`}>
           <SectionHeader title="Scraper sources" subtitle={`Run started ${when(`${last.started_at}Z`)}`} />
           <div className="max-h-80 overflow-auto"><table className="w-full">
-            <thead><tr><Th>Source</Th><Th>Result</Th><Th>Jobs fetched</Th></tr></thead>
+            <thead><tr><Th>Source</Th><Th>Result</Th><Th>Tech jobs found</Th><Th>Kept (last 30 days)</Th></tr></thead>
             <tbody>{last.summary.source_results.map(s => (
-              <tr key={s.name}><Td>{s.name}</Td><Td><Chip tone={s.status === 'ok' || s.status === 'success' ? 'green' : s.status === 'partial' ? 'amber' : 'red'}>{s.status}</Chip></Td><Td>{num(s.job_count)}</Td></tr>))}
+              <tr key={s.name}><Td>{s.name}</Td><Td><Chip tone={s.status === 'success' ? 'green' : s.status === 'partial' ? 'amber' : s.status === 'empty' ? 'slate' : 'red'}>{s.status === 'empty' ? 'no jobs' : s.status}</Chip></Td><Td>{num(s.fetched ?? s.job_count)}</Td><Td>{num(s.job_count)}</Td></tr>))}
             </tbody>
           </table></div>
         </div>

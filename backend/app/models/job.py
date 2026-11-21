@@ -1,4 +1,4 @@
-from sqlalchemy import Index, Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import JSON, Index, Column, Integer, String, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.app.database import Base
@@ -27,5 +27,10 @@ class Job(Base):
     work_type = Column(String, nullable=True)  # remote | hybrid | onsite
     posted_by_hr = Column(Boolean, default=False)  # True = HR posted, False = scraped
     hr_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # HR who posted
+    # Job board: one listing per role even when several boards carry it.
+    dedupe_key = Column(String(300), nullable=True, index=True)   # normalised "title|company"
+    skills = Column(JSON, nullable=True)                         # canonical skill names found in the posting
+    employment_type = Column(String(32), nullable=True)          # Full-time | Part-time | Contract | Internship
+    company_logo = Column(String(500), nullable=True)            # https URL from the source, when provided
 
     applications = relationship("Application", back_populates="job")

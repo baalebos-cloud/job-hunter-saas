@@ -247,6 +247,8 @@ app.add_middleware(
 
 # --- ROUTES ---
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+from backend.app.routes import job_board as job_board_router
+app.include_router(job_board_router.router, prefix="/api/v1/jobs", tags=["Jobs"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
 app.include_router(resume.router, prefix="/api/v1/resume", tags=["Resume"])
 app.include_router(application.router, prefix="/api/v1/application", tags=["Application"])
