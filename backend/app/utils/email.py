@@ -130,15 +130,16 @@ def send_verification_email(to_email: str, token: str, full_name: str = "") -> b
     </body>
     </html>
     """
-    return send_verification_message(to_email, subject, html_content)
+    return send_account_message(to_email, subject, html_content)
 
 
-def send_verification_message(to_email: str, subject: str, html_content: str) -> bool:
-    """Deliver an email-verification message (candidate or HR).
+def send_account_message(to_email: str, subject: str, html_content: str) -> bool:
+    """Deliver an account-access message: email verification (candidate and
+    HR) and the employer approval lifecycle (admin alert, approval notice).
 
     Uses Resend's HTTPS API when RESEND_API_KEY is set: Railway Hobby blocks
-    outbound SMTP, so SMTP-only verification mail never arrives there. Other
-    flows intentionally stay on ``_send``.
+    outbound SMTP, so SMTP-only mail never arrives there. Other flows
+    (welcome, password reset, notifications) intentionally stay on ``_send``.
     """
     if settings.RESEND_API_KEY:
         return _send_resend_verification(to_email, subject, html_content)

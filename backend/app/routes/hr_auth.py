@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from collections import defaultdict
 from pydantic import BaseModel, EmailStr
 import time
+import logging
+logger = logging.getLogger(__name__)
 
 from backend.app.dependencies.roles import require_admin
 from backend.app.database import get_db
@@ -19,7 +21,8 @@ from backend.app.models.user import User
 from backend.app.services.auth_service import hash_password, hash_token, new_opaque_token
 from backend.app.core.rate_limit import LoginGuard
 from fastapi import Response
-from backend.app.utils.email import send_verification_email, send_verification_message, _send
+from html import escape
+from backend.app.utils.email import send_verification_email, send_account_message, _send
 from backend.app.core.rate_limit import hit, _email_key
 
 router = APIRouter(tags=["HR Auth"])
@@ -84,6 +87,7 @@ def _validate_company_email(email: str) -> str:
 def _send_hr_verification_email(to_email: str, token: str, full_name: str, company_name: str) -> bool:
     """Email to HR — asks them to verify their email first."""
     import os
+    full_name, company_name = escape(full_name or ''), escape(company_name or '')
     frontend = os.getenv("FRONTEND_URL", "https://baalebo.xyz")
     verify_url = f"{frontend}/hr/verify?token={token}"
     html = f"""
@@ -121,27 +125,35 @@ def _send_hr_verification_email(to_email: str, token: str, full_name: str, compa
     </div>
     </body></html>
     """
-    return send_verification_message(to_email, "Verify your Baalebos HR account", html)
+    return send_account_message(to_email, "Verify your Baalebos HR account", html)
 
 
-def _send_admin_hr_notification(admin_email: str, hr_user: User, domain: str, company_url: str, linkedin_url: str):
-    """Notify admin of new HR signup awaiting approval."""
+def _send_admin_hr_notification(admin_emails: list[str], full_name: str, email: str, company_name: str,
+                                 country: str, domain: str, company_url: str, linkedin_url: str) -> bool:
+    """Notify the admins of a new HR signup awaiting approval.
+
+    Everything shown comes from the signup form, so it is HTML-escaped: the
+    admin must not receive markup or links the applicant typed in.
+    """
     import os
     frontend = os.getenv("FRONTEND_URL", "https://baalebo.xyz")
-    approve_url = f"{frontend}/admin"
+    approve_url = f"{frontend}/admin?tab=hr"
+    full_name, email, company_name, country, domain = (escape(v or '') for v in (full_name, email, company_name, country, domain))
+    company_url = escape(company_url or 'Not provided')
+    linkedin_url = escape(linkedin_url or 'Not provided')
     html = f"""
     <!DOCTYPE html><html><head><meta charset="utf-8"></head>
     <body style="font-family:'Inter',Arial,sans-serif;background:#f8fafc;padding:40px 20px;">
     <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:16px;padding:32px;border:1px solid #e2e8f0;">
       <h2 style="color:#0f172a;font-weight:800;margin:0 0 16px;">🔔 New HR Account Pending Approval</h2>
       <table style="width:100%;border-collapse:collapse;font-size:14px;">
-        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Name</td><td style="padding:8px 0;color:#0f172a;font-weight:600;">{hr_user.full_name}</td></tr>
-        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Email</td><td style="padding:8px 0;color:#3b82f6;">{hr_user.email}</td></tr>
-        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Company</td><td style="padding:8px 0;color:#0f172a;font-weight:600;">{hr_user.company_name}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Name</td><td style="padding:8px 0;color:#0f172a;font-weight:600;">{full_name}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Email</td><td style="padding:8px 0;color:#3b82f6;">{email}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Company</td><td style="padding:8px 0;color:#0f172a;font-weight:600;">{company_name}</td></tr>
         <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Domain</td><td style="padding:8px 0;color:#0f172a;">@{domain}</td></tr>
-        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Company URL</td><td style="padding:8px 0;color:#3b82f6;">{company_url or 'Not provided'}</td></tr>
-        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">LinkedIn</td><td style="padding:8px 0;color:#3b82f6;">{linkedin_url or 'Not provided'}</td></tr>
-        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Country</td><td style="padding:8px 0;color:#0f172a;">{hr_user.country or '—'}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Company URL</td><td style="padding:8px 0;color:#3b82f6;">{company_url}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">LinkedIn</td><td style="padding:8px 0;color:#3b82f6;">{linkedin_url}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;font-weight:700;">Country</td><td style="padding:8px 0;color:#0f172a;">{country or '—'}</td></tr>
       </table>
       <div style="text-align:center;margin-top:24px;">
         <a href="{approve_url}" style="display:inline-block;background:#0f172a;color:#fff;font-weight:800;
@@ -152,13 +164,15 @@ def _send_admin_hr_notification(admin_email: str, hr_user: User, domain: str, co
     </div>
     </body></html>
     """
-    _send(admin_email, f"🔔 New HR signup: {hr_user.company_name} ({domain})", html)
+    subject = f"🔔 New employer awaiting approval: {company_name} (@{domain})"
+    return all([send_account_message(to, subject, html) for to in admin_emails])
 
 
-def _send_hr_approval_email(to_email: str, full_name: str, company_name: str):
-    """Sent when admin approves HR account."""
+def _send_hr_approval_email(to_email: str, full_name: str, company_name: str) -> bool:
+    """Sent as soon as an admin approves the HR account."""
     import os
     frontend = os.getenv("FRONTEND_URL", "https://baalebo.xyz")
+    full_name, company_name = escape(full_name or ''), escape(company_name or '')
     html = f"""
     <!DOCTYPE html><html><head><meta charset="utf-8"></head>
     <body style="font-family:'Inter',Arial,sans-serif;background:#f8fafc;padding:40px 20px;">
@@ -185,7 +199,18 @@ def _send_hr_approval_email(to_email: str, full_name: str, company_name: str):
     </div>
     </body></html>
     """
-    _send(to_email, "✅ Your Baalebos HR account is approved!", html)
+    return send_account_message(to_email, "✅ Your Baalebos HR account is approved!", html)
+
+
+def admin_alert_recipients(db: Session) -> list[str]:
+    """ADMIN_EMAIL (comma-separated allowed), else every verified admin/owner account."""
+    from backend.app.core.config import settings
+    configured = [e.strip() for e in (settings.ADMIN_EMAIL or '').split(',') if e.strip()]
+    if configured:
+        return configured
+    admins = db.query(User).filter(User.is_verified == True,  # noqa: E712
+                                   (User.is_admin == True) | (User.role == 'super_admin')).all()  # noqa: E712
+    return sorted({u.email for u in admins if u.email})
 
 
 # ── POST /hr-auth/signup ──────────────────────────────────────────────────────
@@ -233,18 +258,22 @@ def hr_signup(
         company_name=new_user.company_name or "",
     )
 
-    # 5. Notify admin of new HR pending approval
-    import os
-    admin_email = os.getenv("ADMIN_EMAIL", os.getenv("EMAILS_FROM_EMAIL", ""))
-    if admin_email:
+    # 5. Tell the admins right away so approval is not delayed
+    admin_emails = admin_alert_recipients(db)
+    if admin_emails:
         background_tasks.add_task(
             _send_admin_hr_notification,
-            admin_email=admin_email,
-            hr_user=new_user,
+            admin_emails=admin_emails,
+            full_name=new_user.full_name or "",
+            email=new_user.email,
+            company_name=new_user.company_name or "",
+            country=new_user.country or "",
             domain=domain,
             company_url=payload.company_url,
             linkedin_url=payload.linkedin_url,
         )
+    else:
+        logger.warning("hr_signup_admin_alert_skipped reason=no_admin_recipient")
 
     return {
         "message": "HR account created. Please check your email to verify your address. "

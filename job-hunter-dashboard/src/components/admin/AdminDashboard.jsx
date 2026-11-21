@@ -30,6 +30,9 @@ export default function AdminDashboard() {
       .then(r => setStats(r.data))
       .catch(e => { if (e.response?.status === 403) { alert('Admin access required'); window.location.href = '/'; } })
       .finally(() => setLoading(false));
+    // Deep links such as /admin?tab=hr (used by the "new employer" alert email).
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested === 'hr') load('hr');
   }, []);
 
   const load = async (t) => {
