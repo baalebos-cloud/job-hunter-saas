@@ -52,8 +52,9 @@ Vercel → project → Settings → Environment Variables:
 pg_dump --no-owner --no-acl -Fc "$OLD_DATABASE_PUBLIC_URL" -f baalebos.dump
 pg_restore --no-owner --no-acl -d "$NEW_DATABASE_PUBLIC_URL" baalebos.dump
 ```
-Use each database's *public* URL (Postgres service → Connect). Restore before the
-first API deploy, or redeploy afterwards; the pre-deploy step then upgrades the schema.
+Use each database's *public* URL (Postgres service → Connect). Restore into the
+**empty** new database **before the first API deploy**; the pre-deploy step then
+upgrades the old schema in place (tested against a copy of the 18 Nov schema).
 
 **Fresh start:** the first deploy creates the schema. Sign up with the owner email,
 verify it, then run this once inside the running API service
