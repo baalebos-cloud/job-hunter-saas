@@ -44,17 +44,29 @@ def start_session(db: Session, user: User, response: Response, extra: dict | Non
 
 
 def authenticate(db: Session, request: Request, email: str, password: str, guard: LoginGuard = login_guard) -> User:
+    from backend.app.services import security_events
+    from backend.app.core.metrics import LOGIN_ATTEMPTS
     ip, email = client_ip(request), (email or '').lower().strip()
-    guard.check(ip, email)
+    try:
+        guard.check(ip, email)
+    except HTTPException:
+        security_events.record('login.blocked', request, email=email, portal=guard.scope)
+        LOGIN_ATTEMPTS.labels(portal=guard.scope, outcome='blocked').inc()
+        raise
     user = db.query(User).filter(User.email == email).first()
     ok, new_hash = verify_and_update_password(password, user.hashed_password) if user else (False, None)
     if not ok:
         guard.failure(ip, email)
+        security_events.record('login.failed', request, user=user, email=email, portal=guard.scope,
+                               details={'reason': 'wrong_password' if user else 'unknown_account'})
+        LOGIN_ATTEMPTS.labels(portal=guard.scope, outcome='failed').inc()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if new_hash:  # transparently upgrade legacy bcrypt hashes
         user.hashed_password = new_hash
         db.commit()
     guard.success(ip, email)
+    security_events.record('login.success', request, user=user, portal=guard.scope)
+    LOGIN_ATTEMPTS.labels(portal=guard.scope, outcome='success').inc()
     return user
 
 
@@ -75,6 +87,8 @@ def signup(user: UserCreate, request: Request, response: Response, background_ta
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    from backend.app.services import security_events
+    security_events.record('signup', request, user=new_user, portal='login')
     background_tasks.add_task(send_verification_email, to_email=new_user.email, token=raw_token,
                               full_name=new_user.full_name or "")
     return start_session(db, new_user, response)
@@ -109,10 +123,13 @@ def resend_verification(current_user: User = Depends(get_current_user), db: Sess
 
 # ── PASSWORD RESET (JSON bodies; tokens stored as SHA-256) ───────────────────
 @router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def forgot_password(payload: ForgotPasswordRequest, request: Request, background_tasks: BackgroundTasks,
+                    db: Session = Depends(get_db)):
     """Always returns the same response to prevent email enumeration."""
     user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
     if user:
+        from backend.app.services import security_events
+        security_events.record('password.reset_requested', request, user=user)
         raw_token, token_digest = new_opaque_token()
         user.reset_token = token_digest
         user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
@@ -123,7 +140,7 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
 
 
 @router.post("/reset-password")
-def reset_password(payload: ResetPasswordRequest, response: Response, db: Session = Depends(get_db)):
+def reset_password(payload: ResetPasswordRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.reset_token == hash_token(payload.token)).first()
     if not user or not user.reset_token_expires:
         raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
@@ -134,6 +151,8 @@ def reset_password(payload: ResetPasswordRequest, response: Response, db: Sessio
     user.reset_token_expires = None
     revoke_all_sessions(db, user)  # every existing JWT and refresh token stops working
     db.commit()
+    from backend.app.services import security_events
+    security_events.record('password.reset_completed', request, user=user)
     clear_refresh_cookie(response)
     return {"message": "Password reset successfully. You can now login with your new password."}
 
@@ -206,6 +225,9 @@ def admin_login(user: UserLogin, request: Request, response: Response, db: Sessi
     db_user = authenticate(db, request, user.email, user.password, LoginGuard('admin'))
     if not has_permission(db, db_user, 'admin:access'):
         LoginGuard('admin').failure(client_ip(request), user.email)
+        from backend.app.services import security_events
+        security_events.record('login.denied', request, user=db_user, portal='admin',
+                               details={'reason': 'not_an_admin'})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Admin account required.")
     return start_session(db, db_user, response, {"is_admin": True, "email": db_user.email,
                                                   "full_name": db_user.full_name, "redirect": "/admin"})

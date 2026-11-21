@@ -20,6 +20,26 @@ router = APIRouter(tags=["Admin"])
 
 from backend.app.dependencies.roles import require_admin, require_permission
 from backend.app.services.job_automation import automation_status, run_tick
+from backend.app.services import security_events
+
+
+# ── Security oversight (owner/admin only) ─────────────────────────────────────
+@router.get("/security/summary")
+def security_summary(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Last 24 hours: sign-ins, failures, sign-ups, unique IPs, suspicious IPs, top countries."""
+    return security_events.summary(db)
+
+
+@router.get("/security/events")
+def security_event_log(request: Request, event: Optional[str] = None, q: Optional[str] = None,
+                       ip: Optional[str] = None, limit: int = 100, before_id: Optional[int] = None,
+                       db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Full security events (IP, location, account). Every read is itself recorded."""
+    events = security_events.list_events(db, event=event, q=q, ip=ip, limit=limit, before_id=before_id)
+    if before_id is None:  # record the first page of each search, not every scroll
+        security_events.record('admin.security_viewed', request, user=admin,
+                               details={'filters': {k: v for k, v in {'event': event, 'q': q, 'ip': ip}.items() if v}})
+    return {'events': events, 'next_before_id': events[-1]['id'] if len(events) == max(1, min(limit, 500)) else None}
 
 
 @router.get("/automation")
@@ -75,7 +95,7 @@ def list_users(
 
 
 @router.patch("/users/{user_id}/make-hr")
-def make_hr(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def make_hr(user_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -84,6 +104,7 @@ def make_hr(user_id: int, db: Session = Depends(get_db), admin: User = Depends(r
     user.is_hr = True
     user.hr_approved = True
     db.commit()
+    security_events.record('admin.made_hr', request, user=admin, details={'target_user_id': user.id, 'target_email': user.email})
     return {"message": f"{user.email} is now an HR user"}
 
 
@@ -94,12 +115,14 @@ def make_admin(user_id: int, admin: User = Depends(require_admin)):
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def delete_user(user_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    target = {'target_user_id': user.id, 'target_email': user.email}
     db.delete(user)
     db.commit()
+    security_events.record('admin.user_deleted', request, user=admin, details=target)
     return {"message": "User deleted"}
 
 
@@ -114,12 +137,14 @@ def list_all_jobs(
 
 
 @router.delete("/jobs/{job_id}")
-def delete_job(job_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def delete_job(job_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    target = {'job_id': job.id, 'title': job.title, 'company': job.company}
     db.delete(job)
     db.commit()
+    security_events.record('admin.job_deleted', request, user=admin, details=target)
     return {"message": "Job deleted"}
 
 

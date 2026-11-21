@@ -23,6 +23,8 @@ SANITIZATION_BLOCKS = Counter('sanitization_blocks_total', 'Markup/PDF-injection
 OCR_FALLBACKS = Counter('ocr_fallback_total', 'OCR fallback attempts by outcome', ['outcome'], registry=REGISTRY)
 PDF_SINGLE_PAGE_PASS = Counter('pdf_single_page_pass_total', 'One-page resume exports by layout profile', ['layout', 'condensed'], registry=REGISTRY)
 RATE_LIMITED = Counter('rate_limited_total', 'Requests rejected by rate limiting', ['route'], registry=REGISTRY)
+LOGIN_ATTEMPTS = Counter('auth_login_attempts_total', 'Sign-in attempts by portal and outcome', ['portal', 'outcome'], registry=REGISTRY)
+SECURITY_EVENTS = Counter('security_events_total', 'Security events recorded for owner oversight', ['event'], registry=REGISTRY)
 
 
 class _PoolCollector:

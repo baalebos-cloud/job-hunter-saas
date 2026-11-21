@@ -1,0 +1,53 @@
+# =============================================================================
+# BAALEBOS CLOUD — LOCAL MONITORING (Prometheus + Grafana)
+# =============================================================================
+# Overlay on the dev stack. Set METRICS_TOKEN in .env (the backend reads it too):
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up --build
+# Prometheus: http://localhost:9090   Grafana: http://localhost:3001 (admin / GRAFANA_ADMIN_PASSWORD)
+# See monitoring/README.md for production (Railway / Grafana Cloud).
+# =============================================================================
+
+services:
+  prometheus:
+    build: ./monitoring/prometheus
+    container_name: job-hunter-prometheus
+    restart: unless-stopped
+    environment:
+      - API_TARGET=backend:8000
+      - API_SCHEME=http
+      - METRICS_TOKEN=${METRICS_TOKEN:?Set METRICS_TOKEN in .env}
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+    depends_on:
+      - backend
+    networks:
+      - job-hunter-network
+
+  grafana:
+    build: ./monitoring/grafana
+    container_name: job-hunter-grafana
+    restart: unless-stopped
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      # Admin password is read from a Docker secret file, never set inline.
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+    secrets:
+      - grafana_admin_password
+    ports:
+      - "3001:3000"                   # 3000 is commonly taken by the dashboard dev server
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - job-hunter-network
+
+secrets:
+  grafana_admin_password:
+    environment: GRAFANA_ADMIN_PASSWORD   # from .env
+
+volumes:
+  prometheus_data:
+  grafana_data:
