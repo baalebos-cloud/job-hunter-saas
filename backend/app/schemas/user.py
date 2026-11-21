@@ -28,6 +28,7 @@ class UserResponse(BaseModel):
     role: Optional[str] = None
     permissions: list[str] = []
     mfa_enabled: bool = False
+    photo_url: Optional[str] = None
 
     class Config:
         from_attributes = True
