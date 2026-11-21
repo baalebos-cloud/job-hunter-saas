@@ -31,7 +31,10 @@ services:
     restart: unless-stopped
     environment:
       - PROMETHEUS_URL=http://prometheus:9090
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      # Admin password is read from a Docker secret file, never set inline.
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+    secrets:
+      - grafana_admin_password
     ports:
       - "3001:3000"                   # 3000 is commonly taken by the dashboard dev server
     volumes:
@@ -40,6 +43,10 @@ services:
       - prometheus
     networks:
       - job-hunter-network
+
+secrets:
+  grafana_admin_password:
+    environment: GRAFANA_ADMIN_PASSWORD   # from .env
 
 volumes:
   prometheus_data:

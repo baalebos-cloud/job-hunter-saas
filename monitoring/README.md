@@ -54,6 +54,8 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up --build
 ```
 
 Prometheus: http://localhost:9090 · Grafana: http://localhost:3001 (user `admin`).
+The Grafana password reaches the container as a Docker secret file
+(`GF_SECURITY_ADMIN_PASSWORD__FILE`); this needs Docker Compose 2.23 or newer.
 
 ## Production on Railway
 
