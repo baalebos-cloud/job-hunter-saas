@@ -113,6 +113,8 @@ def erase_user(db, user, requested_by: str = 'self') -> dict:
         counts['security_events'] = db.query(SecurityEvent).filter(
             or_(SecurityEvent.user_id == user.id, SecurityEvent.email == user.email)).delete(synchronize_session=False)
         counts['subscriptions'] = db.query(Subscription).filter(Subscription.user_id == user.id).delete(synchronize_session=False)
+        from backend.app.models.user import ProfilePhoto
+        counts['profile_photos'] = db.query(ProfilePhoto).filter(ProfilePhoto.user_id == user.id).delete(synchronize_session=False)
         counts['notifications'] = db.query(AutomationEvent).filter(AutomationEvent.recipient_id == user.id).delete(synchronize_session=False)
         counts['referrals_made'] = db.query(Referral).filter(Referral.referrer_id == user.id).delete(synchronize_session=False)
         counts['referrals_anonymised'] = db.query(Referral).filter(Referral.referred_user_id == user.id).update(

@@ -4,6 +4,7 @@
 # photo, resume upload, account deletion.
 # =============================================================================
 import os
+import re
 import uuid
 from datetime import datetime
 from fastapi import Request, Response, APIRouter, Depends, HTTPException, UploadFile, File
@@ -153,31 +154,75 @@ def update_my_profile(
     return _serialize_profile(current_user)
 
 
-# ── POST /profile/photo ───────────────────────────────────────────────────────
+# ── Profile photo ─────────────────────────────────────────────────────────────
+PHOTO_SIZE = 512
+PHOTO_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _process_photo(content: bytes) -> bytes:
+    """Validate and re-encode: square centre crop, 512 px, WebP, no metadata."""
+    from io import BytesIO
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    Image.MAX_IMAGE_PIXELS = 40_000_000
+    try:
+        image = Image.open(BytesIO(content))
+        if image.format not in ("JPEG", "PNG", "WEBP"):
+            raise HTTPException(400, "Only JPG, PNG or WebP images are allowed.")
+        image = ImageOps.exif_transpose(image).convert("RGB")
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise HTTPException(400, "This file is not a readable image.")
+    image = ImageOps.fit(image, (PHOTO_SIZE, PHOTO_SIZE), method=Image.LANCZOS)
+    out = BytesIO()
+    image.save(out, format="WEBP", quality=85, method=4)
+    return out.getvalue()
+
+
 @router.post("/photo")
 async def upload_profile_photo(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    allowed = [".jpg", ".jpeg", ".png", ".webp"]
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in allowed:
-        raise HTTPException(status_code=400, detail="Only JPG, PNG, or WEBP images are allowed.")
-
-    content = await file.read()
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large. Max 5MB.")
-
-    os.makedirs(f"{UPLOAD_DIR}/avatars", exist_ok=True)
-    filename = f"avatar_{current_user.id}_{uuid.uuid4().hex[:8]}{ext}"
-    filepath = f"{UPLOAD_DIR}/avatars/{filename}"
-    with open(filepath, "wb") as f:
-        f.write(content)
-
-    current_user.photo_url = f"{FRONTEND_URL}/api/v1/profile/photo/{filename}"
+    """The dashboard sends an already-cropped image; the server still validates,
+    crops to a square and re-encodes it."""
+    from backend.app.models.user import ProfilePhoto
+    content = await file.read(PHOTO_MAX_BYTES + 1)
+    if len(content) > PHOTO_MAX_BYTES:
+        raise HTTPException(400, "Image too large. Max 5 MB.")
+    data = _process_photo(content)
+    photo = db.get(ProfilePhoto, current_user.id) or ProfilePhoto(user_id=current_user.id)
+    photo.token = uuid.uuid4().hex
+    photo.content, photo.content_type, photo.updated_at = data, "image/webp", datetime.utcnow()
+    db.add(photo)
+    current_user.photo_url = f"/api/v1/profile/photo/{photo.token}.webp"
     db.commit()
     return {"photo_url": current_user.photo_url}
+
+
+@router.delete("/photo")
+def delete_profile_photo(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from backend.app.models.user import ProfilePhoto
+    photo = db.get(ProfilePhoto, current_user.id)
+    if photo:
+        db.delete(photo)
+    current_user.photo_url = None
+    db.commit()
+    return {"photo_url": None}
+
+
+@router.get("/photo/{token}.webp")
+def get_profile_photo(token: str, db: Session = Depends(get_db)):
+    """Public, unguessable URL (new token per upload), cached by browsers."""
+    from fastapi import Response
+    from backend.app.models.user import ProfilePhoto
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        raise HTTPException(404, "Photo not found.")
+    photo = db.query(ProfilePhoto).filter(ProfilePhoto.token == token).first()
+    if not photo:
+        raise HTTPException(404, "Photo not found.")
+    return Response(photo.content, media_type=photo.content_type,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable",
+                             "X-Content-Type-Options": "nosniff"})
 
 
 # ── POST /profile/resume-link ─────────────────────────────────────────────────
@@ -311,6 +356,23 @@ def add_experience(
     db.commit()
     db.refresh(entry)
     return {"id": entry.id}
+
+
+@router.patch("/experience/{entry_id}")
+def update_experience(
+    entry_id: int,
+    payload: ExperienceIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    entry = db.query(Experience).filter(Experience.id == entry_id, Experience.user_id == current_user.id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Experience not found.")
+    for field, value in payload.dict().items():
+        setattr(entry, field, value)
+    db.commit()
+    return {"id": entry.id, "title": entry.title, "company": entry.company, "start_date": entry.start_date,
+            "end_date": entry.end_date, "description": entry.description}
 
 
 @router.delete("/experience/{entry_id}")

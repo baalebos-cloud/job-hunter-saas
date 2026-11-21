@@ -284,7 +284,7 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
             "country": current_user.country, "is_admin": is_owner(current_user),
             "is_hr": bool(current_user.is_hr and current_user.is_verified and current_user.hr_approved),
             "role": current_user.role, "permissions": permissions,
-            "mfa_enabled": bool(current_user.totp_enabled_at)}
+            "mfa_enabled": bool(current_user.totp_enabled_at), "photo_url": current_user.photo_url}
 
 
 # ── ADMIN LOGIN ──────────────────────────────────────────────────────────────
