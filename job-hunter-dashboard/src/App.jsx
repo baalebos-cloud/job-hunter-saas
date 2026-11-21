@@ -11,6 +11,7 @@ import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobBoard from './components/jobs/JobBoard'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
+import HelpPage from './components/support/HelpPage'
 import { signOut, errorText } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
@@ -81,10 +82,31 @@ function GovernancePage() {
 function OverviewPage() { return <TalentOverview /> }
 
 // ── Resume Optimizer page (/optimizer) ────────────────────────────────────────
+const RESUME_STEPS = ['Your resume', 'Target job', 'Match review', 'Preview & download']
+
+function ResumeStepper({ step }) {
+  return (
+    <ol className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm mb-6" aria-label="Resume steps">
+      {RESUME_STEPS.map((label, index) => {
+        const n = index + 1, done = n < step, current = n === step
+        return (
+          <li key={label} className="flex items-center gap-2 min-w-0 flex-1 last:flex-none" aria-current={current ? 'step' : undefined}>
+            <span className={`w-6 h-6 shrink-0 rounded-full grid place-items-center text-xs font-semibold ${done ? 'bg-emerald-600 text-white' : current ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'}`}>{done ? '✓' : n}</span>
+            <span className={`hidden sm:inline truncate ${done ? 'text-emerald-700 font-medium' : current ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{label}</span>
+            {n < RESUME_STEPS.length && <span className={`flex-1 h-px min-w-[12px] ${done ? 'bg-emerald-300' : 'bg-slate-200'}`} />}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 function OptimizerPage() {
   const [analysisResult, setAnalysisResult] = useState(null)
   const [activeTaskId, setActiveTaskId]     = useState(null)
   const [isAnalyzing, setIsAnalyzing]       = useState(false)
+  const [failure, setFailure]               = useState('')
+  const jobId = new URLSearchParams(window.location.search).get('job')
   const token = localStorage.getItem('token')
 
   useEffect(() => {
@@ -100,55 +122,49 @@ function OptimizerPage() {
             setIsAnalyzing(false)
             localStorage.setItem('lastTaskId', res.data.result?.task_id || res.data.task_id || activeTaskId)
           } else if (res.data.status === 'failed') {
-            alert(res.data.error || 'Analysis failed. Please retry.')
+            setFailure(res.data.error || 'Analysis failed. Please retry.')
             setActiveTaskId(null)
             setIsAnalyzing(false)
           }
-        } catch (err) { console.error('Polling error:', err) }
+        } catch { /* keep polling; transient network errors are expected */ }
       }, 2000)
     }
     return () => clearInterval(interval)
-  }, [activeTaskId])
+  }, [activeTaskId, token])
 
+  const step = analysisResult ? 4 : isAnalyzing ? 3 : 1
   return (
     <div>
-      <div className="flex items-end justify-between mb-6">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
         <div>
-          <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">AI Engine</p>
-          <h2 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>
-            Resume Optimizer
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">
-            Upload your resume and get an instant ATS score with AI-optimized rewrites.
-          </p>
+          <h2 className="text-2xl font-semibold text-slate-900">Tailor your resume to a job</h2>
+          <p className="text-slate-500 text-sm mt-1">We match your resume to the job description, rewrite it around the role using only your real experience, and show you the result before you download.</p>
         </div>
         {analysisResult && (
-          <button onClick={() => setAnalysisResult(null)}
-            className="text-xs font-black text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 px-3 py-2 rounded-xl transition-colors shrink-0">
-            + New Analysis
-          </button>
+          <button type="button" onClick={() => { setAnalysisResult(null); setFailure('') }}
+            className="text-sm font-semibold rounded-xl px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50">Tailor for another job</button>
         )}
       </div>
-
+      <ResumeStepper step={step} />
+      {failure && <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{failure}</p>}
       {isAnalyzing ? (
-        <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center">
-          <div className="w-14 h-14 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-5" />
-          <h3 className="text-xl font-black text-slate-900 mb-2">AI Engine Processing...</h3>
-          <p className="text-slate-500 text-sm">Calculating ATS scores, extracting keywords, generating your optimized PDF.</p>
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center" role="status">
+          <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-5" />
+          <h3 className="text-lg font-semibold text-slate-900 mb-1">Matching your resume to the job…</h3>
+          <p className="text-slate-500 text-sm">Reading the requirements, tailoring your resume and building the PDF. This usually takes under a minute.</p>
         </div>
       ) : !analysisResult ? (
-        <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden">
-          <ResumeUpload onUploadSuccess={(taskId, directResult) => {
-            if (directResult) {
-              setAnalysisResult(directResult)
-              localStorage.setItem('lastTaskId', directResult.task_id || taskId)
-            } else {
-              setActiveTaskId(taskId)
-            }
-          }} />
-        </div>
+        <ResumeUpload onUploadSuccess={(taskId, directResult) => {
+          setFailure('')
+          if (directResult) {
+            setAnalysisResult(directResult)
+            localStorage.setItem('lastTaskId', directResult.task_id || taskId)
+          } else {
+            setActiveTaskId(taskId)
+          }
+        }} />
       ) : (
-        <AtsResultView data={analysisResult} />
+        <AtsResultView data={analysisResult} jobId={jobId} />
       )}
     </div>
   )
@@ -519,6 +535,9 @@ function App() {
         } />
         <Route path="/settings" element={
           <RequireAuth><DashboardLayout><SettingsPage /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/help" element={
+          <DashboardLayout><HelpPage /></DashboardLayout>
         } />
         <Route path="/pricing" element={
           <DashboardLayout><PricingPage /></DashboardLayout>

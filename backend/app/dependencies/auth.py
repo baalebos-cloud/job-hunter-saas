@@ -49,5 +49,10 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been suspended.")
     # Exposed to the audit middleware (actor/role) without a second lookup.
     request.state.user = user
+    # Plain snapshot for the request audit log, which runs after the database
+    # session is closed: a committed, detached ORM user can no longer be read.
+    from types import SimpleNamespace
+    request.state.actor = SimpleNamespace(id=user.id, email=user.email, role=getattr(user, 'role', None),
+                                          is_hr=bool(getattr(user, 'is_hr', False)))
     request.state.token_claims = payload
     return user

@@ -215,6 +215,29 @@ def download(task_id: str, db: Session=Depends(get_db), current_user=Depends(get
     return _pdf_response(owned_resume(task_id, db, current_user), 'attachment')
 
 
+@router.get('/download/{task_id}/docx')
+def download_docx(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """Editable Word copy of the tailored resume (same content as the PDF)."""
+    from backend.app.utils.docx_export import build_docx
+    from backend.app.utils.pdf_generator import download_filename
+    record = owned_resume(task_id, db, current_user)
+    if record.status != 'completed':
+        raise HTTPException(409, 'This resume is not ready yet.')
+    try:
+        tailored = json.loads(record.parsed_data or '{}')
+    except (TypeError, ValueError):
+        tailored = {}
+    if not isinstance(tailored, dict) or not tailored:
+        raise HTTPException(409, 'This resume has no editable content. Please run the analysis again.')
+    region = ((record.analysis_data or {}).get('document') or {}).get('region')
+    body = build_docx(tailored, region)
+    ascii_name, utf8_name = download_filename(tailored.get('name'))
+    ascii_name, utf8_name = (n.rsplit('.', 1)[0] + '.docx' for n in (ascii_name, utf8_name))
+    header = f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(utf8_name)}'
+    return Response(body, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    headers={'Content-Disposition': header, 'Cache-Control': 'private, no-store'})
+
+
 @router.get('/url/{task_id}')
 def signed_url(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     """Short-lived presigned URL when the PDF is in object storage; otherwise

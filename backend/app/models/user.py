@@ -1,7 +1,7 @@
 # =============================================================================
 # backend/app/models/user.py
 # =============================================================================
-from sqlalchemy import JSON, Index, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
+from sqlalchemy import JSON, Index, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float, LargeBinary
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.app.database import Base
@@ -152,3 +152,16 @@ class OutreachMessage(Base):
 
     user        = relationship("User",        back_populates="outreach_messages")
     application = relationship("Application", back_populates="outreach_messages")
+
+
+class ProfilePhoto(Base):
+    """Profile picture stored in the database so it survives redeploys.
+
+    Always a re-encoded 512x512 image (metadata stripped). ``token`` changes on
+    every upload, so the public URL can be cached forever."""
+    __tablename__ = "profile_photos"
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    token        = Column(String(32), unique=True, nullable=False)
+    content      = Column(LargeBinary, nullable=False)
+    content_type = Column(String(32), nullable=False, default="image/webp")
+    updated_at   = Column(DateTime, default=datetime.utcnow, nullable=False)

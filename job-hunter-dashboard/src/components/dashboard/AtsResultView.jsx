@@ -1,487 +1,225 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { AlertTriangle, Check, Download, ExternalLink, FileText, Loader2, Send, Sparkles, X } from 'lucide-react';
 import { apiErrorMessage, filenameFromDisposition } from '../../lib/session';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+const card = 'bg-white border border-slate-200 rounded-2xl';
 
-function ScoreCircle({ score }) {
-  const radius = 58;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (circumference * score) / 100;
-  const color = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
-  const label = score >= 80 ? 'Strong Fit' : score >= 60 ? 'Good Fit' : 'Needs Work';
-
+function Ring({ score }) {
+  const value = Math.max(0, Math.min(100, Math.round(score || 0)));
+  const tone = value >= 75 ? '#10b981' : value >= 55 ? '#f59e0b' : '#e11d48';
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-36 h-36">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 144 144">
-          <circle cx="72" cy="72" r={radius} stroke="#e2e8f0" strokeWidth="10" fill="none" />
-          <circle
-            cx="72" cy="72" r={radius}
-            stroke={color} strokeWidth="10" fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 1.2s ease-out' }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-black text-slate-900">{Math.round(score)}%</span>
-        </div>
-      </div>
-      <span className="mt-2 text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full"
-        style={{ backgroundColor: `${color}20`, color }}>
-        {label}
-      </span>
+    <div className="relative w-20 h-20 shrink-0" role="img" aria-label={`Job match ${value}%`}>
+      <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90">
+        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#f1f5f9" strokeWidth="3.5" />
+        <circle cx="18" cy="18" r="15.9" fill="none" stroke={tone} strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${value} 100`} />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-lg font-semibold text-slate-900">{value}%</div>
     </div>
   );
 }
 
-function StatBox({ label, value, color }) {
+// The exact PDF that downloads, always visible next to the download buttons.
+function PdfPreview({ resumeId, version, onReady }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!resumeId) return undefined;
+    let active = true;
+    let objectUrl;
+    setUrl(null); setError(''); onReady(false);
+    axios.get(`${API}/resume/preview/${resumeId}`, { headers: headers(), responseType: 'blob' })
+      .then(r => {
+        if (!r.headers['content-type']?.includes('application/pdf')) throw new Error('not a pdf');
+        objectUrl = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+        if (active) { setUrl(objectUrl); onReady(true); } else URL.revokeObjectURL(objectUrl);
+      })
+      .catch(async err => { if (active) setError(err?.response ? await apiErrorMessage(err, 'The preview could not load.') : 'The preview could not load.'); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [resumeId, version, onReady]);
+  if (error) return <div role="alert" className="h-[70vh] grid place-items-center text-sm text-rose-700 bg-rose-50 rounded-xl p-6 text-center">{error}</div>;
+  if (!url) return <div role="status" className="h-[70vh] grid place-items-center bg-slate-50 rounded-xl"><Loader2 className="animate-spin text-emerald-600" /><span className="sr-only">Loading preview</span></div>;
   return (
-    <div className="text-center">
-      <div className={`text-3xl font-black ${color}`}>{value}</div>
-      <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mt-1">{label}</div>
+    <div>
+      <iframe src={`${url}#toolbar=0&navpanes=0&view=FitH`} title="Tailored resume preview" className="w-full h-[70vh] min-h-[480px] rounded-xl border border-slate-200 bg-slate-100" />
+      <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900">
+        Open the preview full screen <ExternalLink size={12} /></a>
     </div>
   );
 }
 
-function QuickWin({ number, text, color }) {
-  const colors = {
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    blue: 'bg-blue-50 text-blue-700 border-blue-100',
-    purple: 'bg-purple-50 text-purple-700 border-purple-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-  };
-  const numColors = {
-    emerald: 'bg-emerald-500', blue: 'bg-blue-500',
-    purple: 'bg-purple-500', amber: 'bg-amber-500',
-  };
-  return (
-    <div className={`flex items-start gap-3 p-4 rounded-xl border ${colors[color]}`}>
-      <span className={`${numColors[color]} text-white text-xs font-black w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5`}>
-        {number}
-      </span>
-      <p className="text-xs leading-relaxed font-medium">{text}</p>
-    </div>
-  );
-}
-
-function CategoryBar({ label, icon, score, count }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-end">
-        <div className="flex items-center gap-2">
-          <span className="text-sm">{icon}</span>
-          <span className="text-sm font-bold text-slate-700">{label}</span>
-        </div>
-        <span className="text-xs font-bold text-slate-400">{score}% ({count} found)</span>
-      </div>
-      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all duration-1000 ease-out"
-          style={{ width: `${score}%`, backgroundColor: score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444' }} />
-      </div>
-    </div>
-  );
-}
-
-function JobCard({ job, onApply }) {
-  const [applying, setApplying] = useState(false);
-  const [applied, setApplied] = useState(false);
-
-  const handleApply = async () => {
-    setApplying(true);
-    try { await onApply(job.id); setApplied(true); }
-    catch { alert('Failed to apply. Please try again.'); }
-    finally { setApplying(false); }
-  };
-
-  return (
-    <div className="bg-white border border-slate-100 rounded-2xl p-5 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-900/5 transition-all group">
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex-1">
-          <h4 className="font-bold text-slate-900 text-sm group-hover:text-emerald-600 transition-colors line-clamp-1">
-            {job.title}
-          </h4>
-          <p className="text-emerald-600 font-bold text-xs uppercase tracking-tight mt-0.5">
-            {job.company || 'Top Company'}
-          </p>
-        </div>
-        {job.match_score && (
-          <span className="text-[10px] font-black px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 ml-2 shrink-0">
-            {job.match_score}% match
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-3 text-xs text-slate-400 mb-4">
-        <span>📍 {job.location || 'Remote'}</span>
-        <span>💰 {job.salary_range || 'Competitive'}</span>
-      </div>
-      <button
-        onClick={handleApply}
-        disabled={applying || applied}
-        className={`w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-          applied ? 'bg-emerald-50 text-emerald-600 cursor-default'
-          : 'bg-slate-900 text-white hover:bg-emerald-600 active:scale-[0.98]'
-        }`}
-      >
-        {applied ? '✓ Tracked' : applying ? 'Preparing...' : 'Review application →'}
-      </button>
-    </div>
-  );
-}
-
-function FaqSection() {
-  const [open, setOpen] = useState(null);
-  const faqs = [
-    { q: 'What is an ATS and why does it matter?', a: 'An applicant tracking system organizes recruitment. Employer screening rules and recruiter decisions vary. Baalebos cannot predict an employer’s outcome.' },
-    { q: 'How does Baalebos scan my resume?', a: 'We extract the text of your resume, list the requirements in the job description, and check each one for evidence in your resume, recognising equivalent spellings such as K8s and Kubernetes. The refined PDF is always one page, with no watermark or branding.' },
-    { q: 'Is Baalebos free?', a: 'The free plan includes two resume scans per month. Your completed resume includes a PDF preview and download. See Plans for current limits.' },
-    { q: 'Is my resume stored or shared?', a: 'Your resume is processed securely and only used to generate your analysis. Resume text is sent to the configured AI provider for processing. Generated documents are stored in your account.' },
-    { q: 'What file formats are supported?', a: 'We support PDF and DOCX file formats. For best results, use a clean single-column PDF.' },
-    { q: 'How do I improve my ATS score?', a: 'Confirm only the suggested skills you genuinely have, and Baalebos will add them to the PDF. Describe real achievements with strong action verbs and the exact language of the job description. Never add numbers you cannot substantiate.' },
-  ];
-  return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-      <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Frequently Asked Questions</h3>
-      <div className="space-y-2">
-        {faqs.map((faq, i) => (
-          <div key={i} className="border border-slate-100 rounded-2xl overflow-hidden">
-            <button onClick={() => setOpen(open === i ? null : i)}
-              className="w-full flex justify-between items-center p-4 text-left hover:bg-slate-50 transition-colors">
-              <span className="text-sm font-bold text-slate-800">{faq.q}</span>
-              <span className="text-slate-400 ml-4 shrink-0">{open === i ? '−' : '+'}</span>
-            </button>
-            {open === i && (
-              <div className="px-4 pb-4 text-sm text-slate-500 leading-relaxed border-t border-slate-50">{faq.a}</div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// NEW: Resume Download Modal
-function ResumeDownloadModal({isOpen,onClose,onDownload,downloading,resume_id,version,downloadError}) {
- const [url,setUrl]=useState(null);const [error,setError]=useState('');
- useEffect(()=>{if(!isOpen||!resume_id)return;let active=true;let objectUrl;
- setUrl(null);setError('');
- axios.get(`${API_BASE_URL}/resume/preview/${resume_id}`,{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`},responseType:'blob'})
- .then(r=>{if(!r.headers['content-type']?.includes('application/pdf'))throw new Error('Invalid preview');objectUrl=URL.createObjectURL(new Blob([r.data],{type:'application/pdf'}));if(active)setUrl(objectUrl);else URL.revokeObjectURL(objectUrl)})
- .catch(async err=>{const message=err?.response?await apiErrorMessage(err,'Preview could not load. Please close and retry.'):'Preview could not load. Please close and retry.';if(active)setError(message)});
- return()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
- },[isOpen,resume_id,version]);
- if(!isOpen)return null;
- return <div className="fixed inset-0 bg-black/40 z-50 p-4 flex items-center justify-center"><section role="dialog" aria-modal="true" aria-label="Resume preview" className="bg-white rounded-2xl w-full max-w-4xl p-5"><div className="flex justify-between items-center mb-4"><h2 className="font-semibold text-xl">Review your tailored resume</h2><button aria-label="Close preview" onClick={onClose}>✕</button></div><p className="text-sm text-slate-500 mb-4">Check all facts and qualifications. This is the same PDF that downloads.</p>{error?<p role="alert" className="text-red-700 bg-red-50 p-4 rounded-xl">{error}</p>:url?<iframe src={url} title="Tailored resume PDF preview" className="w-full h-[60vh] border border-slate-200 rounded-lg"/>:<p role="status" className="py-20 text-center">Loading document preview…</p>}{downloadError&&<p role="alert" className="text-red-700 bg-red-50 p-3 rounded-xl mt-3 text-sm">{downloadError}</p>}<div className="flex justify-end gap-3 mt-4"><button onClick={onClose} className="border rounded-xl px-4 py-3">Close</button><button disabled={downloading||!url} onClick={onDownload} className="bg-emerald-700 text-white rounded-xl px-5 py-3 disabled:opacity-50">{downloading?'Downloading…':'Download PDF'}</button></div></section></div>
-}
-
-export default function AtsResultView({ data: initialData }) {
+export default function AtsResultView({ data: initialData, jobId }) {
   const [data, setData] = useState(initialData);
   useEffect(() => { setData(initialData); }, [initialData]);
-  const [previewVersion, setPreviewVersion] = useState(0);
-  const [downloadError, setDownloadError] = useState('');
-  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [version, setVersion] = useState(0);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [selected, setSelected] = useState([]);
   const [regenerating, setRegenerating] = useState(false);
-  const [regenerateMessage, setRegenerateMessage] = useState(null);
-  const [matchedJobs, setMatchedJobs] = useState([]);
-  const [loadingJobs, setLoadingJobs] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [downloading, setDownloading] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState(null);
 
-  const token = localStorage.getItem("token");
-  const {
-    overall_score = 0, keywords_matched = 0, keywords_missing = 0,
-    total_keywords = 0, breakdown = {}, missing_list = [],
-    job_title = 'Target Role', resume_id, task_id,
-  } = data || {};
-  const suggestedSkills = (data?.suggested_skills ?? missing_list ?? []).filter(k => typeof k === 'string');
-  const documentInfo = data?.document;
+  const resumeId = data?.resume_id || data?.task_id;
+  const scores = data?.scores || {};
+  const after = typeof scores.after === 'number' ? scores.after : data?.overall_score || 0;
+  const before = typeof scores.before === 'number' ? scores.before : null;
+  const requirements = useMemo(() => (data?.requirements || []).filter(r => r && typeof r === 'object'), [data]);
+  const keywords = useMemo(() => {
+    const seen = new Set();
+    return requirements.map(r => ({ text: String(r.phrase || r.requirement || '').trim(), matched: !!r.matched }))
+      .filter(k => k.text && k.text.length <= 40 && !seen.has(k.text.toLowerCase()) && seen.add(k.text.toLowerCase()))
+      .sort((a, b) => Number(b.matched) - Number(a.matched)).slice(0, 16);
+  }, [requirements]);
+  const suggested = (data?.suggested_skills ?? data?.missing_list ?? []).filter(k => typeof k === 'string').slice(0, 12);
+  const changes = (data?.suggestions_applied || []).map(String).filter(Boolean).slice(0, 6);
+  const reverted = Object.values(data?.rewrite_guard || {}).reduce((n, v) => n + (Array.isArray(v) ? v.length : Number(v) || 0), 0);
+  const doc = data?.document || {};
+  const pageSize = typeof doc.page_size === 'string' ? doc.page_size : doc.region && ['US', 'CA'].includes(doc.region) ? 'Letter' : 'A4';
 
-  useEffect(() => {
-    if (!token) return;
-    const fetchMatchedJobs = async () => {
-      setLoadingJobs(true);
-      try {
-        // Try the matched endpoint first (uses user's track + pasted JD keywords)
-        const res = await axios.get(`${API_BASE_URL}/jobs/matched`, {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { job_title, limit: 6 }
-        });
-        setMatchedJobs(Array.isArray(res.data) ? res.data : []);
-      } catch {
-        // Fallback: fetch all jobs from DB
-        try {
-          const fallback = await axios.get(`${API_BASE_URL}/jobs/`);
-          setMatchedJobs(Array.isArray(fallback.data) ? fallback.data.slice(0, 6) : []);
-        } catch { /* silent */ }
-      } finally {
-        setLoadingJobs(false);
-      }
-    };
-    fetchMatchedJobs();
-  }, [token, job_title]);
-
-  const handleApply = async (jobId) => {
-    if (!token) { window.location.href = '/login'; return; }
-    const response = await axios.post(`${API_BASE_URL}/jobs/${jobId}/apply`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (response.data.job_url) window.location.assign(response.data.job_url);
-  };
-
-  const handleOpenDownload = () => {
-    if (!token) { window.location.href = '/signup'; return; }
-    setShowDownloadModal(true);
-  };
-
-  const toggleSkill = (skill) => setSelectedSkills(current =>
-    current.includes(skill) ? current.filter(s => s !== skill) : [...current, skill]);
-
-  const handleRegenerate = async () => {
-    const resumeIdentifier = resume_id || task_id;
-    if (!resumeIdentifier || !selectedSkills.length) return;
-    setRegenerating(true); setRegenerateMessage(null);
+  const regenerate = async () => {
+    if (!resumeId || !selected.length) return;
+    setRegenerating(true); setNotice(null);
     try {
-      const res = await axios.post(`${API_BASE_URL}/resume/regenerate/${resumeIdentifier}`,
-        { confirmed_keywords: selectedSkills },
-        { headers: { Authorization: `Bearer ${token}` } });
-      setData(res.data.result);
-      setSelectedSkills([]);
-      setPreviewVersion(v => v + 1);
-      setRegenerateMessage({ ok: true, text: 'Your resume PDF was regenerated with the skills you confirmed. Review it before downloading.' });
+      const res = await axios.post(`${API}/resume/regenerate/${resumeId}`, { confirmed_keywords: selected }, { headers: headers() });
+      setData(res.data.result); setSelected([]); setVersion(v => v + 1);
+      setNotice({ ok: true, text: 'Regenerated with the skills you confirmed. Check the updated preview before downloading.' });
     } catch (err) {
-      setRegenerateMessage({ ok: false, text: await apiErrorMessage(err, 'The resume could not be regenerated. Please retry.') });
-    } finally {
-      setRegenerating(false);
-    }
+      setNotice({ ok: false, text: await apiErrorMessage(err, 'The resume could not be regenerated. Please retry.') });
+    } finally { setRegenerating(false); }
   };
 
-  const handleDownload = async () => {
-    const resumeIdentifier = resume_id || task_id;
-    if (!resumeIdentifier) {
-      setDownloadError('Resume ID not found. Please run the analysis again.');
-      return;
-    }
-
-    setDownloading(true); setDownloadError('');
+  const download = async (kind) => {
+    setDownloading(kind); setNotice(null);
     try {
-      const res = await axios.get(`${API_BASE_URL}/resume/download/${resumeIdentifier}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: 'blob'
+      const path = kind === 'docx' ? `/resume/download/${resumeId}/docx` : `/resume/download/${resumeId}`;
+      const res = await axios.get(`${API}${path}`, { headers: headers(), responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const link = Object.assign(document.createElement('a'), {
+        href: url, download: filenameFromDisposition(res.headers['content-disposition'], kind === 'docx' ? 'Resume.docx' : 'Resume.pdf'),
       });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filenameFromDisposition(res.headers['content-disposition'], 'Resume.pdf'));
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      setDownloaded(true);
-      setShowDownloadModal(false);
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      setDownloadError(await apiErrorMessage(err, 'The PDF could not be downloaded. Please retry.'));
-    } finally {
-      setDownloading(false);
-    }
+      setNotice({ ok: false, text: await apiErrorMessage(err, 'The file could not be downloaded. Please retry.') });
+    } finally { setDownloading(''); }
   };
 
-  const scoreTip = overall_score >= 80
-    ? 'Your resume matches well. Focus on quantifying achievements to stand out further.'
-    : overall_score >= 60
-    ? 'Review the missing requirements and confirm any relevant experience.'
-    : 'Your resume needs more alignment with the job requirements. Use the Quick Wins below.';
+  const apply = async () => {
+    setApplying(true); setNotice(null);
+    try {
+      const res = await axios.post(`${API}/jobs/${jobId}/apply`, { resume_id: resumeId }, { headers: headers() });
+      setApplied(res.data);
+    } catch (err) {
+      setNotice({ ok: false, text: await apiErrorMessage(err, 'Could not apply with this resume. Please retry.') });
+    } finally { setApplying(false); }
+  };
 
   if (!data) return null;
-
-  const displayResumeId = resume_id || task_id;
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-
-      {/* ATS Score */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-        <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Documented requirement coverage</h2>
-        <div className="flex flex-col md:flex-row items-center gap-8">
-          <ScoreCircle score={overall_score} />
-          <div className="flex-1 space-y-4">
-            <p className="text-slate-600 text-sm leading-relaxed">
-              Your resume scored <span className="font-black text-slate-900">{Math.round(overall_score)}%</span> match
-              on <span className="font-black text-slate-900">{job_title}</span>. {scoreTip}
-            </p>
-            {data.scores && typeof data.scores.before === 'number' && (
-              <p className="text-sm text-slate-600" aria-label="Score before and after refinement">
-                Before refinement: <span className="font-black text-slate-900">{Math.round(data.scores.before)}%</span>
-                {' → '}After: <span className="font-black text-emerald-700">{Math.round(data.scores.after)}%</span>
-                <span className="block text-xs text-slate-400 mt-1">Only evidence already in your resume was used. Unsupported requirements are listed below as questions.</span>
-              </p>
-            )}
-            <div className="flex gap-8 pt-2 border-t border-slate-100">
-              <StatBox label="Keywords Matched" value={keywords_matched} color="text-emerald-600" />
-              <StatBox label="Keywords Missing" value={keywords_missing} color="text-rose-500" />
-              <StatBox label="Total Keywords" value={total_keywords} color="text-slate-700" />
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                <span>Needs Work</span><span>Strong Fit</span>
-              </div>
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-1000"
-                  style={{ width: `${overall_score}%`, backgroundColor: overall_score >= 80 ? '#10b981' : overall_score >= 60 ? '#f59e0b' : '#ef4444' }} />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500">{data.score_notice} {data.scoring_method}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Top Keywords */}
-      {(suggestedSkills.length > 0 || regenerateMessage) && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Suggested skills to confirm</h3>
-          <p className="text-slate-500 text-xs mb-5">These job requirements were not found in your resume, so they were <strong>not</strong> added. Tick only the ones you genuinely have; they will be added to your Skills section.</p>
-          <fieldset className="flex flex-wrap gap-2">
-            <legend className="sr-only">Suggested skills</legend>
-            {suggestedSkills.slice(0, 20).map(skill => (
-              <label key={skill} className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer flex items-center gap-2 ${selectedSkills.includes(skill) ? 'bg-emerald-50 border-emerald-400 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
-                <input type="checkbox" checked={selectedSkills.includes(skill)} onChange={() => toggleSkill(skill)} />
-                {skill}
-              </label>
-            ))}
-          </fieldset>
-          {suggestedSkills.length > 0 && (
-            <button onClick={handleRegenerate} disabled={!selectedSkills.length || regenerating}
-              className="mt-5 bg-emerald-700 text-white rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50">
-              {regenerating ? 'Regenerating…' : `I have these skills — add ${selectedSkills.length || ''} and regenerate PDF`}
-            </button>
-          )}
-          {regenerateMessage && <p role={regenerateMessage.ok ? 'status' : 'alert'} className={`mt-4 text-sm p-3 rounded-xl ${regenerateMessage.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{regenerateMessage.text}</p>}
-        </div>
-      )}
-      {documentInfo?.warnings?.length > 0 && (
-        <div role="note" className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-sm text-amber-900">
-          {documentInfo.warnings.map((warning, i) => <p key={i}>{warning}</p>)}
-        </div>
-      )}
-
-      {/* Quick Wins */}
-      {data.confirmation_questions?.length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <h3 className="font-bold text-slate-900 mb-3">Confirm your experience</h3>
-          <p className="text-sm text-slate-500 mb-3">These questions are suggestions for your review. They have not been added as claims to your resume.</p>
-          <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">
-            {data.confirmation_questions.map((question, index) => <li key={index}>{String(question)}</li>)}
-          </ul>
-        </div>
-      )}
-      {data.requirements?.length > 0 && (
-        <details className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <summary className="font-bold text-slate-900 cursor-pointer">See requirement evidence</summary>
-          <p className="text-sm text-slate-500 my-3">Coverage uses exact phrases from the exported PDF. Equivalent wording can be missed; review qualifications and eligibility yourself.</p>
-          <div className="space-y-3">
-            {data.requirements.map((item, index) => (
-              <div key={index} className="border-t border-slate-100 pt-3 text-sm">
-                <p className="font-semibold text-slate-800">{item.requirement} · {item.priority} · {item.matched ? 'Evidence found' : 'No exact phrase found'}</p>
-                {item.evidence && <p className="text-slate-500 mt-1">{item.evidence}</p>}
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
-      {breakdown && Object.keys(breakdown).length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Quick Wins</h3>
-          <p className="text-slate-500 text-xs mb-5">These are the fastest changes you can make right now to improve your resume.</p>
-          <div className="space-y-3">
-            {breakdown.action_verbs && <QuickWin number={1} color="emerald" text={`Strengthen action verbs — your resume scores ${breakdown.action_verbs.score}% here. Aim for 80%+ by replacing weak verbs.`} />}
-            {missing_list?.[0] && <QuickWin number={2} color="blue" text={`Confirm whether you have evidence for "${missing_list[0]}" before adding it.`} />}
-            {breakdown.soft_skills && <QuickWin number={3} color="purple" text={`Quantify impact: add specific numbers to your achievements (e.g. "led team of 12", "reduced processing time by 40%").`} />}
-            {job_title && <QuickWin number={4} color="amber" text={`Mirror the job title "${job_title}" in your resume summary/headline.`} />}
-          </div>
-        </div>
-      )}
-
-      {/* Category Breakdown */}
-      {breakdown && Object.keys(breakdown).length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">📊 Category Breakdown</h3>
-          <div className="space-y-5">
-            {breakdown.action_verbs && <CategoryBar label="Action Verbs" icon="⚡" score={breakdown.action_verbs.score} count={breakdown.action_verbs.count} />}
-            {breakdown.technical_skills && <CategoryBar label="Technical Skills" icon="💻" score={breakdown.technical_skills.score} count={breakdown.technical_skills.count} />}
-            {breakdown.soft_skills && <CategoryBar label="Soft Skills" icon="🤝" score={breakdown.soft_skills.score} count={breakdown.soft_skills.count} />}
-          </div>
-        </div>
-      )}
-
-      {/* Free Download */}
-      <div className="bg-slate-900 rounded-3xl p-8 text-white">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+      <section className={`${card} p-4 min-w-0`} aria-labelledby="preview-title">
+        <div className="flex flex-wrap items-start justify-between gap-2 px-1 pb-3">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Free Download</p>
-            <h3 className="text-xl font-black tracking-tight">Download Your Optimized Resume PDF</h3>
-            <p className="text-slate-400 text-sm mt-1">
-              {token ? 'Review the generated PDF before downloading.'
-                : 'Create a free account to download your AI-optimized resume instantly.'}
-            </p>
+            <h2 id="preview-title" className="font-semibold text-slate-900">Preview: tailored for {data.job_title || 'your target role'}</h2>
+            <p className="text-xs text-slate-500">This is exactly the file you will download · {pageSize} · {doc.pages || 1} page{doc.pages > 1 ? 's' : ''}{doc.condensed ? ' · some lower-priority bullets were shortened to fit' : ''}</p>
           </div>
-          <button onClick={handleOpenDownload} disabled={downloading}
-            className={`shrink-0 px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all ${
-              downloaded ? 'bg-emerald-500 text-white cursor-default'
-              : 'bg-emerald-500 hover:bg-emerald-400 text-white active:scale-[0.98] shadow-xl shadow-emerald-900/30'
-            }`}>
-            {downloaded ? '✓ Downloaded' : downloading ? 'Preparing...' : '📥 Download Free PDF'}
-          </button>
         </div>
+        <PdfPreview resumeId={resumeId} version={version} onReady={setPreviewReady} />
+      </section>
+
+      <div className="space-y-4">
+        <section className={`${card} p-5`} aria-labelledby="match-title">
+          <div className="flex items-center gap-4">
+            <Ring score={after} />
+            <div>
+              <h2 id="match-title" className="font-semibold text-slate-900">Job match</h2>
+              {before !== null && <p className="text-xs text-slate-500">was {Math.round(before)}% before tailoring</p>}
+            </div>
+          </div>
+          {keywords.length > 0 && <>
+            <h3 className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Requirements from the job</h3>
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {keywords.map(k => (
+                <li key={k.text} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${k.matched ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                  {k.matched ? <Check size={11} aria-label="Found" /> : <X size={11} aria-label="Missing" />}{k.text}</li>))}
+            </ul>
+          </>}
+          {suggested.length > 0 && (
+            <div className="mt-4 rounded-xl bg-amber-50 ring-1 ring-amber-100 p-3 text-xs text-amber-900">
+              <p><b>Not found in your resume:</b> tick only the ones you have genuinely used, and we will add them and regenerate.</p>
+              <fieldset className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
+                <legend className="sr-only">Skills to confirm</legend>
+                {suggested.map(s => (
+                  <label key={s} className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" className="accent-emerald-600" checked={selected.includes(s)}
+                      onChange={() => setSelected(c => (c.includes(s) ? c.filter(x => x !== s) : [...c, s]))} />{s}</label>))}
+              </fieldset>
+              <button type="button" onClick={regenerate} disabled={!selected.length || regenerating}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                {regenerating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                {regenerating ? 'Regenerating…' : `Add ${selected.length || ''} and regenerate`}</button>
+            </div>)}
+        </section>
+
+        <section className={`${card} p-5 text-sm`} aria-labelledby="changes-title">
+          <h2 id="changes-title" className="font-semibold text-slate-900">What changed</h2>
+          <ul className="mt-2 space-y-1.5 text-slate-600">
+            {(changes.length ? changes : ['Summary and bullets re-ordered around the job’s main requirements',
+              'Skills grouped to mirror the job’s wording']).map(c => <li key={c} className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />{c}</li>)}
+            <li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />Nothing invented: every claim comes from your original resume{reverted ? ` (${reverted} unsupported edit${reverted > 1 ? 's' : ''} reverted)` : ''}</li>
+          </ul>
+        </section>
+
+        <section className={`${card} p-5 space-y-2`} aria-label="Download">
+          <button type="button" onClick={() => download('pdf')} disabled={!previewReady || !!downloading}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+            {downloading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}Download PDF</button>
+          <button type="button" onClick={() => download('docx')} disabled={!previewReady || !!downloading}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60">
+            {downloading === 'docx' ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}Download Word (.docx)</button>
+          {!previewReady && <p className="text-xs text-slate-500 text-center">Downloads unlock once the preview has loaded.</p>}
+          {jobId && !applied && (
+            <button type="button" onClick={apply} disabled={applying || !previewReady}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
+              {applying ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Apply to this job with this resume</button>)}
+          {applied && (
+            <div role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">
+              {applied.message || 'Application recorded.'}
+              {applied.job_url && <a href={applied.job_url} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-1 font-semibold">Finish on the employer’s site <ExternalLink size={13} /></a>}
+            </div>)}
+          {!jobId && <a href="/jobs" className="block text-center text-sm font-semibold text-slate-600 hover:text-slate-900">Find jobs that match this resume →</a>}
+        </section>
+        {notice && <p role={notice.ok ? 'status' : 'alert'} className={`rounded-xl p-3 text-sm ${notice.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>{notice.text}</p>}
       </div>
 
-      {/* AI-Matched Jobs */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-        <div className="mb-6">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">Suggested roles for your career track</h3>
-          <p className="text-slate-500 text-sm">
-            Based on your <span className="font-bold text-slate-700">{job_title}</span> track and resume analysis —
-            the AI has found roles that match your profile. Review each vacancy and complete its application process.
-          </p>
-        </div>
-
-        {!token ? (
-          <div className="bg-slate-50 rounded-2xl p-8 text-center border border-dashed border-slate-200">
-            <p className="text-slate-500 text-sm mb-4 font-medium">Create a free account to see AI-matched jobs and apply directly.</p>
-            <a href="/signup" className="inline-block bg-emerald-600 text-white font-black px-8 py-3 rounded-xl hover:bg-emerald-500 transition-all uppercase tracking-widest text-xs">
-              Create Free Account →
-            </a>
-          </div>
-        ) : loadingJobs ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => <div key={i} className="bg-slate-50 rounded-2xl p-5 animate-pulse h-40" />)}
-          </div>
-        ) : matchedJobs.length === 0 ? (
-          <div className="bg-slate-50 rounded-2xl p-8 text-center border border-dashed border-slate-200">
-            <div className="text-3xl mb-3 opacity-30">🔍</div>
-            <p className="text-slate-400 text-sm font-medium">No matched jobs found for your track yet. Check back soon as new jobs are added daily.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {matchedJobs.map(job => <JobCard key={job.id} job={job} onApply={handleApply} />)}
-          </div>
-        )}
-      </div>
-
-      <FaqSection />
-
-      {/* Download Modal */}
-      <ResumeDownloadModal 
-        isOpen={showDownloadModal} 
-        onClose={() => { setShowDownloadModal(false); setDownloadError(''); }} 
-        onDownload={handleDownload}
-        version={previewVersion}
-        downloadError={downloadError}
-        job_title={job_title}
-        downloading={downloading}
-        resume_id={displayResumeId}
-      />
+      {(doc.warnings?.length > 0 || data.confirmation_questions?.length > 0 || requirements.length > 0) && (
+        <div className="lg:col-span-2 space-y-4">
+          {doc.warnings?.length > 0 && (
+            <div role="note" className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <AlertTriangle size={18} className="shrink-0 mt-0.5" /><div>{doc.warnings.map((w, i) => <p key={i}>{w}</p>)}</div></div>)}
+          {data.confirmation_questions?.length > 0 && (
+            <section className={`${card} p-5`}>
+              <h2 className="font-semibold text-slate-900">Questions to strengthen your application</h2>
+              <p className="text-sm text-slate-500 mt-1">The job asks for these. They are not in your resume, so nothing was added. Consider covering them in your cover letter or interview.</p>
+              <ul className="mt-3 list-disc pl-5 space-y-1.5 text-sm text-slate-700">{data.confirmation_questions.map((q, i) => <li key={i}>{String(q)}</li>)}</ul>
+            </section>)}
+          {requirements.length > 0 && (
+            <details className={`${card} p-5`}>
+              <summary className="font-semibold text-slate-900 cursor-pointer">Requirement-by-requirement evidence</summary>
+              <ul className="mt-3 divide-y divide-slate-100 text-sm">
+                {requirements.map((r, i) => (
+                  <li key={i} className="py-2.5">
+                    <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-slate-800">{r.requirement || r.phrase}</span>
+                      {r.priority && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{r.priority}</span>}
+                      <span className={`text-[11px] font-semibold ${r.matched ? 'text-emerald-700' : 'text-rose-700'}`}>{r.matched ? 'Evidence found' : 'Not found'}</span></div>
+                    {r.evidence && <p className="mt-1 text-slate-500">{r.evidence}</p>}
+                  </li>))}
+              </ul>
+            </details>)}
+        </div>)}
     </div>
   );
 }

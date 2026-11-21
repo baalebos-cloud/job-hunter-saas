@@ -1,567 +1,403 @@
-// =============================================================================
-// job-hunter-dashboard/src/components/ProfilePage.jsx
-// Matches reference layout: header card, certified skills, other skills,
-// about, education, experience, languages, delete account.
-// =============================================================================
-import React, { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { clearSession, errorText } from '../lib/session';
+import {
+  BadgeCheck, Briefcase, Camera, FileText, GraduationCap, Linkedin, Loader2, MapPin, Pencil, Plus, Trash2, X,
+} from 'lucide-react';
+import { assetUrl, clearSession, errorText } from '../lib/session';
+import PhotoCropper from './profile/PhotoCropper';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const PROFICIENCIES = ['Basic', 'Intermediate', 'Advanced', 'Fluent', 'Native'];
+const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+const card = 'bg-white border border-slate-200 rounded-2xl';
+const input = 'w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/40';
+const primary = 'inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60';
+const secondary = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50';
 
-// ── Small reusable pieces ─────────────────────────────────────────────────────
-function ChevronIcon({ open }) {
+function Field({ label, children, hint }) {
   return (
-    <svg className={`w-4 h-4 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
-    </svg>
+    <label className="block text-sm font-medium text-slate-700">{label}
+      <div className="mt-1.5">{children}</div>
+      {hint && <span className="block mt-1 text-xs font-normal text-slate-500">{hint}</span>}
+    </label>
   );
 }
 
-function SectionCard({ title, badge, defaultOpen = true, actions, children }) {
-  const [open, setOpen] = useState(defaultOpen);
+function Modal({ title, onClose, onSubmit, busy, error, children, submitLabel = 'Save' }) {
+  useEffect(() => {
+    const close = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [onClose]);
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-      <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-100/40 transition-colors">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-black text-slate-900">{title}</span>
-          {badge}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 id="modal-title" className="text-lg font-semibold text-slate-900">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1 rounded-lg hover:bg-slate-100"><X size={20} /></button>
         </div>
-        <div className="flex items-center gap-3">
-          {actions}
-          <ChevronIcon open={open} />
+        <div className="space-y-4">{children}</div>
+        {error && <p role="alert" className="mt-4 text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{error}</p>}
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={secondary}>Cancel</button>
+          <button type="submit" disabled={busy} className={primary}>{busy && <Loader2 size={16} className="animate-spin" />}{submitLabel}</button>
         </div>
-      </button>
-      {open && <div className="px-6 pb-6">{children}</div>}
-    </div>
-  );
-}
-
-function JobAlertSettings({ profile, save, saving }) {
-  const [form, setForm] = useState({
-    career_track: profile.career_track || '', country: profile.country || '',
-    job_alert_work_type: profile.job_alert_work_type || 'all',
-    job_alerts_enabled: !!profile.job_alerts_enabled,
-  });
-  const [message, setMessage] = useState('');
-  useEffect(() => setForm({
-    career_track: profile.career_track || '', country: profile.country || '',
-    job_alert_work_type: profile.job_alert_work_type || 'all',
-    job_alerts_enabled: !!profile.job_alerts_enabled,
-  }), [profile.career_track, profile.country, profile.job_alert_work_type, profile.job_alerts_enabled]);
-  const field = (name, value) => setForm(previous => ({ ...previous, [name]: value }));
-  const submit = async (event) => {
-    event.preventDefault(); setMessage('');
-    if (await save(form)) setMessage('Job alert preferences saved.');
-  };
-  return (
-    <SectionCard title="Job alerts">
-      <p className="text-sm text-slate-600 mb-4">Receive a daily email when new external or employer-posted jobs match your preferences. Review each job’s full requirements before applying.</p>
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="alert-career-track" className="block text-sm font-bold text-slate-700 mb-1">Career track</label>
-            <input id="alert-career-track" name="career_track" maxLength={120} required={form.job_alerts_enabled} value={form.career_track}
-              onChange={event => field('career_track', event.target.value)} placeholder="e.g. DevOps Engineer"
-              className="w-full rounded-xl border border-slate-300 p-3 text-sm text-slate-900" />
-          </div>
-          <div>
-            <label htmlFor="alert-country" className="block text-sm font-bold text-slate-700 mb-1">Country</label>
-            <input id="alert-country" name="country" maxLength={120} value={form.country}
-              onChange={event => field('country', event.target.value)} placeholder="e.g. Nigeria"
-              className="w-full rounded-xl border border-slate-300 p-3 text-sm text-slate-900" />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="alert-work-type" className="block text-sm font-bold text-slate-700 mb-1">Work arrangement</label>
-          <select id="alert-work-type" name="job_alert_work_type" value={form.job_alert_work_type}
-            onChange={event => field('job_alert_work_type', event.target.value)}
-            className="rounded-xl border border-slate-300 p-3 text-sm text-slate-900">
-            <option value="all">Any arrangement</option><option value="remote">Remote</option>
-            <option value="hybrid">Hybrid</option><option value="onsite">On site</option>
-          </select>
-        </div>
-        <label htmlFor="job-alerts-enabled" className="flex gap-3 items-center text-sm text-slate-700">
-          <input id="job-alerts-enabled" name="job_alerts_enabled" type="checkbox" checked={form.job_alerts_enabled}
-            disabled={!profile.is_verified} onChange={event => field('job_alerts_enabled', event.target.checked)} />
-          Email me matching job alerts. I can turn this off here at any time.
-        </label>
-        {!profile.is_verified && <p className="text-sm text-amber-800">Verify your email before enabling alerts.</p>}
-        <button type="submit" disabled={saving} className="rounded-xl bg-emerald-700 px-4 py-2 text-white font-bold disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save job alert preferences'}
-        </button>
-        {message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
       </form>
-    </SectionCard>
+    </div>
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+function Section({ title, action, children }) {
+  return (
+    <section className={`${card} p-5`}>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h2 className="font-semibold text-slate-900">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const AddButton = ({ onClick, label = 'Add' }) => (
+  <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800"><Plus size={14} />{label}</button>
+);
+const EditButton = ({ onClick, label = 'Edit' }) => (
+  <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"><Pencil size={13} />{label}</button>
+);
+const IconAction = ({ onClick, label, icon: Icon }) => (
+  <button type="button" onClick={onClick} aria-label={label} title={label} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Icon size={15} /></button>
+);
+
+function strength(p) {
+  const checks = [
+    [!!p.photo_url, 'a profile photo'], [!!p.career_track, 'a headline'], [!!(p.about || '').trim(), 'an About summary'],
+    [p.experience.length > 0, 'your experience'], [p.education.length > 0, 'your education'],
+    [p.certified_skills.length + p.other_skills.length >= 3, 'at least 3 skills'], [p.languages.length > 0, 'a language'],
+    [!!p.linkedin_url, 'your LinkedIn'], [!!(p.city || p.country), 'your location'], [!!p.resume_url, 'a resume'],
+  ];
+  const done = checks.filter(([ok]) => ok).length;
+  return { score: Math.round((done * 100) / checks.length), missing: checks.filter(([ok]) => !ok).map(([, l]) => l) };
+}
+
+function Avatar({ profile, size = 'w-28 h-28 text-3xl' }) {
+  const initials = (profile.full_name || profile.email || 'U').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return profile.photo_url
+    ? <img src={assetUrl(profile.photo_url)} alt={`${profile.full_name || 'Your'} profile photo`} className={`${size} rounded-full object-cover ring-4 ring-white bg-white`} />
+    : <div className={`${size} rounded-full ring-4 ring-white bg-emerald-600 text-white grid place-items-center font-semibold`} aria-hidden="true">{initials}</div>;
+}
+
 export default function ProfilePage() {
-  const [profile, setProfile]     = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [editingAbout, setEditingAbout] = useState(false);
-  const [aboutDraft, setAboutDraft]     = useState('');
-  const [newSkill, setNewSkill]         = useState('');
-  const [newLang, setNewLang]           = useState('');
-  const [newLangProf, setNewLangProf]   = useState('Advanced');
-  const [showEduForm, setShowEduForm]   = useState(false);
-  const [eduForm, setEduForm]           = useState({ degree: '', institution: '', start_date: '', end_date: '' });
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [saving, setSaving]             = useState(false);
-  const [sendingVerification, setSendingVerification] = useState(false);
-  const [verificationMessage, setVerificationMessage] = useState('');
-  const photoInputRef = useRef(null);
-  const token = localStorage.getItem('token');
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [modal, setModal] = useState(null);           // { kind, data }
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+  const [cropFile, setCropFile] = useState(null);
+  const [aboutDraft, setAboutDraft] = useState(null);
+  const [newSkill, setNewSkill] = useState('');
+  const [verification, setVerification] = useState('');
+  const fileRef = useRef(null);
 
-  const fetchProfile = () => {
-    axios.get(`${API_BASE_URL}/profile/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => { setProfile(r.data); setAboutDraft(r.data.about || ''); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const load = useCallback(() => axios.get(`${API}/profile/me`, { headers: headers() })
+    .then(r => setProfile(r.data))
+    .catch(err => setLoadError(errorText(err, 'Could not load your profile. Please sign in again.')))
+    .finally(() => setLoading(false)), []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(''), 4000); return () => clearTimeout(t); }, [toast]);
+
+  const run = async (fn, success) => {
+    setBusy(true); setError('');
+    try { await fn(); await load(); setModal(null); if (success) setToast(success); return true; }
+    catch (err) { setError(errorText(err, 'Could not save. Please retry.')); return false; }
+    finally { setBusy(false); }
   };
+  const patch = (fields, success = 'Profile updated') => run(() => axios.patch(`${API}/profile/me`, fields, { headers: headers() }), success);
 
-  useEffect(() => { if (token) fetchProfile(); else setLoading(false); }, [token]);
-
-  const resendVerification = async () => {
-    setSendingVerification(true); setVerificationMessage('');
-    try {
-      const { data } = await axios.post(`${API_BASE_URL}/auth/resend-verification`, {}, {
-        headers: { Authorization: `Bearer ${token}` }, timeout: 30000,
-      });
-      setVerificationMessage(data.message);
-    } catch (error) {
-      setVerificationMessage(errorText(error, 'Could not request verification. Please try again.'));
-    } finally { setSendingVerification(false); }
-  };
-
-  const patchProfile = async (fields) => {
-    setSaving(true);
-    try {
-      const res = await axios.patch(`${API_BASE_URL}/profile/me`, fields, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(res.data);
-      return true;
-    } catch (e) { alert(errorText(e, 'Failed to save changes.')); return false; }
-    finally { setSaving(false); }
-  };
-
-  const handlePhotoUpload = async (e) => {
+  const choosePhoto = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const res = await axios.post(`${API_BASE_URL}/profile/photo`, formData, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
-      });
-      setProfile(p => ({ ...p, photo_url: res.data.photo_url }));
-    } catch { alert('Failed to upload photo.'); }
+    if (file.size > 5 * 1024 * 1024) { setToast(''); setError(''); setCropFile(null); alert('Choose an image smaller than 5 MB.'); return; }
+    setError(''); setCropFile(file);
   };
-
-  const saveAbout = async () => {
-    await patchProfile({ about: aboutDraft });
-    setEditingAbout(false);
+  const savePhoto = async (blob) => {
+    const form = new FormData();
+    form.append('file', blob, 'photo.jpg');
+    const ok = await run(() => axios.post(`${API}/profile/photo`, form, { headers: headers() }), 'Profile photo updated');
+    if (ok) { setCropFile(null); window.dispatchEvent(new Event('profile:updated')); }
   };
-
-  const addOtherSkill = async () => {
+  const removePhoto = async () => {
+    if (!confirm('Remove your profile photo?')) return;
+    if (await run(() => axios.delete(`${API}/profile/photo`, { headers: headers() }), 'Profile photo removed')) {
+      window.dispatchEvent(new Event('profile:updated'));
+    }
+  };
+  const resendVerification = async () => {
+    try { const { data } = await axios.post(`${API}/auth/resend-verification`, {}, { headers: headers() }); setVerification(data.message); }
+    catch (err) { setVerification(errorText(err, 'Could not send the email. Please retry.')); }
+  };
+  const addSkill = async (e) => {
+    e.preventDefault();
     if (!newSkill.trim()) return;
-    try {
-      const res = await axios.post(`${API_BASE_URL}/profile/skills/other`, { name: newSkill.trim() }, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(p => ({ ...p, other_skills: [...p.other_skills, res.data] }));
-      setNewSkill('');
-    } catch (e) { alert(errorText(e, 'Failed to add skill.')); }
+    if (await run(() => axios.post(`${API}/profile/skills/other`, { name: newSkill.trim() }, { headers: headers() }))) setNewSkill('');
   };
-
-  const removeOtherSkill = async (id) => {
-    try {
-      await axios.delete(`${API_BASE_URL}/profile/skills/other/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(p => ({ ...p, other_skills: p.other_skills.filter(s => s.id !== id) }));
-    } catch { alert('Failed to remove skill.'); }
-  };
-
-  const addLanguage = async () => {
-    if (!newLang.trim()) return;
-    try {
-      const res = await axios.post(`${API_BASE_URL}/profile/languages`, { name: newLang.trim(), proficiency: newLangProf }, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(p => ({ ...p, languages: [...p.languages, res.data] }));
-      setNewLang('');
-    } catch (e) { alert(errorText(e, 'Failed to add language.')); }
-  };
-
-  const removeLanguage = async (id) => {
-    try {
-      await axios.delete(`${API_BASE_URL}/profile/languages/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(p => ({ ...p, languages: p.languages.filter(l => l.id !== id) }));
-    } catch { alert('Failed to remove language.'); }
-  };
-
-  const submitEducation = async () => {
-    if (!eduForm.degree.trim() || !eduForm.institution.trim()) return;
-    try {
-      const res = await axios.post(`${API_BASE_URL}/profile/education`, eduForm, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(p => ({ ...p, education: [res.data, ...p.education] }));
-      setEduForm({ degree: '', institution: '', start_date: '', end_date: '' });
-      setShowEduForm(false);
-    } catch { alert('Failed to add education.'); }
-  };
-
-  const removeEducation = async (id) => {
-    try {
-      await axios.delete(`${API_BASE_URL}/profile/education/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-      setProfile(p => ({ ...p, education: p.education.filter(e => e.id !== id) }));
-    } catch { alert('Failed to remove education entry.'); }
-  };
-
+  const remove = (path, what) => { if (confirm(`Remove ${what}?`)) run(() => axios.delete(`${API}/profile/${path}`, { headers: headers() }), `${what[0].toUpperCase()}${what.slice(1)} removed`); };
   const deleteAccount = async () => {
-    try {
-      await axios.delete(`${API_BASE_URL}/profile/me`, { headers: { Authorization: `Bearer ${token}` } });
-      clearSession();
-      window.location.href = '/login';
-    } catch { alert('Failed to delete account.'); }
+    if (prompt('This permanently deletes your account, resumes and applications. Type DELETE to confirm.') !== 'DELETE') return;
+    try { await axios.delete(`${API}/profile/me`, { headers: headers() }); clearSession(); window.location.href = '/login'; }
+    catch (err) { setToast(''); alert(errorText(err, 'Could not delete the account.')); }
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-32">
-      <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <div className="py-32 flex justify-center"><Loader2 className="animate-spin text-emerald-600" size={32} /></div>;
+  if (!profile) return <p className="py-32 text-center text-slate-500">{loadError}</p>;
 
-  if (!profile) return (
-    <div className="text-center py-32 text-slate-500">Could not load profile. Please login again.</div>
-  );
-
-  const initials = (profile.full_name || profile.email || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-  const createdDate = profile.created_at
-    ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : '';
+  const { score, missing } = strength(profile);
+  const skills = [...profile.certified_skills.map(s => ({ ...s, verified: true })), ...profile.other_skills];
+  const place = [profile.city, profile.country].filter(Boolean).join(', ');
+  const form = modal?.data || {};
+  const setForm = (change) => setModal(m => ({ ...m, data: { ...m.data, ...change } }));
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="space-y-4">
+      {toast && <div role="status" className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">{toast}</div>}
 
-      {/* Page header */}
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-black text-slate-900" style={{ fontFamily: "'Playfair Display', serif" }}>My Profile</h1>
-        <span className="text-xs text-slate-500">Account created on {createdDate}</span>
-      </div>
+      {/* Header */}
+      <section className={`${card} overflow-hidden`}>
+        <div className="h-28 bg-gradient-to-r from-emerald-600 to-teal-500" />
+        <div className="px-5 sm:px-6 pb-6">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-12">
+            <div className="relative w-fit">
+              <Avatar profile={profile} />
+              <button type="button" onClick={() => fileRef.current?.click()} aria-label="Change profile photo"
+                className="absolute bottom-1 right-1 w-9 h-9 rounded-full bg-slate-900 text-white grid place-items-center ring-2 ring-white hover:bg-slate-700"><Camera size={16} /></button>
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={choosePhoto} />
+            </div>
+            <div className="flex-1 min-w-0 sm:pt-14">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-semibold text-slate-900 break-words">{profile.full_name || 'Add your name'}</h1>
+                {profile.is_verified
+                  ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"><BadgeCheck size={12} />Email verified</span>
+                  : <button type="button" onClick={resendVerification} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100">Verify email</button>}
+              </div>
+              <p className="text-slate-600">{profile.career_track || <span className="text-slate-400">Add a headline, e.g. Senior DevOps Engineer</span>}</p>
+              <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+                {place && <span className="inline-flex items-center gap-1"><MapPin size={14} />{place}{profile.timezone ? ` (${profile.timezone})` : ''}</span>}
+                {profile.linkedin_url && <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-emerald-700"><Linkedin size={14} />{profile.linkedin_url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</a>}
+              </p>
+              {verification && <p className="mt-1 text-xs text-slate-600">{verification}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 sm:pt-14">
+              {!profile.is_hr && (
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input type="checkbox" role="switch" className="peer sr-only" checked={!!profile.available_for_work}
+                    onChange={e => patch({ available_for_work: e.target.checked }, e.target.checked ? 'You are open to work' : 'Open to work turned off')} />
+                  <span className="relative w-10 h-6 rounded-full bg-slate-200 peer-checked:bg-emerald-500 transition-colors after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-400" />
+                  Open to work
+                </label>
+              )}
+              <button type="button" className={secondary} onClick={() => { setError(''); setModal({ kind: 'basics', data: {
+                full_name: profile.full_name || '', career_track: profile.career_track || '', city: profile.city || '', country: profile.country || '',
+                timezone: profile.timezone || '', phone: profile.phone || '', linkedin_url: profile.linkedin_url || '' } }); }}>Edit profile</button>
+            </div>
+          </div>
+          <div className="mt-5">
+            <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500">
+              <span>Profile strength: <b className="text-slate-800">{score}%</b></span>
+              {missing.length > 0 && <span>Add {missing.slice(0, 2).join(' and ')} to strengthen your profile</span>}
+            </div>
+            <div className="h-2 mt-1 rounded-full bg-slate-100" role="progressbar" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100} aria-label="Profile strength">
+              <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${score}%` }} /></div>
+          </div>
+          {profile.photo_url && <button type="button" onClick={removePhoto} className="mt-3 text-xs text-slate-500 hover:text-rose-700">Remove photo</button>}
+        </div>
+      </section>
 
-      {!profile.is_verified && (
-        <section className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-          <h2 className="font-bold text-slate-900">Verify your email address</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Send a verification link to {profile.email}, then open the link in your inbox.
-          </p>
-          <button type="button" onClick={resendVerification} disabled={sendingVerification}
-            className="mt-3 px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50">
-            {sendingVerification ? 'Sending…' : 'Resend verification email'}
-          </button>
-          {verificationMessage && <p role="status" aria-live="polite" className="mt-3 text-sm text-slate-700">{verificationMessage}</p>}
-        </section>
-      )}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-4 min-w-0">
+          <Section title="About" action={aboutDraft === null && <EditButton onClick={() => setAboutDraft(profile.about || '')} />}>
+            {aboutDraft === null
+              ? <p className="text-sm leading-6 text-slate-700 whitespace-pre-line">{profile.about || <span className="text-slate-400">Write 2–3 sentences about what you do and what you are looking for.</span>}</p>
+              : <form onSubmit={async e => { e.preventDefault(); if (await patch({ about: aboutDraft.trim() }, 'About updated')) setAboutDraft(null); }} className="space-y-2">
+                  <textarea value={aboutDraft} onChange={e => setAboutDraft(e.target.value)} rows={5} maxLength={2000} className={input} aria-label="About" autoFocus />
+                  <div className="flex justify-between items-center"><span className="text-xs text-slate-400">{aboutDraft.length}/2000</span>
+                    <div className="flex gap-2"><button type="button" onClick={() => setAboutDraft(null)} className={secondary}>Cancel</button><button type="submit" disabled={busy} className={primary}>Save</button></div></div>
+                </form>}
+          </Section>
 
-      {!profile.is_hr && !profile.is_admin && <JobAlertSettings profile={profile} save={patchProfile} saving={saving} />}
-
-      {/* ── Profile header card ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-          <div className="flex items-start gap-4">
-            {/* Avatar */}
-            <div className="relative shrink-0">
-              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
-                {profile.photo_url ? (
-                  <img src={profile.photo_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-2xl font-black text-emerald-700 bg-emerald-500/10">
-                    {initials}
+          <Section title="Experience" action={<AddButton onClick={() => { setError(''); setModal({ kind: 'experience', data: { title: '', company: '', start_date: '', end_date: '', description: '' } }); }} />}>
+            {profile.experience.length === 0 && <p className="text-sm text-slate-400">Add your roles so employers can see your track record.</p>}
+            <ul className="divide-y divide-slate-100">
+              {profile.experience.map(x => (
+                <li key={x.id} className="py-3 first:pt-0 flex gap-3">
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-slate-100 grid place-items-center text-slate-500"><Briefcase size={18} /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900">{x.title}</div>
+                    <div className="text-sm text-slate-600">{x.company}</div>
+                    {(x.start_date || x.end_date) && <div className="text-xs text-slate-500">{[x.start_date, x.end_date || 'Present'].filter(Boolean).join(' – ')}</div>}
+                    {x.description && <p className="mt-1 text-sm text-slate-600 whitespace-pre-line">{x.description}</p>}
                   </div>
-                )}
-              </div>
-              <button onClick={() => photoInputRef.current?.click()}
-                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-500 border-2 border-slate-900 flex items-center justify-center transition-all">
-                <svg className="w-3.5 h-3.5 text-slate-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
-                </svg>
-              </button>
-              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-            </div>
+                  <div className="flex items-start">
+                    <IconAction icon={Pencil} label={`Edit ${x.title}`} onClick={() => { setError(''); setModal({ kind: 'experience', data: { ...x, start_date: x.start_date || '', end_date: x.end_date || '', description: x.description || '' } }); }} />
+                    <IconAction icon={Trash2} label={`Remove ${x.title}`} onClick={() => remove(`experience/${x.id}`, 'this role')} />
+                  </div>
+                </li>))}
+            </ul>
+          </Section>
 
-            {/* Name + meta */}
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black text-slate-900">{profile.full_name || 'Unnamed User'}</h2>
-                {profile.is_verified && (
-                  <svg className="w-4 h-4 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                  </svg>
-                )}
-              </div>
-              <p className="text-slate-500 text-sm font-medium mt-0.5">{profile.career_track || 'Add your career track'}</p>
-              {profile.linkedin_url && (
-                <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-bold mt-1">
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                  </svg>
-                  LinkedIn profile ↗
-                </a>
-              )}
-              <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-slate-500">
-                {profile.country && <span>🌍 {profile.country}</span>}
-                <span>✉️ {profile.email}</span>
-                {profile.phone && <span>📞 {profile.phone}</span>}
-              </div>
-            </div>
-          </div>
+          <Section title="Education" action={<AddButton onClick={() => { setError(''); setModal({ kind: 'education', data: { degree: '', institution: '', start_date: '', end_date: '' } }); }} />}>
+            {profile.education.length === 0 && <p className="text-sm text-slate-400">Add degrees, diplomas or bootcamps.</p>}
+            <ul className="divide-y divide-slate-100">
+              {profile.education.map(x => (
+                <li key={x.id} className="py-3 first:pt-0 flex gap-3">
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-slate-100 grid place-items-center text-slate-500"><GraduationCap size={18} /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900">{x.degree}</div>
+                    <div className="text-sm text-slate-600">{x.institution}</div>
+                    {(x.start_date || x.end_date) && <div className="text-xs text-slate-500">{[x.start_date, x.end_date].filter(Boolean).join(' – ')}</div>}
+                  </div>
+                  <div className="flex items-start">
+                    <IconAction icon={Pencil} label={`Edit ${x.degree}`} onClick={() => { setError(''); setModal({ kind: 'education', data: { ...x, start_date: x.start_date || '', end_date: x.end_date || '' } }); }} />
+                    <IconAction icon={Trash2} label={`Remove ${x.degree}`} onClick={() => remove(`education/${x.id}`, 'this education entry')} />
+                  </div>
+                </li>))}
+            </ul>
+          </Section>
 
-          {/* Availability + pay */}
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Available for new opportunities</span>
-              <button onClick={() => patchProfile({ available_for_work: !profile.available_for_work })}
-                className={`text-xs font-black px-3 py-1 rounded-full border transition-all ${
-                  profile.available_for_work
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700'
-                    : 'bg-slate-100 border-slate-200 text-slate-500'
-                }`}>
-                {profile.available_for_work ? 'Yes' : 'No'}
-              </button>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-slate-500">Expected pay</p>
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-900 font-black text-sm">
-                  {profile.expected_pay_hourly ? `$${profile.expected_pay_hourly}/hour` : 'Not set'}
-                </span>
-                <button onClick={() => {
-                  const val = prompt('Expected hourly rate (USD)', profile.expected_pay_hourly || '');
-                  if (val !== null && !isNaN(parseFloat(val))) patchProfile({ expected_pay_hourly: parseFloat(val) });
-                }} className="text-slate-500 hover:text-emerald-700 transition-colors">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Certified skills ── */}
-      <SectionCard title="Certified skills" badge={
-        <span className="text-slate-600" title="Verified credentials require a documented assessment or administrator review">ⓘ</span>
-      }>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {(profile.certified_skills || []).map(skill => (
-            <div key={skill.id} className="flex items-center gap-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
-                <svg className="w-3.5 h-3.5 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                </svg>
-              </span>
-              <span className="text-sm font-bold text-slate-700">{skill.name}</span>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {/* ── Other skills ── */}
-      <SectionCard title="Other Skills" defaultOpen={false}>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {(profile.other_skills || []).map(skill => (
-            <span key={skill.id} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
-              {skill.name}
-              <button onClick={() => removeOtherSkill(skill.id)} className="text-slate-500 hover:text-rose-400 transition-colors">×</button>
-            </span>
-          ))}
-          {(!profile.other_skills || profile.other_skills.length === 0) && (
-            <p className="text-xs text-slate-600">No additional skills added yet.</p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <input value={newSkill} onChange={e => setNewSkill(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addOtherSkill()}
-            placeholder="e.g. Docker, Terraform, Kubernetes"
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500 transition-all" />
-          <button onClick={addOtherSkill} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all">Add</button>
-        </div>
-      </SectionCard>
-
-      {/* ── About ── */}
-      <SectionCard title="About" actions={
-        !editingAbout && (
-          <button onClick={(e) => { e.stopPropagation(); setEditingAbout(true); }} className="text-slate-500 hover:text-emerald-700 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-            </svg>
-          </button>
-        )
-      }>
-        {editingAbout ? (
-          <div>
-            <textarea value={aboutDraft} onChange={e => setAboutDraft(e.target.value)} rows={4}
-              className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500 transition-all resize-none"
-              placeholder="Tell recruiters about your experience, focus areas, and what you're looking for..." />
-            <div className="flex gap-2 mt-3">
-              <button onClick={saveAbout} disabled={saving}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all">
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              <button onClick={() => { setEditingAbout(false); setAboutDraft(profile.about || ''); }}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-700 text-slate-600 text-xs font-black transition-all">
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="text-sm text-slate-500 leading-relaxed mb-3">
-              {profile.about || 'No bio added yet. Click the edit icon to introduce yourself.'}
-            </p>
-            {profile.id_verified && (
-              <div className="flex items-center gap-1.5 mb-3">
-                <svg className="w-3.5 h-3.5 text-emerald-700" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                </svg>
-                <span className="text-xs font-bold text-emerald-700">ID Verified</span>
-              </div>
-            )}
+          <Section title="Skills">
             <div className="flex flex-wrap gap-2">
-              {profile.resume_filename && (
-                <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                  📄 {profile.resume_filename}
-                </span>
-              )}
-              {profile.notice_period_days != null && (
-                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
-                  Notice period: {profile.notice_period_days} days
-                </span>
-              )}
-              {profile.city && (
-                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
-                  City: {profile.city}
-                </span>
-              )}
-              {profile.timezone && (
-                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
-                  Timezone: {profile.timezone}
-                </span>
-              )}
+              {skills.length === 0 && <p className="text-sm text-slate-400">Add the tools and practices you use.</p>}
+              {skills.map(s => (
+                <span key={`${s.verified ? 'c' : 'o'}${s.id}`} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${s.verified ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                  {s.verified && <BadgeCheck size={12} aria-label="Verified" />}{s.name}
+                  {!s.verified && <button type="button" onClick={() => remove(`skills/other/${s.id}`, `the skill ${s.name}`)} aria-label={`Remove ${s.name}`} className="ml-0.5 text-slate-400 hover:text-rose-600"><X size={12} /></button>}
+                </span>))}
             </div>
-          </>
-        )}
-      </SectionCard>
-
-      {/* ── Experience ── */}
-      <SectionCard title="Experience" defaultOpen={false}>
-        {(profile.experience || []).length === 0 ? (
-          <p className="text-xs text-slate-600">No experience added yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {profile.experience.map(exp => (
-              <div key={exp.id} className="flex items-start justify-between bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <div>
-                  <p className="text-sm font-black text-slate-900">{exp.title}</p>
-                  <p className="text-xs text-emerald-700 font-bold">{exp.company}</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">{exp.start_date} – {exp.end_date || 'Present'}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
-      {/* ── Education ── */}
-      <SectionCard title="Education">
-        <div className="space-y-3">
-          {(profile.education || []).map(edu => (
-            <div key={edu.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                  🎓
-                </div>
-                <div>
-                  <p className="text-sm font-black text-slate-900">{edu.degree}</p>
-                  <p className="text-xs text-emerald-700 font-bold">{edu.institution}</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">{edu.start_date} – {edu.end_date || 'Present'}</p>
-                </div>
-              </div>
-              <button onClick={() => removeEducation(edu.id)} className="text-slate-600 hover:text-rose-400 transition-colors">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                </svg>
-              </button>
-            </div>
-          ))}
-
-          {showEduForm ? (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-              <input value={eduForm.degree} onChange={e => setEduForm(f => ({ ...f, degree: e.target.value }))}
-                placeholder="Degree — e.g. B.Sc Computer Science"
-                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
-              <input value={eduForm.institution} onChange={e => setEduForm(f => ({ ...f, institution: e.target.value }))}
-                placeholder="Institution"
-                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
-              <div className="grid grid-cols-2 gap-2">
-                <input value={eduForm.start_date} onChange={e => setEduForm(f => ({ ...f, start_date: e.target.value }))}
-                  placeholder="Start (e.g. Jan 2020)"
-                  className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
-                <input value={eduForm.end_date} onChange={e => setEduForm(f => ({ ...f, end_date: e.target.value }))}
-                  placeholder="End (e.g. Dec 2023)"
-                  className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={submitEducation} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all">Save</button>
-                <button onClick={() => setShowEduForm(false)} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-700 text-slate-600 text-xs font-black transition-all">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowEduForm(true)}
-              className="w-full py-3 rounded-xl bg-slate-100/50 hover:bg-slate-100 border border-dashed border-slate-200 text-slate-500 hover:text-slate-900 text-xs font-black transition-all flex items-center justify-center gap-1.5">
-              + Add more
-            </button>
-          )}
+            <form onSubmit={addSkill} className="mt-3 flex gap-2">
+              <input value={newSkill} onChange={e => setNewSkill(e.target.value)} maxLength={60} placeholder="Add a skill, e.g. Kubernetes" aria-label="New skill" className={input} />
+              <button type="submit" disabled={busy || !newSkill.trim()} className={primary}>Add</button>
+            </form>
+          </Section>
         </div>
-      </SectionCard>
 
-      {/* ── Languages ── */}
-      <SectionCard title="Languages">
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          {(profile.languages || []).map(lang => (
-            <span key={lang.id} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
-              {lang.name} <span className="text-emerald-700">· {lang.proficiency}</span>
-              <button onClick={() => removeLanguage(lang.id)} className="text-slate-500 hover:text-rose-400 transition-colors ml-1">×</button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input value={newLang} onChange={e => setNewLang(e.target.value)}
-            placeholder="Language — e.g. French"
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500 transition-all" />
-          <select value={newLangProf} onChange={e => setNewLangProf(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 outline-none focus:border-emerald-500">
-            {PROFICIENCIES.map(p => <option key={p} value={p} style={{ background: '#0f172a' }}>{p}</option>)}
-          </select>
-          <button onClick={addLanguage} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-900 text-xs font-black transition-all shrink-0">+ Add more</button>
-        </div>
-      </SectionCard>
+        <aside className="space-y-4">
+          <Section title="Job preferences" action={<EditButton onClick={() => { setError(''); setModal({ kind: 'preferences', data: {
+            expected_pay_hourly: profile.expected_pay_hourly ?? '', notice_period_days: profile.notice_period_days ?? '',
+            job_alert_work_type: profile.job_alert_work_type || 'all', job_alerts_enabled: !!profile.job_alerts_enabled } }); }} />}>
+            <dl className="space-y-2 text-sm">
+              {[['Headline', profile.career_track || '—'],
+                ['Work type', { all: 'Any', remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' }[profile.job_alert_work_type] || 'Any'],
+                ['Expected pay', profile.expected_pay_hourly ? `$${profile.expected_pay_hourly} / hour` : '—'],
+                ['Notice period', profile.notice_period_days != null ? `${profile.notice_period_days} days` : '—'],
+                ['Job alerts', profile.job_alerts_enabled ? 'On' : 'Off']].map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className={`text-right ${v === 'On' ? 'text-emerald-700' : 'text-slate-900'}`}>{v}</dd></div>))}
+            </dl>
+          </Section>
 
-      {/* ── Delete account ── */}
-      <div className="text-center py-6">
-        {!deleteConfirm ? (
-          <button onClick={() => setDeleteConfirm(true)} className="text-xs font-bold text-rose-500 hover:text-rose-400 transition-colors">
-            Delete my account
-          </button>
-        ) : (
-          <div className="inline-flex items-center gap-3 bg-rose-950/30 border border-rose-900/40 rounded-2xl px-5 py-3">
-            <span className="text-xs font-bold text-rose-300">Are you sure? This cannot be undone.</span>
-            <button onClick={deleteAccount} className="text-xs font-black px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-slate-900 transition-all">Yes, delete</button>
-            <button onClick={() => setDeleteConfirm(false)} className="text-xs font-black px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-700 text-slate-600 transition-all">Cancel</button>
-          </div>
-        )}
+          <Section title="Resume">
+            {profile.resume_url
+              ? <a href={profile.resume_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 hover:bg-slate-50">
+                  <FileText size={18} className="text-slate-500" /><span className="flex-1 min-w-0 truncate text-sm font-medium">{profile.resume_filename || 'My resume'}</span><span className="text-xs font-semibold">View</span></a>
+              : <p className="text-sm text-slate-500">No resume linked yet. <a href="/optimizer" className="font-semibold text-emerald-700 hover:underline">Create a tailored resume →</a></p>}
+          </Section>
+
+          <Section title="Languages" action={<AddButton onClick={() => { setError(''); setModal({ kind: 'language', data: { name: '', proficiency: 'Advanced' } }); }} />}>
+            {profile.languages.length === 0 && <p className="text-sm text-slate-400">Add the languages you work in.</p>}
+            <ul className="space-y-1.5 text-sm">
+              {profile.languages.map(l => (
+                <li key={l.id} className="flex items-center justify-between gap-2"><span>{l.name} <span className="text-slate-500">— {l.proficiency}</span></span>
+                  <IconAction icon={Trash2} label={`Remove ${l.name}`} onClick={() => remove(`languages/${l.id}`, l.name)} /></li>))}
+            </ul>
+          </Section>
+
+          <Section title="Account">
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">Email</dt><dd className="truncate">{profile.email}</dd></div>
+              {profile.phone && <div className="flex justify-between gap-3"><dt className="text-slate-500">Phone</dt><dd>{profile.phone}</dd></div>}
+              {profile.created_at && <div className="flex justify-between gap-3"><dt className="text-slate-500">Member since</dt><dd>{new Date(profile.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</dd></div>}
+            </dl>
+            <button type="button" onClick={deleteAccount} className="mt-4 text-xs font-semibold text-rose-700 hover:underline">Delete my account…</button>
+          </Section>
+        </aside>
       </div>
+
+      {cropFile && <PhotoCropper file={cropFile} saving={busy} error={error} onCancel={() => { setCropFile(null); setError(''); }} onSave={savePhoto} />}
+
+      {modal?.kind === 'basics' && (
+        <Modal title="Edit profile" busy={busy} error={error} onClose={() => setModal(null)} onSubmit={() => patch(form)}>
+          <Field label="Full name"><input required maxLength={120} value={form.full_name} onChange={e => setForm({ full_name: e.target.value })} className={input} /></Field>
+          <Field label="Headline" hint="Shown under your name, e.g. Senior DevOps Engineer · Kubernetes · AWS"><input maxLength={120} value={form.career_track} onChange={e => setForm({ career_track: e.target.value })} className={input} /></Field>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label="City"><input maxLength={80} value={form.city} onChange={e => setForm({ city: e.target.value })} className={input} /></Field>
+            <Field label="Country"><input maxLength={80} value={form.country} onChange={e => setForm({ country: e.target.value })} className={input} /></Field>
+            <Field label="Time zone"><input maxLength={40} value={form.timezone} onChange={e => setForm({ timezone: e.target.value })} placeholder="e.g. WAT" className={input} /></Field>
+            <Field label="Phone"><input maxLength={40} value={form.phone} onChange={e => setForm({ phone: e.target.value })} className={input} /></Field>
+          </div>
+          <Field label="LinkedIn URL"><input type="url" maxLength={200} value={form.linkedin_url} onChange={e => setForm({ linkedin_url: e.target.value })} placeholder="https://linkedin.com/in/…" className={input} /></Field>
+        </Modal>)}
+
+      {modal?.kind === 'experience' && (
+        <Modal title={form.id ? 'Edit experience' : 'Add experience'} busy={busy} error={error} onClose={() => setModal(null)}
+          onSubmit={() => {
+            const body = { title: form.title, company: form.company, start_date: form.start_date || null, end_date: form.end_date || null, description: form.description || null };
+            return run(() => (form.id ? axios.patch(`${API}/profile/experience/${form.id}`, body, { headers: headers() })
+              : axios.post(`${API}/profile/experience`, body, { headers: headers() })), form.id ? 'Experience updated' : 'Experience added');
+          }}>
+          <Field label="Job title"><input required maxLength={120} value={form.title} onChange={e => setForm({ title: e.target.value })} className={input} /></Field>
+          <Field label="Company"><input required maxLength={120} value={form.company} onChange={e => setForm({ company: e.target.value })} className={input} /></Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Start"><input maxLength={20} value={form.start_date} onChange={e => setForm({ start_date: e.target.value })} placeholder="Jan 2022" className={input} /></Field>
+            <Field label="End" hint="Leave empty if current"><input maxLength={20} value={form.end_date} onChange={e => setForm({ end_date: e.target.value })} placeholder="Present" className={input} /></Field>
+          </div>
+          <Field label="What you did"><textarea rows={4} maxLength={2000} value={form.description} onChange={e => setForm({ description: e.target.value })} className={input} /></Field>
+        </Modal>)}
+
+      {modal?.kind === 'education' && (
+        <Modal title={form.id ? 'Edit education' : 'Add education'} busy={busy} error={error} onClose={() => setModal(null)}
+          onSubmit={() => {
+            const body = { degree: form.degree, institution: form.institution, start_date: form.start_date || null, end_date: form.end_date || null };
+            return run(() => (form.id ? axios.patch(`${API}/profile/education/${form.id}`, body, { headers: headers() })
+              : axios.post(`${API}/profile/education`, body, { headers: headers() })), form.id ? 'Education updated' : 'Education added');
+          }}>
+          <Field label="Degree or qualification"><input required maxLength={120} value={form.degree} onChange={e => setForm({ degree: e.target.value })} className={input} /></Field>
+          <Field label="School"><input required maxLength={120} value={form.institution} onChange={e => setForm({ institution: e.target.value })} className={input} /></Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Start"><input maxLength={20} value={form.start_date} onChange={e => setForm({ start_date: e.target.value })} placeholder="2014" className={input} /></Field>
+            <Field label="End"><input maxLength={20} value={form.end_date} onChange={e => setForm({ end_date: e.target.value })} placeholder="2018" className={input} /></Field>
+          </div>
+        </Modal>)}
+
+      {modal?.kind === 'language' && (
+        <Modal title="Add language" busy={busy} error={error} onClose={() => setModal(null)}
+          onSubmit={() => run(() => axios.post(`${API}/profile/languages`, form, { headers: headers() }), 'Language added')}>
+          <Field label="Language"><input required maxLength={40} value={form.name} onChange={e => setForm({ name: e.target.value })} className={input} /></Field>
+          <Field label="Proficiency"><select value={form.proficiency} onChange={e => setForm({ proficiency: e.target.value })} className={input}>
+            {PROFICIENCIES.map(p => <option key={p}>{p}</option>)}</select></Field>
+        </Modal>)}
+
+      {modal?.kind === 'preferences' && (
+        <Modal title="Job preferences" busy={busy} error={error} onClose={() => setModal(null)}
+          onSubmit={() => patch({
+            expected_pay_hourly: form.expected_pay_hourly === '' ? null : Number(form.expected_pay_hourly),
+            notice_period_days: form.notice_period_days === '' ? null : Number(form.notice_period_days),
+            job_alert_work_type: form.job_alert_work_type, job_alerts_enabled: form.job_alerts_enabled,
+          }, 'Preferences saved')}>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Expected pay (USD / hour)"><input type="number" min="0" step="1" value={form.expected_pay_hourly} onChange={e => setForm({ expected_pay_hourly: e.target.value })} className={input} /></Field>
+            <Field label="Notice period (days)"><input type="number" min="0" max="365" value={form.notice_period_days} onChange={e => setForm({ notice_period_days: e.target.value })} className={input} /></Field>
+          </div>
+          <Field label="Preferred work type"><select value={form.job_alert_work_type} onChange={e => setForm({ job_alert_work_type: e.target.value })} className={input}>
+            <option value="all">Any</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option><option value="onsite">On-site</option></select></Field>
+          {!profile.is_hr && !profile.is_admin && (
+            <label className="flex items-start gap-3 text-sm text-slate-700">
+              <input type="checkbox" className="mt-0.5 accent-emerald-600" disabled={!profile.is_verified} checked={form.job_alerts_enabled} onChange={e => setForm({ job_alerts_enabled: e.target.checked })} />
+              <span>Email me a daily digest of new jobs matching my headline and work type.
+                {!profile.is_verified && <span className="block text-xs text-amber-700">Verify your email first.</span>}
+                {!profile.career_track && <span className="block text-xs text-amber-700">Add a headline in Edit profile first.</span>}</span>
+            </label>)}
+        </Modal>)}
     </div>
   );
 }

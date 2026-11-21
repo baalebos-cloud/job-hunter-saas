@@ -132,3 +132,11 @@ export async function signOut(axios, redirect = '/login') {
   clearSession();
   window.location.href = redirect;
 }
+
+// Absolute URL for an API-served asset stored as "/api/v1/..." (e.g. profile photos).
+export function assetUrl(path) {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  const api = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+  try { return new URL(path, new URL(api).origin).toString(); } catch { return null; }
+}

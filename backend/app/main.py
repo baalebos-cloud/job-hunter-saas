@@ -22,6 +22,7 @@ from backend.app.routes import profile as profile_router
 from backend.app.routes import automation as automation_router
 from backend.app.routes import rbac as rbac_router
 from backend.app.routes import privacy as privacy_router
+from backend.app.routes import support as support_router
 from backend.app.routes import governance as governance_router
 from backend.app.services.ai_service import ai_engine
 
@@ -178,7 +179,7 @@ async def observability_middleware(request: Request, call_next):
             if status == 429:
                 metrics.RATE_LIMITED.labels(route).inc()
             metrics.record_request(route, status, elapsed * 1000)
-            emit(build_request_entry(trace_id=request.state.trace_id, user=getattr(request.state, "user", None),
+            emit(build_request_entry(trace_id=request.state.trace_id, user=getattr(request.state, "actor", None) or getattr(request.state, "user", None),
                                      method=request.method, route=route, status=status,
                                      latency_ms=elapsed * 1000, ip=_get_client_ip(request)))
 
@@ -263,6 +264,7 @@ app.include_router(automation_router.router, prefix="/api/v1/automation", tags=[
 app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
 app.include_router(privacy_router.router, prefix="/api/v1/privacy", tags=["Privacy"])
 app.include_router(governance_router.router, prefix="/api/v1/governance", tags=["Governance"])
+app.include_router(support_router.router, prefix="/api/v1/support", tags=["Support"])
 
 from backend.app.core.telemetry import init_tracing  # noqa: E402
 init_tracing(app)
