@@ -21,7 +21,18 @@ export default function HRLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const [emailError, setEmailError] = useState('');
+  const [resendState, setResendState] = useState({ sending: false, message: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const resendVerification = async () => {
+    setResendState({ sending: true, message: '' });
+    try {
+      const res = await axios.post(`${API_BASE_URL}/hr-auth/resend-verification`, { email: form.email });
+      setResendState({ sending: false, message: res.data.message });
+    } catch (err) {
+      setResendState({ sending: false, message: errorText(err, 'Could not send a new link. Please try again.') });
+    }
+  };
 
   const handleEmailChange = (e) => {
     const val = e.target.value;
@@ -39,7 +50,7 @@ export default function HRLogin() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (emailError) return;
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setResendState({ sending: false, message: '' });
     try {
       const res = await axios.post(`${API_BASE_URL}/hr-auth/login`, {
         email:    form.email,
@@ -133,10 +144,15 @@ export default function HRLogin() {
           {error && (
             <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl">
               <p className="text-rose-400 text-sm font-bold mb-1">⚠️ {error}</p>
-              {error.includes('not verified') && (
-                <p className="text-rose-300 text-xs mt-1">
-                  Check your inbox for the verification email we sent when you registered.
-                </p>
+              {error.includes('not been verified') && (
+                <div className="text-rose-300 text-xs mt-1">
+                  <p>Check your inbox and spam folder for the verification email we sent when you registered.</p>
+                  <button type="button" onClick={resendVerification} disabled={resendState.sending}
+                    className="mt-2 font-black underline disabled:opacity-60">
+                    {resendState.sending ? 'Sending…' : 'Send a new verification link'}
+                  </button>
+                  {resendState.message && <p className="mt-2 text-emerald-300 font-medium">{resendState.message}</p>}
+                </div>
               )}
               {error.includes('not registered as an HR') && (
                 <p className="text-rose-300 text-xs mt-1">
@@ -144,7 +160,7 @@ export default function HRLogin() {
                   <a href="/hr/signup" className="font-black underline">Apply here →</a>
                 </p>
               )}
-              {error.includes('pending') && (
+              {error.includes('awaiting') && (
                 <p className="text-amber-300 text-xs mt-1 font-medium">
                   Your account is awaiting admin approval. You'll receive an email once approved (24–48 hrs).
                 </p>
