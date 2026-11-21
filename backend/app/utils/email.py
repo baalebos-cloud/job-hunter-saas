@@ -30,10 +30,11 @@ def _send(to_email: str, subject: str, html_content: str) -> bool:
         with smtplib.SMTP_SSL(settings.SMTP_HOST, int(settings.SMTP_PORT)) as server:
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(settings.EMAILS_FROM_EMAIL, to_email, msg.as_string())
-        print(f"[Email] Sent '{subject}' to {to_email}")
+        logger.info("email_delivery_accepted provider=smtp")
         return True
-    except Exception as e:
-        print(f"[Email] Failed to send to {to_email}: {str(e)}")
+    except Exception as exc:
+        # No recipient or exception text: both can carry PII or credentials.
+        logger.warning("email_delivery_failed provider=smtp error_type=%s", type(exc).__name__)
         return False
 
 
@@ -128,6 +129,16 @@ def send_verification_email(to_email: str, token: str, full_name: str = "") -> b
       </div>
     </body>
     </html>
+    """
+    return send_verification_message(to_email, subject, html_content)
+
+
+def send_verification_message(to_email: str, subject: str, html_content: str) -> bool:
+    """Deliver an email-verification message (candidate or HR).
+
+    Uses Resend's HTTPS API when RESEND_API_KEY is set: Railway Hobby blocks
+    outbound SMTP, so SMTP-only verification mail never arrives there. Other
+    flows intentionally stay on ``_send``.
     """
     if settings.RESEND_API_KEY:
         return _send_resend_verification(to_email, subject, html_content)

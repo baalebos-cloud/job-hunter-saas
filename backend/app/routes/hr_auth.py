@@ -19,7 +19,8 @@ from backend.app.models.user import User
 from backend.app.services.auth_service import hash_password, hash_token, new_opaque_token
 from backend.app.core.rate_limit import LoginGuard
 from fastapi import Response
-from backend.app.utils.email import send_verification_email, _send
+from backend.app.utils.email import send_verification_email, send_verification_message, _send
+from backend.app.core.rate_limit import hit, _email_key
 
 router = APIRouter(tags=["HR Auth"])
 
@@ -55,6 +56,16 @@ class HRLoginRequest(BaseModel):
     password: str
 
 
+class HRResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+RESEND_VERIFICATION_MESSAGE = ("If an unverified employer account exists for that email, "
+                               "a new verification link is on its way. Check your inbox and spam folder.")
+RESEND_LIMIT_PER_EMAIL = 3      # per hour: stops inbox flooding
+RESEND_LIMIT_PER_IP = 10        # per hour
+
+
 def _validate_company_email(email: str) -> str:
     """
     Returns the domain if valid company email.
@@ -70,7 +81,7 @@ def _validate_company_email(email: str) -> str:
     return domain
 
 
-def _send_hr_verification_email(to_email: str, token: str, full_name: str, company_name: str):
+def _send_hr_verification_email(to_email: str, token: str, full_name: str, company_name: str) -> bool:
     """Email to HR — asks them to verify their email first."""
     import os
     frontend = os.getenv("FRONTEND_URL", "https://baalebo.xyz")
@@ -110,7 +121,7 @@ def _send_hr_verification_email(to_email: str, token: str, full_name: str, compa
     </div>
     </body></html>
     """
-    _send(to_email, "Verify your Baalebos HR account", html)
+    return send_verification_message(to_email, "Verify your Baalebos HR account", html)
 
 
 def _send_admin_hr_notification(admin_email: str, hr_user: User, domain: str, company_url: str, linkedin_url: str):
@@ -271,6 +282,32 @@ def hr_verify_email(token: str, db: Session = Depends(get_db)):
 
 
 # ── POST /hr-auth/login ───────────────────────────────────────────────────────
+@router.post("/resend-verification")
+def hr_resend_verification(payload: HRResendVerificationRequest, request: Request,
+                           background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Send a fresh verification link to an unverified HR account.
+
+    The response is identical whether or not the account exists, so it cannot
+    be used to discover registered employers. Rate-limited per email and IP.
+    """
+    email = payload.email.lower().strip()
+    ip = request.client.host if request.client else 'unknown'
+    for key, limit in ((f'hr-resend:email:{_email_key(email)}', RESEND_LIMIT_PER_EMAIL),
+                       (f'hr-resend:ip:{ip}', RESEND_LIMIT_PER_IP)):
+        allowed, retry_after = hit(key, limit, 3600)
+        if not allowed:
+            raise HTTPException(429, f'Too many requests. Try again in {retry_after // 60 + 1} minutes.',
+                                headers={'Retry-After': str(retry_after)})
+    user = db.query(User).filter(User.email == email, User.is_hr == True).first()  # noqa: E712
+    if user and not user.is_verified:
+        token, digest = new_opaque_token()
+        user.verification_token = digest   # the previous link stops working
+        db.commit()
+        background_tasks.add_task(_send_hr_verification_email, to_email=user.email, token=token,
+                                  full_name=user.full_name or "", company_name=user.company_name or "")
+    return {"message": RESEND_VERIFICATION_MESSAGE}
+
+
 @router.post("/login")
 def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     """
@@ -297,7 +334,7 @@ def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: 
         raise HTTPException(
             status_code=403,
             detail="Your email address has not been verified yet. "
-                   "Please check your inbox for the verification link."
+                   "Please check your inbox for the verification link, or request a new one."
         )
 
     if not user.hr_approved:
