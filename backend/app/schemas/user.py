@@ -27,12 +27,16 @@ class UserResponse(BaseModel):
     is_hr: Optional[bool] = False
     role: Optional[str] = None
     permissions: list[str] = []
+    mfa_enabled: bool = False
 
     class Config:
         from_attributes = True
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: Optional[int] = None
+    # Set instead of access_token when the account uses two-step verification.
+    mfa_required: Optional[bool] = None
+    mfa_token: Optional[str] = None

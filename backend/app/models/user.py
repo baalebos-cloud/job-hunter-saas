@@ -1,7 +1,7 @@
 # =============================================================================
 # backend/app/models/user.py
 # =============================================================================
-from sqlalchemy import Index, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
+from sqlalchemy import JSON, Index, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.app.database import Base
@@ -51,6 +51,28 @@ class User(Base):
     role                = Column(String, nullable=True, index=True)
     # Incremented on password reset / "log out everywhere": invalidates JWTs.
     token_version       = Column(Integer, default=0, nullable=False, server_default="0")
+
+    # ── Account integrity & security controls ────────────────────────────────
+    # Normalised address (lower-case, +tag removed, Gmail dots removed) used to
+    # reject duplicate sign-ups such as j.doe+2@gmail.com vs jdoe@gmail.com.
+    email_canonical      = Column(String(255), nullable=True, index=True)
+    signup_ip            = Column(String(64), nullable=True)
+    suspended_at         = Column(DateTime, nullable=True)
+    suspended_reason     = Column(String(255), nullable=True)
+    force_password_reset = Column(Boolean, default=False, nullable=False, server_default="false")
+    last_login_at        = Column(DateTime, nullable=True)
+    last_login_ip        = Column(String(64), nullable=True)
+    last_login_location  = Column(String(128), nullable=True)
+    # Two-step verification (TOTP). The secret is encrypted at rest; recovery
+    # codes are stored as SHA-256 hashes and consumed on use.
+    totp_secret          = Column(String(255), nullable=True)
+    totp_enabled_at      = Column(DateTime, nullable=True)
+    totp_recovery_codes  = Column(JSON, nullable=True)
+    # Employer review
+    company_url          = Column(String(255), nullable=True)
+    hr_job_title         = Column(String(128), nullable=True)
+    hr_rejected_at       = Column(DateTime, nullable=True)
+    hr_rejected_reason   = Column(String(255), nullable=True)
 
     created_at          = Column(DateTime, default=datetime.utcnow)
 

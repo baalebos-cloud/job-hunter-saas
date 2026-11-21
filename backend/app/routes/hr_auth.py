@@ -224,9 +224,10 @@ def hr_signup(
     # 1. Validate company email — no free providers
     domain = _validate_company_email(payload.email)
 
-    # 2. Check duplicate
-    if db.query(User).filter(User.email == payload.email.lower()).first():
-        raise HTTPException(status_code=400, detail="Email already registered.")
+    # 2. Duplicate, disposable and per-IP checks (same rules as candidates)
+    from backend.app.core.client_ip import client_ip
+    from backend.app.services.account_integrity import check_new_signup
+    canonical = check_new_signup(db, request, payload.email, 'hr')
 
     if len(payload.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
@@ -242,6 +243,11 @@ def hr_signup(
         hashed_password=hash_password(payload.password),
         company_name=payload.company_name.strip(),
         country=payload.country or None,
+        email_canonical=canonical,
+        signup_ip=client_ip(request),
+        company_url=(payload.company_url or '').strip()[:255] or None,
+        linkedin_url=(payload.linkedin_url or '').strip() or None,
+        hr_job_title=(payload.job_title or '').strip()[:128] or None,
         is_hr=True,
         is_verified=False,
         verification_token=verification_digest,
@@ -352,13 +358,13 @@ def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: 
     4. Account is admin-approved (is_verified + not blocked)
     5. Correct password
     """
-    from backend.app.routes.auth import authenticate, start_session
+    from backend.app.routes.auth import authenticate, finish_login
     # Block free email logins at the HR portal
     _validate_company_email(payload.email)
     user = authenticate(db, request, payload.email, payload.password, hr_login_guard)
     from backend.app.services import security_events
     refusal = ('not_an_employer' if not user.is_hr else 'email_unverified' if not user.is_verified
-               else 'awaiting_approval' if not user.hr_approved else None)
+               else 'rejected' if user.hr_rejected_at else 'awaiting_approval' if not user.hr_approved else None)
     if refusal:
         security_events.record('login.denied', request, user=user, portal='hr', details={'reason': refusal})
 
@@ -376,10 +382,12 @@ def hr_login(payload: HRLoginRequest, request: Request, response: Response, db: 
                    "Please check your inbox for the verification link, or request a new one."
         )
 
+    if user.hr_rejected_at:
+        raise HTTPException(403, "Your employer application was not approved. Contact support for details.")
     if not user.hr_approved:
         raise HTTPException(403, "Your employer account is awaiting administrator approval.")
 
-    return start_session(db, user, response, {
+    return finish_login(db, request, response, user, 'hr', {
         "is_hr":        True,
         "full_name":    user.full_name,
         "company_name": user.company_name,
@@ -412,6 +420,8 @@ def approve_hr_account(
     if not user.is_verified:
         raise HTTPException(400, "HR must verify their email before approval")
     user.hr_approved = True
+    user.hr_rejected_at = None
+    user.hr_rejected_reason = None
     db.commit()
     from backend.app.services import security_events
     security_events.record('admin.hr_approved', request, user=admin,
@@ -433,7 +443,8 @@ def list_pending_hr(db: Session = Depends(get_db), admin=Depends(require_admin))
     """List all HR accounts awaiting approval."""
     pending = db.query(User).filter(
         User.is_hr == True,
-        User.hr_approved == False
+        User.hr_approved == False,
+        User.hr_rejected_at.is_(None),
     ).order_by(User.created_at.desc()).all()
     return [
         {
@@ -447,3 +458,44 @@ def list_pending_hr(db: Session = Depends(get_db), admin=Depends(require_admin))
         }
         for u in pending
     ]
+
+
+class HRRejectRequest(BaseModel):
+    reason: str = ""
+    notify: bool = True
+
+
+def _send_hr_rejection_email(to_email: str, full_name: str, company_name: str, reason: str) -> bool:
+    reason_html = f"<p><b>Reason:</b> {escape(reason)}</p>" if reason else ""
+    html = f"""<html><body style="font-family:Inter,Arial,sans-serif;color:#0f172a;max-width:560px;margin:auto;">
+    <h2 style="font-size:18px;">Your employer application</h2>
+    <p>Hi {escape(full_name or 'there')},</p>
+    <p>Thank you for applying to post jobs on Baalebos for <b>{escape(company_name or 'your company')}</b>.
+    We could not approve the account at this time.</p>{reason_html}
+    <p>If you believe this is a mistake, reply to this email with your company website and a work email
+    on your company domain, and we will review it again.</p></body></html>"""
+    return send_account_message(to_email, "Your Baalebos employer application", html)
+
+
+# ── POST /hr-auth/reject/{user_id} — Admin only ──────────────────────────────
+@router.post("/reject/{user_id}")
+def reject_hr_account(user_id: int, payload: HRRejectRequest, request: Request, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), admin=Depends(require_admin)):
+    user = db.query(User).filter(User.id == user_id, User.is_hr == True).first()  # noqa: E712
+    if not user:
+        raise HTTPException(status_code=404, detail="HR user not found.")
+    reason = (payload.reason or '').strip()[:255]
+    user.hr_approved = False
+    user.hr_rejected_at = datetime.utcnow()
+    user.hr_rejected_reason = reason or None
+    from backend.app.services.auth_service import revoke_all_sessions
+    revoke_all_sessions(db, user)
+    db.commit()
+    from backend.app.services import security_events
+    security_events.record('admin.hr_rejected', request, user=admin,
+                           details={'target_user_id': user.id, 'target_email': user.email,
+                                    'company': user.company_name, 'reason': reason or None})
+    if payload.notify:
+        background_tasks.add_task(_send_hr_rejection_email, to_email=user.email, full_name=user.full_name or "",
+                                  company_name=user.company_name or "", reason=reason)
+    return {"message": f"Employer application rejected for {user.email}", "user_id": user_id}

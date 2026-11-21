@@ -44,9 +44,12 @@ def start_session(db: Session, user: User, response: Response, extra: dict | Non
 
 
 def authenticate(db: Session, request: Request, email: str, password: str, guard: LoginGuard = login_guard) -> User:
-    from backend.app.services import security_events
+    """Check the password and account status. The sign-in is recorded as a
+    success only once it completes (see finish_login / the 2FA step)."""
+    from backend.app.services import security_events, security_controls
     from backend.app.core.metrics import LOGIN_ATTEMPTS
     ip, email = client_ip(request), (email or '').lower().strip()
+    security_controls.ensure_ip_allowed(db, request, email=email, portal=guard.scope)
     try:
         guard.check(ip, email)
     except HTTPException:
@@ -60,14 +63,37 @@ def authenticate(db: Session, request: Request, email: str, password: str, guard
         security_events.record('login.failed', request, user=user, email=email, portal=guard.scope,
                                details={'reason': 'wrong_password' if user else 'unknown_account'})
         LOGIN_ATTEMPTS.labels(portal=guard.scope, outcome='failed').inc()
+        security_controls.note_failed_sign_in(db, request, email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if new_hash:  # transparently upgrade legacy bcrypt hashes
         user.hashed_password = new_hash
         db.commit()
     guard.success(ip, email)
-    security_events.record('login.success', request, user=user, portal=guard.scope)
-    LOGIN_ATTEMPTS.labels(portal=guard.scope, outcome='success').inc()
+    try:
+        security_controls.ensure_account_usable(user, request, guard.scope)
+    except HTTPException:
+        LOGIN_ATTEMPTS.labels(portal=guard.scope, outcome='denied').inc()
+        raise
     return user
+
+
+def complete_login(db: Session, request: Request, user: User, portal: str):
+    from backend.app.services import security_events, security_controls
+    from backend.app.core.metrics import LOGIN_ATTEMPTS
+    security_controls.record_sign_in(db, request, user, portal)
+    security_events.record('login.success', request, user=user, portal=portal)
+    LOGIN_ATTEMPTS.labels(portal=portal, outcome='success').inc()
+
+
+def finish_login(db: Session, request: Request, response: Response, user: User, portal: str,
+                 extra: dict | None = None) -> dict:
+    """Start a session, or ask for the authenticator code when 2FA is on."""
+    if user.totp_enabled_at:
+        from backend.app.services.mfa import issue_mfa_token
+        return {"mfa_required": True, "mfa_token": issue_mfa_token(user, {**(extra or {}), "portal": portal}),
+                "token_type": "mfa"}
+    complete_login(db, request, user, portal)
+    return start_session(db, user, response, extra)
 
 
 # ── SIGNUP ───────────────────────────────────────────────────────────────────
@@ -76,11 +102,11 @@ def signup(user: UserCreate, request: Request, response: Response, background_ta
            db: Session = Depends(get_db)):
     if len(user.password) < MIN_PASSWORD:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-    if db.query(User).filter(User.email == user.email.lower().strip()).first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Email already registered. Please login instead.")
+    from backend.app.services.account_integrity import check_new_signup
+    canonical = check_new_signup(db, request, user.email, 'login')
     raw_token, token_digest = new_opaque_token()
     new_user = User(email=user.email.lower().strip(), full_name=user.full_name.strip(),
+                    email_canonical=canonical, signup_ip=client_ip(request),
                     hashed_password=hash_password(user.password), career_track=user.career_track,
                     country=user.country, is_hr=False, company_name=user.company_name,
                     is_verified=False, verification_token=token_digest)
@@ -149,6 +175,7 @@ def reset_password(payload: ResetPasswordRequest, request: Request, response: Re
     user.hashed_password = hash_password(payload.new_password)
     user.reset_token = None
     user.reset_token_expires = None
+    user.force_password_reset = False
     revoke_all_sessions(db, user)  # every existing JWT and refresh token stops working
     db.commit()
     from backend.app.services import security_events
@@ -158,9 +185,50 @@ def reset_password(payload: ResetPasswordRequest, request: Request, response: Re
 
 
 # ── LOGIN / SESSIONS ─────────────────────────────────────────────────────────
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, response_model_exclude_none=True)
 def login(user: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
-    return start_session(db, authenticate(db, request, user.email, user.password), response)
+    return finish_login(db, request, response, authenticate(db, request, user.email, user.password), 'login')
+
+
+class MfaLoginRequest(BaseModel):
+    mfa_token: str = Field(min_length=20, max_length=4096)
+    code: str = Field(min_length=6, max_length=32)
+
+
+@router.post("/login/mfa")
+def login_mfa(payload: MfaLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Second sign-in step: the 6-digit authenticator code or a recovery code."""
+    from backend.app.core.kv_store import safe_call
+    from backend.app.core.rate_limit import _email_key, hit
+    from backend.app.services import mfa, security_controls, security_events
+    claims = mfa.read_mfa_token(payload.mfa_token)
+    if not claims or safe_call('exists', f"mfa:spent:{claims['jti']}", default=False):
+        raise HTTPException(401, "This sign-in step has expired. Please sign in again.")
+    allowed, retry = hit(f"mfa:{_email_key(claims['sub'])}", 5, 300)
+    if not allowed:
+        raise HTTPException(429, f"Too many codes tried. Wait {retry} seconds and sign in again.",
+                            headers={"Retry-After": str(retry)})
+    user = db.query(User).filter(User.email == claims['sub']).first()
+    if not user or not user.totp_enabled_at or int(claims.get('tv', 0)) != int(user.token_version or 0):
+        raise HTTPException(401, "This sign-in step has expired. Please sign in again.")
+    extra = dict(claims.get('x') or {})
+    portal = extra.pop('portal', 'login')
+    security_controls.ensure_account_usable(user, request, portal)
+    code = payload.code.strip()
+    used_recovery = False
+    if not mfa.verify_code(user, code):
+        used_recovery = mfa.use_recovery_code(user, code)
+        if not used_recovery:
+            security_events.record('login.failed', request, user=user, portal=portal,
+                                   details={'reason': 'wrong_2fa_code'})
+            security_controls.note_failed_sign_in(db, request, user.email)
+            raise HTTPException(401, "That code is not valid. Check your authenticator app and try again.")
+        db.commit()
+    safe_call('setex', f"mfa:spent:{claims['jti']}", mfa.MFA_TOKEN_MINUTES * 60, '1')
+    complete_login(db, request, user, portal)
+    if used_recovery:
+        extra['recovery_codes_left'] = len(user.totp_recovery_codes or [])
+    return start_session(db, user, response, extra)
 
 
 @router.post("/refresh")
@@ -215,7 +283,8 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
             "full_name": current_user.full_name, "career_track": current_user.career_track,
             "country": current_user.country, "is_admin": is_owner(current_user),
             "is_hr": bool(current_user.is_hr and current_user.is_verified and current_user.hr_approved),
-            "role": current_user.role, "permissions": permissions}
+            "role": current_user.role, "permissions": permissions,
+            "mfa_enabled": bool(current_user.totp_enabled_at)}
 
 
 # ── ADMIN LOGIN ──────────────────────────────────────────────────────────────
@@ -229,5 +298,82 @@ def admin_login(user: UserLogin, request: Request, response: Response, db: Sessi
         security_events.record('login.denied', request, user=db_user, portal='admin',
                                details={'reason': 'not_an_admin'})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Admin account required.")
-    return start_session(db, db_user, response, {"is_admin": True, "email": db_user.email,
-                                                  "full_name": db_user.full_name, "redirect": "/admin"})
+    return finish_login(db, request, response, db_user, 'admin',
+                        {"is_admin": True, "email": db_user.email, "full_name": db_user.full_name, "redirect": "/admin"})
+
+
+# ── TWO-STEP VERIFICATION (authenticator app) ────────────────────────────────
+class MfaCode(BaseModel):
+    code: str = Field(min_length=6, max_length=32)
+
+
+@router.get("/2fa")
+def mfa_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from backend.app.dependencies.roles import has_permission
+    from backend.app.services.mfa import admin_2fa_required
+    return {"enabled": bool(current_user.totp_enabled_at),
+            "enabled_at": current_user.totp_enabled_at.isoformat() + "Z" if current_user.totp_enabled_at else None,
+            "recovery_codes_left": len(current_user.totp_recovery_codes or []),
+            "required": admin_2fa_required() and has_permission(db, current_user, 'admin:access')}
+
+
+@router.post("/2fa/setup")
+def mfa_setup(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Create a new secret (not active until confirmed with a code)."""
+    from backend.app.services import mfa
+    if current_user.totp_enabled_at:
+        raise HTTPException(400, "Two-step verification is already on. Turn it off first to change devices.")
+    secret = mfa.new_secret()
+    current_user.totp_secret = mfa.encrypt_secret(secret)
+    db.commit()
+    return {"secret": secret, "otpauth_uri": mfa.otpauth_uri(secret, current_user.email)}
+
+
+@router.post("/2fa/enable")
+def mfa_enable(payload: MfaCode, request: Request, response: Response,
+               current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Confirm the first code. Other sessions are signed out; this one continues."""
+    from backend.app.services import mfa, security_events
+    if current_user.totp_enabled_at:
+        raise HTTPException(400, "Two-step verification is already on.")
+    if not current_user.totp_secret or not mfa.verify_code(current_user, payload.code):
+        raise HTTPException(400, "That code is not valid. Check the time on your phone and try the newest code.")
+    current_user.totp_enabled_at = datetime.utcnow()
+    codes = mfa.new_recovery_codes(current_user)
+    revoke_all_sessions(db, current_user)
+    db.commit()
+    security_events.record('mfa.enabled', request, user=current_user)
+    return start_session(db, current_user, response, {"recovery_codes": codes})
+
+
+@router.post("/2fa/disable")
+def mfa_disable(payload: MfaCode, request: Request, current_user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    from backend.app.services import mfa, security_controls, security_events
+    if not current_user.totp_enabled_at:
+        return {"message": "Two-step verification is already off."}
+    if not (mfa.verify_code(current_user, payload.code) or mfa.use_recovery_code(current_user, payload.code)):
+        raise HTTPException(400, "That code is not valid.")
+    current_user.totp_secret = None
+    current_user.totp_enabled_at = None
+    current_user.totp_recovery_codes = None
+    db.commit()
+    security_events.record('mfa.disabled', request, user=current_user)
+    if security_controls.is_admin_account(current_user):
+        from html import escape
+        security_controls.owner_alert(db, f'mfa-off:{current_user.id}:{datetime.utcnow():%Y%m%d%H%M}',
+                                      'Two-step verification turned off on an admin account',
+                                      f'<p><b>{escape(current_user.email)}</b> turned off two-step verification.</p>')
+    return {"message": "Two-step verification is off."}
+
+
+@router.post("/2fa/recovery-codes")
+def mfa_new_recovery_codes(payload: MfaCode, request: Request, current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    from backend.app.services import mfa, security_events
+    if not current_user.totp_enabled_at or not mfa.verify_code(current_user, payload.code):
+        raise HTTPException(400, "That code is not valid.")
+    codes = mfa.new_recovery_codes(current_user)
+    db.commit()
+    security_events.record('mfa.recovery_codes_reset', request, user=current_user)
+    return {"recovery_codes": codes}

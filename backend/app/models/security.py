@@ -39,3 +39,25 @@ class RbacPermission(Base):
     id = Column(Integer, primary_key=True)
     role = Column(String(64), ForeignKey("rbac_roles.name", ondelete="CASCADE"), nullable=False)
     permission = Column(String(64), nullable=False)
+
+
+class BlockedIP(Base):
+    """IP addresses refused at sign-in and sign-up. ``expires_at`` NULL = permanent."""
+    __tablename__ = "blocked_ips"
+
+    id = Column(Integer, primary_key=True)
+    ip = Column(String(64), unique=True, nullable=False)
+    reason = Column(String(255), nullable=True)
+    created_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+
+
+class DismissedDuplicate(Base):
+    """A suspected-duplicate group an admin reviewed and marked as legitimate."""
+    __tablename__ = "dismissed_duplicates"
+
+    id = Column(Integer, primary_key=True)
+    group_key = Column(String(160), unique=True, nullable=False)
+    dismissed_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
