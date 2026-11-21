@@ -96,3 +96,22 @@ def test_resend_is_rate_limited(db, resend, monkeypatch):
     assert response.status_code == 429 and response.headers['Retry-After'] == '1800'
     assert calls[0][1] == hr_auth.RESEND_LIMIT_PER_EMAIL and calls[1][1] == hr_auth.RESEND_LIMIT_PER_IP
     assert 'acme-hiring' not in calls[0][0]   # the email itself is hashed in the key
+
+
+def test_pending_list_shows_whether_each_employer_verified_their_email(db, resend):
+    from backend.app.services.auth_service import create_access_token
+    db.add_all([User(email='owner@baalebo.example', hashed_password='x', is_admin=True, role='super_admin', is_verified=True),
+                User(email='ready@acme-hiring.example', hashed_password='x', is_hr=True, is_verified=True, company_name='Acme'),
+                User(email='waiting@acme-hiring.example', hashed_password='x', is_hr=True, is_verified=False, company_name='Acme')])
+    db.commit()
+    headers = {'Authorization': 'Bearer ' + create_access_token({'sub': 'owner@baalebo.example'})}
+    client = TestClient(app)
+    pending = {p['email']: p['is_verified'] for p in client.get('/api/v1/hr-auth/pending', headers=headers).json()}
+    assert pending == {'ready@acme-hiring.example': True, 'waiting@acme-hiring.example': False}
+    waiting = db.query(User).filter_by(email='waiting@acme-hiring.example').one()
+    refused = client.post(f'/api/v1/hr-auth/approve/{waiting.id}', headers=headers)
+    assert refused.status_code == 400 and 'verify' in refused.json()['detail']
+    ready = db.query(User).filter_by(email='ready@acme-hiring.example').one()
+    assert client.post(f'/api/v1/hr-auth/approve/{ready.id}', headers=headers).status_code == 200
+    db.refresh(ready)
+    assert ready.hr_approved
