@@ -15,7 +15,7 @@ from backend.app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _send(to_email: str, subject: str, html_content: str) -> bool:
+def _send(to_email: str, subject: str, html_content: str, reply_to: str | None = None) -> bool:
     """
     Core send function — SMTP SSL.
     Reused by all email functions below.
@@ -24,6 +24,8 @@ def _send(to_email: str, subject: str, html_content: str) -> bool:
     msg["Subject"] = subject
     msg["From"]    = f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>"
     msg["To"]      = to_email
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.attach(MIMEText(html_content, "html"))
 
     try:
@@ -38,15 +40,18 @@ def _send(to_email: str, subject: str, html_content: str) -> bool:
         return False
 
 
-def _send_resend_verification(to_email: str, subject: str, html_content: str) -> bool:
+def _send_resend_verification(to_email: str, subject: str, html_content: str, reply_to: str | None = None) -> bool:
     # HTTPS works on Railway Hobby. Do not fall back to SMTP on API
     # failure: a timed-out send may already have been accepted.
+    payload = {"from": f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>",
+               "to": [to_email], "subject": subject, "html": html_content}
+    if reply_to:
+        payload["reply_to"] = [reply_to]
     try:
         response = httpx.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-            json={"from": f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>",
-                  "to": [to_email], "subject": subject, "html": html_content},
+            json=payload,
             timeout=15.0,
         )
         if not 200 <= response.status_code < 300:
@@ -133,7 +138,7 @@ def send_verification_email(to_email: str, token: str, full_name: str = "") -> b
     return send_account_message(to_email, subject, html_content)
 
 
-def send_account_message(to_email: str, subject: str, html_content: str) -> bool:
+def send_account_message(to_email: str, subject: str, html_content: str, reply_to: str | None = None) -> bool:
     """Deliver an account-access message: email verification (candidate and
     HR) and the employer approval lifecycle (admin alert, approval notice).
 
@@ -141,9 +146,10 @@ def send_account_message(to_email: str, subject: str, html_content: str) -> bool
     outbound SMTP, so SMTP-only mail never arrives there. Other flows
     (welcome, password reset, notifications) intentionally stay on ``_send``.
     """
+    extra = {"reply_to": reply_to} if reply_to else {}
     if settings.RESEND_API_KEY:
-        return _send_resend_verification(to_email, subject, html_content)
-    return _send(to_email, subject, html_content)
+        return _send_resend_verification(to_email, subject, html_content, **extra)
+    return _send(to_email, subject, html_content, **extra)
 
 
 def send_welcome_email(to_email: str, full_name: str = "") -> bool:

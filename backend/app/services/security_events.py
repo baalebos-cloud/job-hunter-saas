@@ -37,6 +37,7 @@ EVENTS = {
     'admin.duplicate_dismissed': 'Admin marked accounts as not duplicates',
     'admin.exported': 'Admin exported data',
     'admin.jobs_cleared': 'Admin cleared scraped jobs',
+    'admin.support_replied': 'Admin answered a support request',
     'login.new_country': 'Sign-in from a new country',
     'signup.rejected': 'Sign-up rejected',
     'mfa.enabled': 'Two-step verification turned on',

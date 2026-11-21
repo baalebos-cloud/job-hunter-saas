@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = "noreply@baalebo.xyz"
     EMAILS_FROM_NAME: str = "Baalebos Cloud"
+    # Help & support: new requests are alerted here and replies come from it.
+    SUPPORT_EMAIL: str = "support@baalebo.xyz"
     FRONTEND_URL: str = "https://www.baalebo.xyz"
     N8N_APPLICATION_WEBHOOK_URL: str = ""
     N8N_EVENTS_WEBHOOK_URL: str = ""

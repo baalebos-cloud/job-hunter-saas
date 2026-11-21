@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Briefcase, Building2, Cpu, Crown, Database, LayoutDashboard, Play, RefreshCw, ScrollText, ShieldAlert, Users } from 'lucide-react';
+import { Activity, Briefcase, Building2, Cpu, Crown, Database, LayoutDashboard, LifeBuoy, Play, RefreshCw, ScrollText, ShieldAlert, Users } from 'lucide-react';
 import { adminGet, adminPost, ago, message, needsMfaEnrollment } from './adminApi';
 import MfaSetup from './MfaSetup';
 import { Banner, Button, ConfirmDialog, Spinner } from './ui';
@@ -10,12 +10,13 @@ import UsersTab from './tabs/UsersTab';
 import JobsTab from './tabs/JobsTab';
 import OperationsTab from './tabs/OperationsTab';
 import AuditTab from './tabs/AuditTab';
+import SupportTab from './tabs/SupportTab';
 
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || '';
 const TAB_ALIASES = { hr: 'employers', stats: 'overview', apps: 'jobs', automation: 'ops', ai: 'ops' };
 const TABS = [
   ['overview', 'Overview', LayoutDashboard], ['security', 'Security', ShieldAlert], ['employers', 'Employers', Building2],
-  ['users', 'Users', Users], ['jobs', 'Jobs & applications', Briefcase], ['ops', 'Operations', Cpu], ['audit', 'Audit log', ScrollText],
+  ['users', 'Users', Users], ['jobs', 'Jobs & applications', Briefcase], ['support', 'Support', LifeBuoy], ['ops', 'Operations', Cpu], ['audit', 'Audit log', ScrollText],
 ];
 
 function initialTab() {
@@ -142,6 +143,7 @@ export default function AdminDashboard() {
         {tab === 'users' && <UsersTab notify={setToast} confirm={setDialog} focus={focus} duplicateCount={duplicateCount} onChanged={loadOverview} />}
         {tab === 'jobs' && <JobsTab notify={setToast} confirm={setDialog} />}
         {tab === 'ops' && <OperationsTab system={sys} grafanaUrl={grafana} notify={setToast} onScrape={scrape} scraping={scraping} />}
+        {tab === 'support' && <SupportTab notify={setToast} />}
         {tab === 'audit' && <AuditTab />}
       </main>
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
