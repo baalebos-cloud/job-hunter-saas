@@ -400,6 +400,7 @@ def list_pending_hr(db: Session = Depends(get_db), admin=Depends(require_admin))
             "company_name": u.company_name,
             "country":      u.country,
             "created_at":   u.created_at,
+            "is_verified":  bool(u.is_verified),   # approval requires a verified email
         }
         for u in pending
     ]

@@ -20,6 +20,9 @@ export default function AdminDashboard() {
   const [automation, setAutomation] = useState(null);
   const [automationError, setAutomationError] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [pendingHR, setPendingHR] = useState(null);
+  const [hrError, setHrError] = useState('');
+  const [approving, setApproving] = useState(null);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
@@ -34,6 +37,11 @@ export default function AdminDashboard() {
     if (t === 'users')   { const r = await axios.get(`${API}/admin/users`, { headers: h() }); setUsers(r.data); }
     if (t === 'jobs')    { const r = await axios.get(`${API}/admin/jobs`, { headers: h() }); setJobs(r.data); }
     if (t === 'apps')    { const r = await axios.get(`${API}/admin/applications`, { headers: h() }); setApps(r.data); }
+    if (t === 'hr') {
+      setHrError('');
+      try { const r = await axios.get(`${API}/hr-auth/pending`, { headers: h() }); setPendingHR(r.data); }
+      catch (error) { setHrError(errorText(error, 'Could not load pending employer accounts.')); }
+    }
     if (t === 'automation') {
       setAutomationError('');
       try { const r = await axios.get(`${API}/admin/automation`, { headers: h() }); setAutomation(r.data); }
@@ -59,6 +67,18 @@ export default function AdminDashboard() {
     } catch (error) {
       setAIError(errorText(error, 'The diagnostic could not complete. Please try again.'));
     } finally { setTestingAI(false); }
+  };
+
+  const approveHR = async (account) => {
+    if (!confirm(`Approve ${account.company_name || account.email} as an employer? They will be able to post jobs.`)) return;
+    setApproving(account.id); setHrError('');
+    try {
+      const { data } = await axios.post(`${API}/hr-auth/approve/${account.id}`, {}, { headers: h() });
+      setMsg(data.message || 'Employer account approved.');
+      await load('hr');
+    } catch (error) {
+      setHrError(errorText(error, 'Could not approve this account. Please try again.'));
+    } finally { setApproving(null); }
   };
 
   const makeHR = async (id) => {
@@ -95,6 +115,7 @@ export default function AdminDashboard() {
     { id: 'stats', label: '📊 Stats' },
     { id: 'ai', label: 'AI Resume Test' },
     { id: 'automation', label: 'Automation' },
+    { id: 'hr', label: `🏢 HR Approvals${pendingHR?.length ? ` (${pendingHR.length})` : ''}` },
     { id: 'users', label: '👥 Users' },
     { id: 'jobs',  label: '💼 Jobs' },
     { id: 'apps',  label: '📋 Applications' },
@@ -135,6 +156,63 @@ export default function AdminDashboard() {
       </div>
 
       <div className="p-6">
+
+        {tab === 'hr' && (
+          <section className="max-w-6xl space-y-4">
+            <p className="text-slate-400 text-sm">
+              Employer accounts waiting for approval. Approved employers can post jobs and review applicants.
+              An employer must verify their email before they can be approved.
+            </p>
+            {hrError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-sm font-bold">{hrError}</div>
+            )}
+            {pendingHR === null ? (
+              !hrError && <p className="text-slate-500 text-sm">Loading…</p>
+            ) : pendingHR.length === 0 ? (
+              <p className="text-slate-500 text-sm">No employer accounts are waiting for approval.</p>
+            ) : (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-800/50">
+                    <tr>{['Name', 'Work email', 'Company', 'Country', 'Signed up', 'Email', 'Action'].map(col => (
+                      <th key={col} className="px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-400">{col}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {pendingHR.map(account => (
+                      <tr key={account.id} className="hover:bg-slate-800/30">
+                        <td className="px-4 py-3 font-semibold text-white">{account.full_name || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400">{account.email}</td>
+                        <td className="px-4 py-3 text-slate-300">{account.company_name || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400">{account.country || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400 text-xs">
+                          {account.created_at ? new Date(account.created_at).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {account.is_verified === undefined ? (
+                            <span className="text-xs text-slate-500">—</span>
+                          ) : (
+                            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                              account.is_verified ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                            }`}>{account.is_verified ? 'Verified' : 'Not verified'}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button onClick={() => approveHR(account)}
+                            disabled={approving === account.id || account.is_verified === false}
+                            title={account.is_verified === false ? 'The employer must verify their email first' : undefined}
+                            className="text-xs font-black px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed">
+                            {approving === account.id ? 'Approving…' : 'Approve'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         {tab === 'automation' && (
           <section className="max-w-5xl bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
