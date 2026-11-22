@@ -70,6 +70,34 @@ def _send_resend_verification(to_email: str, subject: str, html_content: str, re
 
 
 
+def send_resend_message(to_email: str, subject: str, html_content: str, text_content: str = "",
+                        headers: dict | None = None, idempotency_key: str | None = None) -> tuple[bool, str | None]:
+    """Resend send with a plain-text part, custom headers (e.g. List-Unsubscribe)
+    and an idempotency key, so a retried send can never deliver twice.
+    Returns (accepted, reason); never logs addresses or provider bodies."""
+    if not settings.RESEND_API_KEY:
+        return False, "not_configured"
+    payload = {"from": f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>",
+               "to": [to_email], "subject": subject, "html": html_content}
+    if text_content:
+        payload["text"] = text_content
+    if headers:
+        payload["headers"] = headers
+    request_headers = {"Authorization": f"Bearer {settings.RESEND_API_KEY}"}
+    if idempotency_key:
+        request_headers["Idempotency-Key"] = idempotency_key[:256]
+    try:
+        response = httpx.post("https://api.resend.com/emails", headers=request_headers, json=payload, timeout=15.0)
+        if not 200 <= response.status_code < 300:
+            return False, f"http_{response.status_code}"
+        body = response.json()
+        if not isinstance(body, dict) or not isinstance(body.get("id"), str) or not body["id"]:
+            return False, "invalid_acknowledgement"
+        return True, None
+    except Exception as exc:
+        return False, type(exc).__name__
+
+
 def send_verification_email(to_email: str, token: str, full_name: str = "") -> bool:
     """
     Sends email verification link after signup.

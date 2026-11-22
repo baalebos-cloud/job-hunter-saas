@@ -296,6 +296,7 @@ app.include_router(referral_router.router, prefix="/api/v1/referral",  tags=["Re
 app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR Auth"])
 app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Profile"])
 app.include_router(automation_router.router, prefix="/api/v1/automation", tags=["Automation"])
+app.include_router(automation_router.alerts_router, prefix="/api/v1/alerts", tags=["Job alerts"])
 app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
 app.include_router(privacy_router.router, prefix="/api/v1/privacy", tags=["Privacy"])
 app.include_router(governance_router.router, prefix="/api/v1/governance", tags=["Governance"])

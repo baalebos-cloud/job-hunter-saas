@@ -84,8 +84,24 @@ def _owners(db):
     return [user for user in db.query(User).filter(User.role == 'super_admin', User.is_verified.is_(True)).all() if is_owner(user)]
 
 
+def alert_channel_configured():
+    """Job alerts go through n8n when it is configured, otherwise straight through Resend."""
+    return bool((settings.N8N_EVENTS_WEBHOOK_URL and settings.N8N_WEBHOOK_SECRET) or settings.RESEND_API_KEY)
+
+
+def _digest_period(user, now):
+    """Event key and minimum gap for the user's chosen frequency."""
+    if (user.job_alert_frequency or "daily") == "weekly":
+        year, week, _ = now.isocalendar()
+        return f"{year}-W{week:02d}", timedelta(days=7)
+    return now.date().isoformat(), timedelta(hours=0)
+
+
 def queue_job_digests(db, now):
-    """At most one digest per opted-in user per UTC day, for newly seen jobs."""
+    """At most one digest per opted-in user per day (or week), for newly seen jobs,
+    ranked by match % and filtered by the user's minimum match."""
+    from backend.app.routes.job_board import user_skills
+    from backend.app.services import job_alerts
     users = db.query(User).filter(User.job_alerts_enabled.is_(True), User.is_verified.is_(True),
                                  User.available_for_work.is_(True), User.is_hr.is_(False),
                                  User.is_admin.is_(False)).all()
@@ -93,26 +109,40 @@ def queue_job_digests(db, now):
     for user in users:
         if not user.job_alerts_enabled_at:
             continue
-        event_id = f"baalebos-job-digest-{user.id}-{now.date().isoformat()}"
+        period, gap = _digest_period(user, now)
+        event_id = f"baalebos-job-digest-{user.id}-{period}"
         if db.get(AutomationEvent, event_id):
             continue
         previous = db.query(AutomationEvent).filter_by(recipient_id=user.id, event_type="jobs.matched").order_by(AutomationEvent.created_at.desc()).first()
-        since = max(user.job_alerts_enabled_at, now - timedelta(days=3), previous.created_at if previous else user.job_alerts_enabled_at)
+        if previous and now - previous.created_at < gap:
+            continue
+        lookback = timedelta(days=10 if gap else 3)
+        since = max(user.job_alerts_enabled_at, now - lookback, previous.created_at if previous else user.job_alerts_enabled_at)
         candidates = db.query(Job).filter(Job.is_active.is_(True), Job.first_seen_at >= since,
                                           Job.first_seen_at < now).order_by(Job.first_seen_at.desc(), Job.id.desc()).all()
-        matches = [job for job in candidates if matches_preferences(job, user)]
-        if not matches:
+        mine = user_skills(db, user)
+        minimum = user.job_alert_min_match or 0
+        scored, seen_roles = [], set()
+        for job in candidates:
+            if not matches_preferences(job, user):
+                continue
+            key = job.dedupe_key or f"id-{job.id}"
+            if key in seen_roles:            # never list one role twice
+                continue
+            result = job_alerts.score(job, mine)
+            if minimum and (result["score"] is None or result["score"] < minimum):
+                continue
+            seen_roles.add(key)
+            scored.append((job, result))
+        if not scored:
             continue
-        lines = [f"{len(matches)} new jobs match your role and location preferences.", ""]
-        for job in matches[:10]:
-            kind = "Apply on Baalebos" if job.posted_by_hr and not job.url else "Complete the employer's application form"
-            lines.append(f"{job.title} at {job.company} — {job.location or 'Location not specified'}\n{kind}. Job ID: {job.id}\n")
-        lines += ["See the job feed: https://www.baalebo.xyz/jobs",
-                  "Review the full requirements and location restrictions before applying. A match is not a hiring or eligibility assessment.",
-                  "Turn off job alerts in My Profile: https://www.baalebo.xyz/profile"]
+        ranked = job_alerts.rank(scored)[:job_alerts.MAX_JOBS]
+        digest = job_alerts.build_digest(user, ranked, user.job_alert_frequency or "daily")
         queued += int(enqueue(db, event_id, "jobs.matched", user, {
-            "job_ids": [job.id for job in matches[:10]], "subject": "New jobs matching your preferences",
-            "text": "\n".join(lines),
+            "job_ids": [job.id for job, _ in ranked],
+            "scores": {str(job.id): result["score"] for job, result in ranked},
+            "subject": digest["subject"], "text": digest["text"], "html": digest["html"],
+            "headers": digest["headers"],
         }, now))
     return queued
 
@@ -189,6 +219,12 @@ def _recipient_allowed(db, event, user, now):
 
 def _deliver(event):
     url = settings.N8N_EVENTS_WEBHOOK_URL
+    if not url and event.event_type == "jobs.matched":
+        from backend.app.utils.email import send_resend_message
+        payload = event.payload
+        return send_resend_message(payload["to_email"], payload["subject"], payload.get("html") or "",
+                                   payload.get("text") or "", headers=payload.get("headers"),
+                                   idempotency_key=event.event_id)
     if not url and event.event_type == "application.created":
         accepted = notify_new_application(event.payload["application_id"], event.payload["job_title"], event.payload["employer_email"])
         return accepted, None if accepted else "webhook_rejected"
@@ -221,7 +257,8 @@ def dispatch_pending(db=None, limit=10, now=None, only_event_id=None):
                   (AutomationEvent.status == "processing") & (AutomationEvent.locked_until <= now))
         query = db.query(AutomationEvent.event_id).filter(due, AutomationEvent.next_attempt_at <= now)
         if not settings.N8N_EVENTS_WEBHOOK_URL:
-            query = query.filter(AutomationEvent.event_type == "application.created")
+            allowed = ["application.created"] + (["jobs.matched"] if settings.RESEND_API_KEY else [])
+            query = query.filter(AutomationEvent.event_type.in_(allowed))
         if only_event_id:
             query = query.filter(AutomationEvent.event_id == only_event_id)
         candidates = query.order_by(AutomationEvent.created_at).limit(limit).all()
@@ -230,8 +267,12 @@ def dispatch_pending(db=None, limit=10, now=None, only_event_id=None):
                 break
             event = db.get(AutomationEvent, event_id)
             # Leave disabled/configuration-less channels pending for setup.
-            configured = settings.N8N_EVENTS_WEBHOOK_URL or (event.event_type == "application.created" and settings.N8N_APPLICATION_WEBHOOK_URL)
-            if not configured or not settings.N8N_WEBHOOK_SECRET:
+            if event.event_type == "jobs.matched" and not settings.N8N_EVENTS_WEBHOOK_URL:
+                configured = bool(settings.RESEND_API_KEY)      # direct email, no webhook secret involved
+            else:
+                configured = bool((settings.N8N_EVENTS_WEBHOOK_URL or (event.event_type == "application.created" and settings.N8N_APPLICATION_WEBHOOK_URL))
+                                  and settings.N8N_WEBHOOK_SECRET)
+            if not configured:
                 continue
             token = uuid.uuid4().hex
             claimed = db.query(AutomationEvent).filter(AutomationEvent.event_id == event_id, due,
@@ -285,12 +326,24 @@ def dispatch_pending(db=None, limit=10, now=None, only_event_id=None):
 
 def run_tick(db, now=None):
     now = now or datetime.utcnow()
-    queued = queue_job_digests(db, now) if settings.N8N_EVENTS_WEBHOOK_URL else 0
+    queued = queue_job_digests(db, now) if alert_channel_configured() else 0
     if settings.N8N_EVENTS_WEBHOOK_URL:
         queue_admin_reports(db, now)
     db.commit()
     result = dispatch_pending(db=db, now=now)
     return {"queued_job_digests": queued, **result}
+
+
+def _job_alert_status(db):
+    today = datetime.combine(datetime.utcnow().date(), datetime.min.time())
+    digests = db.query(AutomationEvent).filter(AutomationEvent.event_type == "jobs.matched")
+    return {
+        "channel": "n8n" if settings.N8N_EVENTS_WEBHOOK_URL else ("email" if settings.RESEND_API_KEY else None),
+        "subscribers": db.query(User).filter(User.job_alerts_enabled.is_(True), User.is_verified.is_(True)).count(),
+        "sent_today": digests.filter(AutomationEvent.status == "sent", AutomationEvent.sent_at >= today).count(),
+        "pending": digests.filter(AutomationEvent.status.in_(["pending", "processing"])).count(),
+        "failed": digests.filter(AutomationEvent.status == "failed").count(),
+    }
 
 
 def automation_status(db):
@@ -299,6 +352,7 @@ def automation_status(db):
         "events_configured": bool(settings.N8N_EVENTS_WEBHOOK_URL and settings.N8N_WEBHOOK_SECRET),
         "application_notifications_configured": bool((settings.N8N_EVENTS_WEBHOOK_URL or settings.N8N_APPLICATION_WEBHOOK_URL) and settings.N8N_WEBHOOK_SECRET),
         "notification_counts": dict(db.query(AutomationEvent.status, func.count()).group_by(AutomationEvent.status).all()),
+        "job_alerts": _job_alert_status(db),
         "last_scrape": {"run_id": latest.id, "status": latest.status, "started_at": latest.started_at,
                         "finished_at": latest.finished_at, "summary": latest.summary} if latest else None,
         "failed_notifications": [{"event_id": event.event_id, "event_type": event.event_type, "attempts": event.attempts,
