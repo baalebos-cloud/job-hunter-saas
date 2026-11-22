@@ -16,7 +16,7 @@ const PLANS = [
     badge:    null,
     color:    'slate',
     features: [
-      '2 AI resume scans per month',
+      '3 AI resume scans per month',
       'ATS score + keyword analysis',
       'Basic PDF download',
       'Global job feed access',

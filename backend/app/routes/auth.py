@@ -97,9 +97,35 @@ def finish_login(db: Session, request: Request, response: Response, user: User, 
 
 
 # ── SIGNUP ───────────────────────────────────────────────────────────────────
-@router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+VERIFY_FIRST = ("Your email address has not been verified yet. Open the verification link we emailed you, "
+                "or request a new one below.")
+RESEND_MESSAGE = "If that account needs verifying, a new verification link is on its way. Check your inbox and spam folder."
+
+
+def _attribute_referral(db: Session, new_user: User, ref_code: str | None):
+    """Record who invited this account. Done server-side at signup because the
+    account has no session until its email is verified. Never blocks signup."""
+    if not ref_code:
+        return
+    from backend.app.models.referral import Referral
+    try:
+        referrer = db.query(User).filter(User.referral_code == ref_code.strip()[:64]).first()
+        if not referrer or referrer.id == new_user.id:
+            return
+        if db.query(Referral).filter(Referral.referred_email == new_user.email).first():
+            return
+        db.add(Referral(referrer_id=referrer.id, referred_email=new_user.email,
+                        referred_user_id=new_user.id, status='pending'))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+@router.post("/signup", status_code=status.HTTP_201_CREATED)
 def signup(user: UserCreate, request: Request, response: Response, background_tasks: BackgroundTasks,
            db: Session = Depends(get_db)):
+    """Create the account and email a verification link. No session is started:
+    the account can sign in only after the email address is verified."""
     if len(user.password) < MIN_PASSWORD:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
     from backend.app.services.account_integrity import check_new_signup
@@ -115,9 +141,11 @@ def signup(user: UserCreate, request: Request, response: Response, background_ta
     db.refresh(new_user)
     from backend.app.services import security_events
     security_events.record('signup', request, user=new_user, portal='login')
+    _attribute_referral(db, new_user, user.ref_code)
     background_tasks.add_task(send_verification_email, to_email=new_user.email, token=raw_token,
                               full_name=new_user.full_name or "")
-    return start_session(db, new_user, response)
+    return {"verification_required": True, "email": new_user.email,
+            "message": "Account created. We emailed you a verification link: verify your email, then sign in."}
 
 
 # ── EMAIL VERIFICATION ───────────────────────────────────────────────────────
@@ -133,6 +161,32 @@ def verify_email(token: str, background_tasks: BackgroundTasks, db: Session = De
     db.commit()
     background_tasks.add_task(send_welcome_email, to_email=user.email, full_name=user.full_name or "")
     return {"message": "Email verified successfully! Welcome to Baalebos Cloud."}
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/verification/resend")
+def resend_verification_by_email(payload: ResendVerificationRequest, request: Request, background_tasks: BackgroundTasks,
+                                 db: Session = Depends(get_db)):
+    """For accounts that cannot sign in yet. Same answer whether or not the
+    account exists (no enumeration); rate limited per email and per IP."""
+    from backend.app.core.rate_limit import _email_key, hit
+    email = payload.email.lower().strip()
+    for key, limit in ((f'verify-resend:email:{_email_key(email)}', 3), (f'verify-resend:ip:{client_ip(request)}', 10)):
+        allowed, retry_after = hit(key, limit, 3600)
+        if not allowed:
+            raise HTTPException(429, f'Too many requests. Try again in {retry_after // 60 + 1} minutes.',
+                                headers={'Retry-After': str(retry_after)})
+    user = db.query(User).filter(User.email == email, User.is_hr != True).first()  # noqa: E712
+    if user and not user.is_verified:
+        raw_token, token_digest = new_opaque_token()
+        user.verification_token = token_digest      # the previous link stops working
+        db.commit()
+        background_tasks.add_task(send_verification_email, to_email=user.email, token=raw_token,
+                                  full_name=user.full_name or "")
+    return {"message": RESEND_MESSAGE}
 
 
 @router.post("/resend-verification")
@@ -187,7 +241,13 @@ def reset_password(payload: ResetPasswordRequest, request: Request, response: Re
 # ── LOGIN / SESSIONS ─────────────────────────────────────────────────────────
 @router.post("/login", response_model=TokenResponse, response_model_exclude_none=True)
 def login(user: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
-    return finish_login(db, request, response, authenticate(db, request, user.email, user.password), 'login')
+    account = authenticate(db, request, user.email, user.password)
+    if not account.is_verified:
+        # Checked after the password, so it never reveals whether an email is registered.
+        from backend.app.services import security_events
+        security_events.record('login.denied', request, user=account, portal='login', details={'reason': 'email_unverified'})
+        raise HTTPException(403, {'code': 'email_not_verified', 'message': VERIFY_FIRST, 'email': account.email})
+    return finish_login(db, request, response, account, 'login')
 
 
 class MfaLoginRequest(BaseModel):
@@ -242,6 +302,12 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
     except RefreshError:
         from fastapi.responses import JSONResponse
         denied = JSONResponse({"detail": "Session expired. Please sign in again."}, status_code=401)
+        clear_refresh_cookie(denied)
+        return denied
+    if not user.is_verified:
+        # Sessions opened before verification was required end here.
+        from fastapi.responses import JSONResponse
+        denied = JSONResponse({"detail": {'code': 'email_not_verified', 'message': VERIFY_FIRST}}, status_code=401)
         clear_refresh_cookie(denied)
         return denied
     set_refresh_cookie(response, new_raw)

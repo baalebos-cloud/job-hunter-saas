@@ -12,6 +12,10 @@ from backend.app.models.registry import import_all_models
 from backend.app.models.subscription import Subscription
 from backend.app.models.user import User
 
+from backend.app.models.subscription import PLANS as _PLANS
+
+FREE_LIMIT = _PLANS['free']['scans_per_month']   # whatever the free plan allows
+
 
 @pytest.fixture
 def db():
@@ -28,7 +32,7 @@ def db():
     session.commit()
     for user in session.query(User).all():
         # Every account is on the free plan with this month's scans used up.
-        session.add(Subscription(user_id=user.id, plan='free', status='active', scans_this_month=2))
+        session.add(Subscription(user_id=user.id, plan='free', status='active', scans_this_month=FREE_LIMIT))
     session.commit()
     yield session
     session.close()
@@ -51,7 +55,7 @@ def test_verified_admin_and_owner_are_never_limited(db, email):
     assert remaining_scans(account.id, db) is None                       # unlimited
     consume_scan(account.id, db)
     db.commit()
-    assert scans(db, account) == 2                                       # nothing counted
+    assert scans(db, account) == FREE_LIMIT                              # nothing counted
 
 
 @pytest.mark.parametrize('email', ['candidate@example.com', 'unverified-admin@example.com'])
@@ -74,5 +78,5 @@ def test_billing_status_reports_exempt_accounts_as_unlimited(db):
     owner = get_billing_status(current_user=user(db, 'owner@example.com'), db=db)
     assert owner['scans_limit'] == owner['scans_left'] == -1 and owner['is_pro'] and owner['plan_exempt']
     candidate = get_billing_status(current_user=user(db, 'candidate@example.com'), db=db)
-    assert candidate['scans_limit'] == 2 and candidate['scans_left'] == 0
+    assert candidate['scans_limit'] == FREE_LIMIT and candidate['scans_left'] == 0
     assert not candidate['is_pro'] and not candidate['plan_exempt']

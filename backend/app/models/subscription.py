@@ -8,7 +8,7 @@ from backend.app.database import Base
 
 
 PLANS = {
-    "free":       {"name": "Free",       "price": 0,  "scans_per_month": 2},
+    "free":       {"name": "Free",       "price": 0,  "scans_per_month": 3},
     "pro":        {"name": "Pro",        "price": 19, "scans_per_month": -1},  # -1 = unlimited
     "enterprise": {"name": "Enterprise", "price": 49, "scans_per_month": -1},
 }

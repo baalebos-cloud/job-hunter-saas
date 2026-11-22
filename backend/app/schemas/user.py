@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     country: Optional[str] = None
     is_hr: Optional[bool] = False
     company_name: Optional[str] = None
+    ref_code: Optional[str] = None      # referral code from the invite link
 
 
 class UserLogin(BaseModel):

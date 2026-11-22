@@ -366,3 +366,47 @@ def test_owner_has_enterprise_for_life_and_never_waits_for_employer_approval(env
     as_user = {'Authorization': 'Bearer ' + create_access_token({'sub': regular.email})}
     plain = env.client.get('/api/v1/billing/status', headers=as_user).json()
     assert plain['plan'] == 'free' and plain['lifetime'] is False and plain['scans_limit'] != -1
+
+
+# ── Email verification required to sign in ───────────────────────────────────
+
+def test_signup_starts_no_session_and_login_waits_for_verification(env, monkeypatch):
+    from backend.app.models.referral import Referral
+    sent = []
+    monkeypatch.setattr('backend.app.routes.auth.send_verification_email', lambda **k: sent.append(k) or True)
+    monkeypatch.setattr('backend.app.routes.auth.send_welcome_email', lambda **k: True)
+    referrer = user(env, 'inviter@example.org', referral_code='INVITE1')
+    body = {'email': 'fresh@example.org', 'password': PASSWORD, 'full_name': 'Fresh Person', 'ref_code': 'INVITE1'}
+    r = env.client.post('/api/v1/auth/signup', json=body, headers={'X-Forwarded-For': '192.0.2.71'})
+    assert r.status_code == 201 and r.json()['verification_required'] is True and 'access_token' not in r.json()
+    assert 'set-cookie' not in r.headers                      # no refresh cookie either
+    assert env.db.query(Referral).filter_by(referred_email='fresh@example.org', referrer_id=referrer.id).count() == 1
+
+    blocked = login(env, 'fresh@example.org')
+    assert blocked.status_code == 403 and blocked.json()['detail']['code'] == 'email_not_verified'
+    assert [e.details['reason'] for e in events(env, 'login.denied')] == ['email_unverified']
+    assert login(env, 'fresh@example.org', password='wrong-password').status_code == 401   # password checked first
+
+    # Public resend: same answer for unknown addresses, new link for the real one.
+    unknown = env.client.post('/api/v1/auth/verification/resend', json={'email': 'nobody@example.org'})
+    again = env.client.post('/api/v1/auth/verification/resend', json={'email': 'Fresh@Example.org'})
+    assert unknown.status_code == again.status_code == 200 and unknown.json() == again.json()
+    assert [m['to_email'] for m in sent] == ['fresh@example.org', 'fresh@example.org']
+
+    token = sent[-1]['token']
+    assert env.client.get('/api/v1/auth/verify-email', params={'token': token}).status_code == 200
+    ok = login(env, 'fresh@example.org')
+    assert ok.status_code == 200 and ok.json()['access_token']
+
+
+def test_refresh_is_refused_for_an_unverified_account(env):
+    from backend.app.services.auth_service import issue_refresh_token
+    from backend.app.core.config import settings
+    pending = user(env, 'pending@example.org')
+    pending.is_verified = False
+    env.db.commit()
+    raw, _ = issue_refresh_token(env.db, pending)
+    env.db.commit()
+    env.client.cookies.set(settings.REFRESH_COOKIE_NAME, raw)
+    r = env.client.post('/api/v1/auth/refresh')
+    assert r.status_code == 401 and r.json()['detail']['code'] == 'email_not_verified'

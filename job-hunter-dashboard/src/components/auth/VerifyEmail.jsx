@@ -126,9 +126,9 @@ export default function VerifyEmail() {
         {/* CTAs */}
         <div className="space-y-3">
           {status === 'success' && (
-            <a href={isHR ? '/hr' : '/'}
+            <a href={isHR ? '/hr' : (localStorage.getItem('token') ? '/' : '/login')}
               className="block w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-2xl text-sm uppercase tracking-widest transition-all shadow-xl shadow-emerald-600/20 text-center">
-              Go to Dashboard →
+              {isHR || localStorage.getItem('token') ? 'Go to Dashboard →' : 'Sign in to your account →'}
             </a>
           )}
           {status === 'hr_pending' && (

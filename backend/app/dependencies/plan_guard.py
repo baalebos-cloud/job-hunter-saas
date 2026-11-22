@@ -51,7 +51,7 @@ def require_scan_quota(
 ) -> User:
     """
     Enforce monthly scan limits based on plan.
-    - Free:       2 scans/month
+    - Free:       3 scans/month
     - Pro/Enterprise: unlimited
     - Verified admins / the owner: unlimited (``is_plan_exempt``)
     Raises 403 with upgrade message when limit is reached.
