@@ -45,6 +45,8 @@ def db(monkeypatch):
                      User(email='other@example.com', hashed_password='x', is_verified=True)])
     session.commit()
     yield session
+    from backend.app.services import audit
+    audit.flush()          # drain queued request records before the shared connection closes
     app.dependency_overrides.clear()
     session.close()
     engine.dispose()

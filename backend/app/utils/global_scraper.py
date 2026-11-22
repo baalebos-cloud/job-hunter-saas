@@ -241,10 +241,65 @@ def is_tech_role(title: str) -> bool:
     return bool(_TECH_INCLUDE.search(title)) and not _TECH_EXCLUDE.search(title)
 
 
+_TITLE_ALIASES = ((r'\bsr\b', 'senior'), (r'\bsnr\b', 'senior'), (r'\bjr\b', 'junior'),
+                  (r'\bjnr\b', 'junior'), (r'\beng\b', 'engineer'), (r'\bdev\b', 'developer'), (r'\bmgr\b', 'manager'))
+# Legal-form suffixes, removed only at the end of a name: "Acme, Inc." and "Acme" are one company.
+_COMPANY_SUFFIX = re.compile(r'(\s+(inc|incorporated|llc|ltd|limited|gmbh|corp|corporation|co|plc|bv|pty|srl))+$')
+
+
+def _norm(value: str) -> str:
+    return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9]+', ' ', (value or '').lower())).strip()
+
+
 def dedupe_key(title: str, company: str) -> str:
-    norm = lambda v: re.sub(r'[^a-z0-9]+', ' ', (v or '').lower()).strip()  # noqa: E731
-    title = re.sub(r'\s*[-–(|,].*$', '', title or '')        # "DevOps Engineer - Remote (EU)" -> "DevOps Engineer"
-    return f"{norm(title)}|{norm(company)}"[:300]
+    """One key per role per company, so the same vacancy from several boards,
+    or reposted with a location suffix, is listed once.
+    "Sr. DevOps Eng - Remote (EU)" at "Acme, Inc." -> "senior devops engineer|acme"."""
+    title = re.sub(r'\s*[-–—(|,].*$', '', title or '')        # drop "- Remote (EU)", "| Contract", ", Berlin"
+    title = _norm(title)
+    for pattern, replacement in _TITLE_ALIASES:
+        title = re.sub(pattern, replacement, title)
+    company = _COMPANY_SUFFIX.sub('', _norm(company)).strip()
+    return f"{title}|{company}"[:300]
+
+
+def _keyed(key: str) -> bool:
+    """Only group listings when both the role and the company are known."""
+    title, _, company = (key or '').partition('|')
+    return bool(title and company)
+
+
+def collapse_duplicate_jobs(db: Session) -> int:
+    """Keep one active listing per role per company; return how many copies closed.
+
+    The one kept: the employer's own Baalebos posting, then a listing people
+    applied to, then the one seen first. Scraped copies are closed (not deleted,
+    so application history stays intact); employer postings are never closed
+    here. Keys are recomputed, which also fills rows saved before keys existed."""
+    from collections import defaultdict
+    from backend.app.models.application import Application
+    applied = {job_id for (job_id,) in db.query(Application.job_id).distinct()}
+    groups = defaultdict(list)
+    for job in db.query(Job).filter(Job.is_active == True).all():  # noqa: E712
+        key = dedupe_key(job.title, job.company)
+        if job.dedupe_key != key:
+            job.dedupe_key = key
+        if _keyed(key):
+            groups[key].append(job)
+    closed = 0
+    for jobs in groups.values():
+        if len(jobs) < 2:
+            continue
+        jobs.sort(key=lambda j: (not j.posted_by_hr, j.id not in applied,
+                                 j.first_seen_at or j.scraped_at or datetime.max, j.id))
+        for copy in jobs[1:]:
+            if not copy.posted_by_hr:
+                copy.is_active = False
+                closed += 1
+    db.commit()
+    if closed:
+        logger.info("jobs_duplicates_closed count=%s", closed)
+    return closed
 
 
 def _date(value) -> datetime | None:
@@ -589,6 +644,13 @@ def save_jobs_to_db(jobs: list, db: Session, save_stats=None) -> int:
                             twin.scraped_at = now
                         save_stats["duplicates"] += 1
                         continue
+                if existing and not existing.is_active and jd.get("dedupe_key"):
+                    # A closed listing coming back must not sit beside an active copy of the same role.
+                    twin = (db.query(Job).filter(Job.dedupe_key == jd["dedupe_key"], Job.is_active == True,  # noqa: E712
+                                                 Job.id != existing.id).first())
+                    if twin is not None:
+                        save_stats["duplicates"] += 1
+                        continue
                 if existing:
                     if existing.posted_by_hr:     # employer-managed vacancies are never overwritten by a feed
                         continue
@@ -707,6 +769,7 @@ def scrape_global_jobs() -> dict:
         jobs = _run_sources_concurrent(SOURCES, source_results=source_results)
         total_scraped = sum(r.get("fetched", r.get("job_count", 0)) for r in source_results)
         total_saved = save_jobs_to_db(jobs, db, save_stats)
+        save_stats["duplicates_closed"] = collapse_duplicate_jobs(db)
         if any(r["status"] in ("success", "partial") for r in source_results):
             expired = expire_stale_jobs(db)   # only after a run that actually reached its sources
     except Exception as e:

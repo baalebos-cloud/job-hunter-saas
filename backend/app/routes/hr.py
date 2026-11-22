@@ -36,10 +36,28 @@ def post_job(
     db: Session = Depends(get_db),
     hr_user: User = Depends(require_hr)
 ):
-    """HR posts a new job — appears immediately in the job feed."""
+    """HR posts a new job — appears immediately in the job feed.
+
+    One active posting per role per company: a repeat is refused, and a
+    scraped copy of the same role is closed so candidates see the employer's own."""
+    from backend.app.utils.global_scraper import _keyed, dedupe_key
+    company = job.company or hr_user.company_name or "Company"
+    key = dedupe_key(job.title, company)
+    if _keyed(key):
+        from sqlalchemy import or_
+        # Rows saved before keys existed have none until the next clean-up: compare those by recomputing.
+        candidates = db.query(Job).filter(Job.is_active == True,  # noqa: E712
+                                          or_(Job.dedupe_key == key, Job.dedupe_key.is_(None))).all()
+        twins = [t for t in candidates if (t.dedupe_key or dedupe_key(t.title, t.company)) == key]
+        if any(t.posted_by_hr for t in twins):
+            raise HTTPException(409, "This role is already posted for this company. Edit or close the existing "
+                                     "posting instead of creating a duplicate.")
+        for twin in twins:
+            twin.is_active = False
     new_job = Job(
         title=job.title,
-        company=job.company or hr_user.company_name or "Company",
+        company=company,
+        dedupe_key=key,
         location=job.location,
         description=job.description,
         salary_range=job.salary_range,
