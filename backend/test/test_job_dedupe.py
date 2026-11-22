@@ -30,6 +30,8 @@ def db(monkeypatch):
     monkeypatch.setattr(security_events, '_session', Session)
     monkeypatch.setattr('backend.app.database.SessionLocal', Session)
     yield session
+    from backend.app.services import audit
+    audit.flush()          # drain queued request records before the shared connection closes
     app.dependency_overrides.clear()
     session.close()
     engine.dispose()

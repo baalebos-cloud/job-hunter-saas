@@ -66,6 +66,8 @@ def db(monkeypatch):
     app.dependency_overrides[get_db] = lambda: session
     reset_rate_limits()
     yield session
+    from backend.app.services import audit
+    audit.flush()          # drain queued request records before the shared connection closes
     app.dependency_overrides.clear(); session.close(); engine.dispose()
 
 
