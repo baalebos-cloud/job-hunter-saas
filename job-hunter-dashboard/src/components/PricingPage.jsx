@@ -124,7 +124,8 @@ export default function PricingPage() {
     }
   };
 
-  const currentPlan = billing?.plan || 'free';
+  // Owner/admin accounts are Enterprise for life, even against an older API that still reports the stored plan.
+  const currentPlan = billing?.plan_exempt || billing?.lifetime ? 'enterprise' : (billing?.plan || 'free');
 
   return (
     <div className="min-h-screen bg-slate-950" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -151,7 +152,7 @@ export default function PricingPage() {
           <div className="inline-flex items-center gap-3 mt-6 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-3">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-slate-400 text-sm font-medium">
-              Current plan: <span className="text-white font-black">{billing.plan_name}</span>
+              Current plan: <span className="text-white font-black">{billing.plan_exempt || billing.lifetime ? 'Enterprise' : billing.plan_name}</span>
             </span>
             {billing.scans_limit !== -1 && (
               <span className="text-slate-500 text-sm">
@@ -161,10 +162,10 @@ export default function PricingPage() {
             {billing.scans_limit === -1 && (
               <span className="text-emerald-400 text-sm font-bold">· Unlimited scans</span>
             )}
-            {billing.lifetime && (
+            {(billing.lifetime || billing.plan_exempt) && (
               <span className="text-purple-300 text-sm font-bold">· Lifetime, never billed</span>
             )}
-            {billing.is_pro && !billing.lifetime && (
+            {billing.is_pro && !billing.lifetime && !billing.plan_exempt && (
               <button onClick={handlePortal}
                 className="text-xs font-black text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 px-3 py-1 rounded-lg transition-all ml-2">
                 Manage Billing →
@@ -240,15 +241,15 @@ export default function PricingPage() {
                 {/* CTA */}
                 <button
                   onClick={() => handleUpgrade(plan.id)}
-                  disabled={isCurrentPlan || billing?.lifetime || upgrading === plan.id}
+                  disabled={isCurrentPlan || billing?.lifetime || billing?.plan_exempt || upgrading === plan.id}
                   className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${
                     isCurrentPlan ? plan.ctaStyle : plan.ctaStyle
                   }`}>
                   {upgrading === plan.id
                     ? 'Opening Checkout...'
                     : isCurrentPlan
-                    ? (billing?.lifetime ? '✓ Your plan, for life' : '✓ Current Plan')
-                    : billing?.lifetime
+                    ? (billing?.lifetime || billing?.plan_exempt ? '✓ Your plan, for life' : '✓ Current Plan')
+                    : billing?.lifetime || billing?.plan_exempt
                     ? 'Included in your plan'
                     : plan.cta}
                 </button>
@@ -258,7 +259,7 @@ export default function PricingPage() {
         </div>
 
         {/* Scan limit warning banner — shown when free user is close to limit */}
-        {billing && billing.plan === 'free' && billing.scans_this_month >= 1 && (
+        {billing && billing.plan === 'free' && !billing.plan_exempt && billing.scans_limit !== -1 && billing.scans_this_month >= 1 && (
           <div className={`mt-8 rounded-2xl border p-6 flex flex-col md:flex-row items-center justify-between gap-4 ${
             billing.scans_this_month >= billing.scans_limit
               ? 'bg-rose-950/30 border-rose-500/30'
