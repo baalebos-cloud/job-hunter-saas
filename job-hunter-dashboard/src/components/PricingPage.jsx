@@ -80,8 +80,6 @@ const Cross = () => (
 // no extra cost, the moment it ships; until then it is marked here so nobody
 // is told they already have it. Remove an entry when the feature goes live.
 const COMING_SOON = new Set([
-  'Priority AI processing',
-  'Resume history (last 30 scans)',
   'Team access (up to 10 seats)',
   'Bulk resume processing',
   'API access for integrations',

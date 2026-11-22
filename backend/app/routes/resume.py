@@ -81,7 +81,7 @@ def _in_flight(db, user_id) -> int:
 
 @router.post('/upload')
 async def upload_resume(file: UploadFile=File(...), job_description: str=Form(...), job_title: str=Form(...),
-                        region: Optional[str]=Form(None),
+                        region: Optional[str]=Form(None), job_id: Optional[int]=Form(None),
                         db: Session=Depends(get_db), current_user=Depends(require_scan_quota)):
     from backend.app.utils.upload_validation import MAX_UPLOAD_BYTES, UploadRejected, validate_upload
     filename = file.filename or ''
@@ -96,14 +96,21 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
     task_id = str(uuid.uuid4())
     resolved_region = _region_for(current_user, region)
 
+    from backend.app.services.processing_gate import has_priority, processing_slot
+    priority = has_priority(db, current_user)
+    job_meta = _job_meta(db, job_id)
     if settings.RESUME_PROCESSING_MODE == 'async':
-        return _enqueue(db, current_user, task_id, content, filename, job_description, job_title, resolved_region)
+        return _enqueue(db, current_user, task_id, content, filename, job_description, job_title, resolved_region,
+                        priority, job_meta)
 
+    def tailor():
+        with processing_slot(priority):
+            return run_pipeline(content, filename, job_description, job_title, resolved_region, task_id, priority)
     try:
-        tailored, analysis, pdf = await run_in_threadpool(run_pipeline, content, filename, job_description,
-                                                          job_title, resolved_region, task_id)
+        tailored, analysis, pdf = await run_in_threadpool(tailor)
     except PipelineFailure as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
+    analysis.update(job_meta)
     record = Resume(owner_id=current_user.id, filename=f'optimized_{task_id}.pdf', status='processing')
     try:
         complete_record(db, record, tailored, analysis, pdf)
@@ -115,7 +122,16 @@ async def upload_resume(file: UploadFile=File(...), job_description: str=Form(..
     return {'task_id': task_id, 'status': 'completed', 'result': analysis}
 
 
-def _enqueue(db, user, task_id, content, filename, job_description, job_title, region):
+def _job_meta(db, job_id) -> dict:
+    """Which job a resume was tailored for, shown in My resumes ("Tailor again")."""
+    if not job_id:
+        return {}
+    from backend.app.models.job import Job
+    job = db.get(Job, job_id)
+    return {'job_id': job.id, 'company': job.company} if job else {}
+
+
+def _enqueue(db, user, task_id, content, filename, job_description, job_title, region, priority=False, job_meta=None):
     """202 Accepted: the heavy OCR/LLM/PDF work runs on a Celery worker."""
     from backend.app.dependencies.plan_guard import remaining_scans
     remaining = remaining_scans(user.id, db)
@@ -129,7 +145,9 @@ def _enqueue(db, user, task_id, content, filename, job_description, job_title, r
         from backend.app.tasks.resume_tasks import process_resume_upload
         process_resume_upload.apply_async(
             args=[task_id, user.id, base64.b64encode(content).decode('ascii'), filename, job_description, job_title, region],
-            task_id=task_id)
+            kwargs={'priority': priority, 'job_meta': job_meta or {}}, task_id=task_id,
+            # Redis priority queue: 0 is served first (paid), 6 after (free).
+            priority=0 if priority else 6)
     except Exception as exc:
         logger.error('resume_enqueue_failed reference=%s error_type=%s', task_id, type(exc).__name__)
         record.status, record.error = 'failed', 'The processing queue is unavailable. Nothing was charged; please retry.'
@@ -249,3 +267,45 @@ def signed_url(task_id: str, db: Session=Depends(get_db), current_user=Depends(g
     url = presigned_url(record)
     return {'url': url, 'expires_in': PRESIGNED_TTL_SECONDS if url else None,
             'download_path': f'/api/v1/resume/download/{task_id}'}
+
+
+# ── My resumes (history) ──────────────────────────────────────────────────────
+HISTORY_LIMIT_PAID = 30   # "Resume history (last 30 scans)" on Pro and Enterprise
+HISTORY_LIMIT_FREE = 1    # free plan: the latest result only
+
+
+@router.get('/history')
+def history(db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """The candidate's tailored resumes, newest first."""
+    from backend.app.services.processing_gate import has_priority
+    paid = has_priority(db, current_user)
+    limit = HISTORY_LIMIT_PAID if paid else HISTORY_LIMIT_FREE
+    query = db.query(Resume).filter(Resume.owner_id == current_user.id, Resume.status == 'completed',
+                                    Resume.filename.like('optimized_%'))
+    total = query.count()
+    rows = query.order_by(Resume.created_at.desc(), Resume.id.desc()).limit(limit).all()
+    items = []
+    for record in rows:
+        analysis = record.analysis_data or {}
+        scores = analysis.get('scores') or {}
+        items.append({
+            'task_id': record.filename[len('optimized_'):-len('.pdf')],
+            'created_at': record.created_at.isoformat() + 'Z' if record.created_at else None,
+            'job_title': analysis.get('job_title') or 'Tailored resume',
+            'company': analysis.get('company'), 'job_id': analysis.get('job_id'),
+            'score_before': scores.get('before', analysis.get('original_score')),
+            'score_after': scores.get('after', analysis.get('overall_score')),
+            'job_description': (analysis.get('job_description') or '')[:20000],
+        })
+    return {'items': items, 'total': total, 'limit': limit, 'history_enabled': paid}
+
+
+@router.delete('/{task_id}')
+def delete_resume(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """Delete one tailored resume and its stored PDF."""
+    from backend.app.services.resume_storage import delete_pdf
+    record = owned_resume(task_id, db, current_user)
+    delete_pdf(record)
+    db.delete(record)
+    db.commit()
+    return {'deleted': True}

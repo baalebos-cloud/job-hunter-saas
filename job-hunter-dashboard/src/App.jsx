@@ -12,6 +12,7 @@ import JobBoard from './components/jobs/JobBoard'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
 import HelpPage from './components/support/HelpPage'
+import MyResumes from './components/resumes/MyResumes'
 import { signOut, errorText } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
@@ -521,6 +522,9 @@ function App() {
         } />
         <Route path="/optimizer" element={
           <RequireAuth><DashboardLayout><OptimizerPage /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/resumes" element={
+          <RequireAuth><DashboardLayout><MyResumes /></DashboardLayout></RequireAuth>
         } />
         <Route path="/jobs" element={
           <RequireAuth><DashboardLayout><JobsPage /></DashboardLayout></RequireAuth>

@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import contextvars
 import re
 import time
 import pdfplumber
@@ -70,6 +71,9 @@ def get_client():
 # Wait out a short per-minute limit once; anything longer (a daily cap) moves
 # straight to the next configured provider instead of keeping the user waiting.
 RATE_LIMIT_MAX_WAIT_SECONDS = 20
+# Set for Pro/Enterprise runs: on a rate limit they switch to the backup
+# provider at once instead of waiting for the primary to recover.
+PRIORITY_RUN = contextvars.ContextVar("resume_priority_run", default=False)
 
 
 def _retry_after(exc) -> float | None:
@@ -105,7 +109,8 @@ def _json(prompt, contract=None, client_model=None):
                 wait = _retry_after(exc)
                 logger.warning('resume_ai_rate_limited provider=%s attempt=%s retry_after=%s', name, attempt,
                                None if wait is None else round(wait, 1))
-                if attempt == 1 and wait is not None and wait <= RATE_LIMIT_MAX_WAIT_SECONDS:
+                skip_wait = PRIORITY_RUN.get() and not explicit and len(provider_chain()) > 1
+                if attempt == 1 and wait is not None and wait <= RATE_LIMIT_MAX_WAIT_SECONDS and not skip_wait:
                     time.sleep(wait + 0.5)
                     continue
                 break
