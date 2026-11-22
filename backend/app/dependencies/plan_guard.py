@@ -23,6 +23,18 @@ def is_plan_exempt(user) -> bool:
                 and (getattr(user, "is_admin", False) or getattr(user, "role", None) == "super_admin"))
 
 
+OWNER_PLAN = "enterprise"
+
+
+def effective_plan(user, stored_plan: str | None, status: str | None = "active") -> str:
+    """The plan a user actually has. The platform owner and verified admins hold
+    Enterprise for life: derived from their role, so it never expires, needs no
+    payment record, and no billing event can downgrade it."""
+    if is_plan_exempt(user):
+        return OWNER_PLAN
+    return stored_plan if stored_plan and status == "active" else "free"
+
+
 def _get_or_create_sub(user_id: int, db: Session) -> Subscription:
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
     if not sub:
