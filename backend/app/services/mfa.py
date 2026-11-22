@@ -105,7 +105,7 @@ def use_recovery_code(user, code: str) -> bool:
 
 
 def issue_mfa_token(user, extra: dict | None = None) -> str:
-    from jose import jwt
+    import jwt
     from backend.app.core.config import settings
     claims = {'sub': user.email, 'type': 'mfa', 'jti': str(uuid.uuid4()), 'tv': int(user.token_version or 0),
               'exp': datetime.utcnow() + timedelta(minutes=MFA_TOKEN_MINUTES), 'x': extra or {}}
@@ -113,7 +113,8 @@ def issue_mfa_token(user, extra: dict | None = None) -> str:
 
 
 def read_mfa_token(token: str) -> dict | None:
-    from jose import JWTError, jwt
+    import jwt
+    from jwt import PyJWTError as JWTError
     from backend.app.core.config import settings
     try:
         claims = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

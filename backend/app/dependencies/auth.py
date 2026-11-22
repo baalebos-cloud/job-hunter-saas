@@ -2,7 +2,8 @@
 token_version (password reset / log out everywhere) and jti revocation."""
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
