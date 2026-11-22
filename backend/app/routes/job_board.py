@@ -132,6 +132,21 @@ def _filtered(db, *, q=None, category=None, work_type=None, region=None, posted_
     return query
 
 
+def _one_per_role(rows):
+    """Last line of defence against duplicates: one listing per role per company
+    (the first in display order, so an employer's own posting wins)."""
+    from backend.app.utils.global_scraper import _keyed, dedupe_key
+    seen, kept = set(), []
+    for row in rows:
+        key = dedupe_key(row.title, row.company)
+        if _keyed(key):
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append(row)
+    return kept
+
+
 @router.get("/board")
 def job_board(request: Request, q: Optional[str] = None, category: Optional[str] = None,
               work_type: Optional[str] = None, region: Optional[str] = None,
@@ -144,8 +159,8 @@ def job_board(request: Request, q: Optional[str] = None, category: Optional[str]
     mine = user_skills(db, user)
     query = _filtered(db, q=(q or '').strip()[:100], category=category, work_type=work_type, region=region,
                       posted_within=posted_within, employer_only=employer_only, has_salary=has_salary)
-    rows = query.with_entities(Job.id, Job.posted_by_hr, Job.skills, Job.title, Job.published_at,
-                               Job.first_seen_at, Job.scraped_at).all()
+    rows = query.with_entities(Job.id, Job.posted_by_hr, Job.skills, Job.title, Job.company, Job.dedupe_key,
+                               Job.published_at, Job.first_seen_at, Job.scraped_at).all()
 
     def score(row):
         if sort != 'best' or not mine:
@@ -157,6 +172,7 @@ def job_board(request: Request, q: Optional[str] = None, category: Optional[str]
     def posted(row):
         return (row.published_at or row.first_seen_at or row.scraped_at or datetime.min).timestamp()
     rows.sort(key=lambda r: (bool(r.posted_by_hr), score(r), posted(r)), reverse=True)
+    rows = _one_per_role(rows)
     total = len(rows)
     ids = [r.id for r in rows[(page - 1) * page_size: page * page_size]]
     jobs = {j.id: j for j in db.query(Job).filter(Job.id.in_(ids))} if ids else {}
