@@ -17,7 +17,10 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     broker_connection_retry_on_startup=True,
-    broker_transport_options={"visibility_timeout": 3600},
+    # priority_steps + queue_order_strategy let paid tailoring jobs (priority 0)
+    # jump ahead of free ones (priority 6) on the Redis broker.
+    broker_transport_options={"visibility_timeout": 3600, "priority_steps": list(range(10)),
+                              "sep": ":", "queue_order_strategy": "priority"},
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
     task_acks_late=True,

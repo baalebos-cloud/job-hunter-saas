@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # "sync" keeps the work in the API process (no worker required).
     RESUME_PROCESSING_MODE: str = Field(default="sync", pattern="^(sync|async)$")
     RESUME_JOB_TIMEOUT_MINUTES: int = Field(default=15, ge=2, le=120)
+    # Priority AI processing: simultaneous tailoring runs per API process, how
+    # many of those are kept for Pro/Enterprise, and how long each side waits.
+    RESUME_MAX_CONCURRENT: int = Field(default=4, ge=1, le=64)
+    RESUME_PRIORITY_RESERVED: int = Field(default=1, ge=0, le=63)
+    RESUME_FREE_WAIT_SECONDS: int = Field(default=90, ge=1, le=600)
+    RESUME_PRIORITY_WAIT_SECONDS: int = Field(default=300, ge=1, le=900)
     # Optional read replica (e.g. RDS replica behind PgBouncer) for read-only GETs.
     DATABASE_READ_URL: str = ""
 

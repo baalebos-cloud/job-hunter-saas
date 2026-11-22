@@ -154,7 +154,7 @@ def async_mode(monkeypatch):
     monkeypatch.setattr(settings, 'RESUME_PROCESSING_MODE', 'async')
     queued = []
     from backend.app.tasks import resume_tasks
-    monkeypatch.setattr(resume_tasks.process_resume_upload, 'apply_async', lambda args, task_id: queued.append(args))
+    monkeypatch.setattr(resume_tasks.process_resume_upload, 'apply_async', lambda args, task_id, **kw: queued.append(args))
     return queued
 
 

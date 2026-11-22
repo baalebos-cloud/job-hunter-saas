@@ -48,6 +48,14 @@ export default function ResumeUpload({ onUploadSuccess }) {
   const dropRef = useRef(null);
 
   useEffect(() => {
+    // "Tailor again" from My resumes: reuse that job's title and description once.
+    try {
+      const again = JSON.parse(sessionStorage.getItem('tailorAgain') || 'null');
+      sessionStorage.removeItem('tailorAgain');
+      if (again && !new URLSearchParams(window.location.search).get('job')) {
+        setJobTitle(again.title || ''); setQuery(again.title || ''); setJobDesc(again.description || '');
+      }
+    } catch { /* storage unavailable: start empty */ }
     const jobId = new URLSearchParams(window.location.search).get('job');
     if (!jobId) return;
     axios.get(`${API_BASE_URL}/jobs/detail/${jobId}`).then(({data})=>{
@@ -90,6 +98,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
     formData.append('job_description', jobDesc);
     formData.append('job_title', jobTitle.trim());
     if (region) formData.append('region', region);
+    if (linkedJob?.id) formData.append('job_id', String(linkedJob.id));   // shown in My resumes
 
     try {
       const res = await axios.post(`${API_BASE_URL}/resume/upload`, formData, {

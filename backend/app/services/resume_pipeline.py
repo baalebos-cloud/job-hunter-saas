@@ -44,9 +44,19 @@ def export_strict(tailored, region, requirements):
     return result
 
 
-def run_pipeline(content: bytes, filename: str, job_description: str, job_title: str, region: str, task_id: str):
+def run_pipeline(content: bytes, filename: str, job_description: str, job_title: str, region: str, task_id: str,
+                 priority: bool = False):
     """Return (tailored, analysis, pdf). Raises PipelineFailure with a
     user-safe message; never logs candidate or provider text."""
+    from backend.app.utils.ats_engine import PRIORITY_RUN
+    token = PRIORITY_RUN.set(priority)
+    try:
+        return _run_pipeline(content, filename, job_description, job_title, region, task_id)
+    finally:
+        PRIORITY_RUN.reset(token)
+
+
+def _run_pipeline(content, filename, job_description, job_title, region, task_id):
     stage = 'load_pipeline'
     try:
         from backend.app.utils.ats_engine import (clean_job_description, extract_requirements, extract_resume_data,
