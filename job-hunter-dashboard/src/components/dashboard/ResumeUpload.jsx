@@ -94,7 +94,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
     try {
       const res = await axios.post(`${API_BASE_URL}/resume/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` },
-        timeout: 300000  // 2 minutes — AI analysis takes time
+        timeout: 300000  // 5 minutes: tailoring calls the AI provider several times
       });
       if (res.data.result) {
         // Direct result returned (Railway mode — no Celery)

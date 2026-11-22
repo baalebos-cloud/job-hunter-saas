@@ -149,6 +149,26 @@ def _one_per_role(rows):
     return kept
 
 
+_STATS_CACHE = {'at': 0.0, 'value': None}
+STATS_TTL_SECONDS = 300
+
+
+@router.get("/stats")
+def public_stats(db: Session = Depends(get_read_db)):
+    """Real figures for the public pages: open jobs (counted exactly as the
+    board lists them, one per role per company) and the last refresh time.
+    Cached for five minutes; the pages hide the figures if this fails."""
+    import time
+    now = time.monotonic()
+    if _STATS_CACHE['value'] is not None and now - _STATS_CACHE['at'] < STATS_TTL_SECONDS:
+        return _STATS_CACHE['value']
+    rows = db.query(Job.title, Job.company).filter(Job.is_active == True).all()  # noqa: E712
+    last = db.query(func.max(Job.scraped_at)).filter(Job.posted_by_hr.isnot(True)).scalar()
+    value = {'open_jobs': len(_one_per_role(rows)), 'updated_at': last.isoformat() + 'Z' if last else None}
+    _STATS_CACHE.update(at=now, value=value)
+    return value
+
+
 @router.get("/board")
 def job_board(request: Request, q: Optional[str] = None, category: Optional[str] = None,
               work_type: Optional[str] = None, region: Optional[str] = None,

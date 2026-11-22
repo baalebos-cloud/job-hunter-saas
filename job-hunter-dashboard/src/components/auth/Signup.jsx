@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { errorText } from '../../lib/session';
 import VerifyEmailNotice from './VerifyEmailNotice';
+import { updatedAgo, useLiveStats } from '../../lib/liveStats';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -48,7 +49,8 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const [refCode, setRefCode] = useState('');
-  const [sentTo, setSentTo] = useState('');   // set once the account exists: verify email, then sign in
+  const [sentTo, setSentTo] = useState('');
+  const stats = useLiveStats();   // real figures; hidden when unavailable   // set once the account exists: verify email, then sign in
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // ── Capture referral code from URL or localStorage ────────────────────────
@@ -96,8 +98,10 @@ export default function Signup() {
         <div className="absolute inset-0 bg-gradient-to-br from-slate-950/70 via-slate-900/55 to-emerald-950/45" />
 
         <div className="absolute top-28 right-10 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 shadow-2xl">
-          <div className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">Live Stats</div>
-          {[['🌍','80+ Countries','text-blue-400'],['⚡','6h Job Refresh','text-emerald-400'],['🎯','94% Avg ATS','text-amber-400']].map(([icon,label,cls]) => (
+          <div className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">{stats ? 'Live on Baalebos' : 'On Baalebos'}</div>
+          {[stats && ['💼', `${stats.open_jobs.toLocaleString()} open tech jobs`, 'text-emerald-400'],
+            stats?.updated_at && ['⚡', `Jobs updated ${updatedAgo(stats.updated_at)}`, 'text-blue-400'],
+            ['🌍', 'Remote & worldwide roles', 'text-amber-400']].filter(Boolean).map(([icon,label,cls]) => (
             <div key={label} className="flex items-center gap-2 mb-2 last:mb-0">
               <span>{icon}</span>
               <span className={`text-sm font-bold ${cls}`}>{label}</span>
@@ -154,7 +158,7 @@ export default function Signup() {
               Create your account
             </h1>
             <p className="text-slate-400 text-sm font-medium mt-2">
-              Join engineers from 80+ countries finding global tech roles.
+              Tailor your resume to every tech job you apply for, and find remote and worldwide roles.
             </p>
           </div>
 

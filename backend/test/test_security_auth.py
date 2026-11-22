@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from passlib.hash import bcrypt as legacy_bcrypt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -81,7 +81,7 @@ def test_legacy_bcrypt_hash_verifies_and_is_upgraded_on_login(client, db):
 
 def test_access_tokens_are_short_lived_and_typed(client):
     token = login(client).json()['access_token']
-    claims = jwt.get_unverified_claims(token)
+    claims = jwt.decode(token, options={'verify_signature': False})
     assert claims['type'] == 'access' and claims['jti'] and claims['tv'] == 0
     assert claims['exp'] - claims['iat'] == 15 * 60
     legacy = jwt.encode({'sub': 'user@example.com', 'exp': datetime.utcnow() + timedelta(days=30)},

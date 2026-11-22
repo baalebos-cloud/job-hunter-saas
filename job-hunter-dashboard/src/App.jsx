@@ -152,7 +152,7 @@ function OptimizerPage() {
         <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center" role="status">
           <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-5" />
           <h3 className="text-lg font-semibold text-slate-900 mb-1">Matching your resume to the job…</h3>
-          <p className="text-slate-500 text-sm">Reading the requirements, tailoring your resume and building the PDF. This usually takes under a minute.</p>
+          <p className="text-slate-500 text-sm">Reading the requirements, tailoring your resume and building the PDF. This can take a minute or two. Keep this page open.</p>
         </div>
       ) : !analysisResult ? (
         <ResumeUpload onUploadSuccess={(taskId, directResult) => {
@@ -341,9 +341,9 @@ function LandingPage() {
               </div>
               <h1 className="text-5xl md:text-6xl font-black text-white leading-[1.05] mb-6"
                 style={{ fontFamily: "'Playfair Display', serif" }}>
-                Get Hired at<br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400">Top Tech Companies</span><br/>
-                Worldwide.
+                Tailor Your Resume<br/>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400">to Every Tech Job</span><br/>
+                You Apply For.
               </h1>
               <p className="text-slate-400 text-lg leading-relaxed mb-8 max-w-xl">
                 Upload your resume, get an instant ATS score, and receive an AI-optimized PDF tailored to the job description using your documented experience — from Nigeria to Silicon Valley.
@@ -374,11 +374,12 @@ function LandingPage() {
                   <span className="w-3 h-3 rounded-full bg-amber-500"/>
                   <span className="w-3 h-3 rounded-full bg-emerald-500"/>
                   <span className="text-slate-500 text-xs font-mono ml-2">ats_result.json</span>
+                  <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-violet-300 bg-violet-500/15 rounded px-1.5 py-0.5">Example</span>
                 </div>
                 <div className="text-xs font-mono space-y-1">
                   <div className="text-slate-400">{'{'}</div>
-                  <div className="pl-4"><span className="text-blue-400">"ats_score"</span><span className="text-slate-500">: </span><span className="text-emerald-400">94</span><span className="text-slate-500">,</span></div>
-                  <div className="pl-4"><span className="text-blue-400">"keywords_matched"</span><span className="text-slate-500">: </span><span className="text-emerald-400">28/30</span><span className="text-slate-500">,</span></div>
+                  <div className="pl-4"><span className="text-blue-400">"ats_score"</span><span className="text-slate-500">: </span><span className="text-emerald-400">82</span><span className="text-slate-500">,</span></div>
+                  <div className="pl-4"><span className="text-blue-400">"keywords_matched"</span><span className="text-slate-500">: </span><span className="text-emerald-400">12/15</span><span className="text-slate-500">,</span></div>
                   <div className="pl-4"><span className="text-blue-400">"status"</span><span className="text-slate-500">: </span><span className="text-amber-400">"review_required"</span></div>
                   <div className="text-slate-400">{'}'}</div>
                 </div>
@@ -386,19 +387,19 @@ function LandingPage() {
 
               {/* Match engine card */}
               <div className="relative bg-slate-900/90 backdrop-blur border border-blue-500/20 rounded-3xl p-6 shadow-2xl mr-8 max-w-xs">
-                <div className="text-slate-500 text-xs font-mono mb-3">// AI Match Engine</div>
+                <div className="text-slate-500 text-xs font-mono mb-3 flex items-center gap-3">// Match engine <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-violet-300 bg-violet-500/15 rounded px-1.5 py-0.5">Example</span></div>
                 <div className="text-xs font-mono space-y-1 mb-4">
-                  <div><span className="text-purple-400">const</span> <span className="text-blue-300">match</span> <span className="text-slate-500">= </span><span className="text-emerald-400">97.3</span><span className="text-slate-500">%</span></div>
+                  <div><span className="text-purple-400">const</span> <span className="text-blue-300">match</span> <span className="text-slate-500">= </span><span className="text-emerald-400">86</span><span className="text-slate-500">%</span></div>
                   <div><span className="text-purple-400">const</span> <span className="text-blue-300">role</span> <span className="text-slate-500">= </span><span className="text-amber-400">"DevOps Eng."</span></div>
                 </div>
                 <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full w-[97%] bg-gradient-to-r from-emerald-500 to-blue-400 rounded-full" />
+                  <div className="h-full w-[86%] bg-gradient-to-r from-emerald-500 to-blue-400 rounded-full" />
                 </div>
               </div>
 
               {/* Floating badge */}
               <div className="absolute -top-6 -right-4 bg-emerald-500 text-white text-xs font-black px-4 py-2 rounded-full shadow-xl shadow-emerald-500/30 rotate-3">
-                Illustrative assessment
+                Example results
               </div>
             </div>
 

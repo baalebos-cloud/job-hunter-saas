@@ -1,5 +1,6 @@
 import io
 import logging
+from contextlib import asynccontextmanager
 import re
 import os
 import time
@@ -38,12 +39,44 @@ from backend.app.models.audit import AuditLog, ErasureTombstone  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
+# Secure by default: production protections (hidden API docs, HSTS, strict
+# CORS) stay on unless ENVIRONMENT explicitly names a development setting.
+# A missing or mistyped variable must never switch them off.
+ENVIRONMENT = (os.getenv("ENVIRONMENT") or "production").strip().lower()
+IS_DEVELOPMENT = ENVIRONMENT in {"development", "dev", "local", "test"}
+
+
+def _check_schema_version():
+    """No DDL at startup: schema changes run before deploy via
+    ``python -m backend.scripts.migrate`` (alembic upgrade head). This only
+    reports drift so a missed migration is visible immediately."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import text
+        from pathlib import Path
+        head = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))).get_current_head()
+        with engine.connect() as conn:
+            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        if current != head:
+            logger.error("schema_out_of_date current=%s head=%s - run python -m backend.scripts.migrate", current, head)
+    except Exception as exc:
+        logger.warning("schema_version_check_skipped error_type=%s", type(exc).__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    _check_schema_version()
+    yield
+
+
 app = FastAPI(
     title="Baalebos Cloud AI v2",
-    # Hide API docs in production
-    docs_url=None if os.getenv("ENVIRONMENT") == "production" else "/docs",
-    redoc_url=None if os.getenv("ENVIRONMENT") == "production" else "/redoc",
-    openapi_url=None if os.getenv("ENVIRONMENT") == "production" else "/openapi.json",
+    lifespan=lifespan,
+    # API docs only in development
+    docs_url="/docs" if IS_DEVELOPMENT else None,
+    redoc_url="/redoc" if IS_DEVELOPMENT else None,
+    openapi_url="/openapi.json" if IS_DEVELOPMENT else None,
 )
 
 # ── Rate limiting (Redis sliding window, trusted-proxy client IP) ────────────
@@ -117,31 +150,35 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    if os.getenv("ENVIRONMENT") == "production":
+    if not IS_DEVELOPMENT:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
-@app.on_event("startup")
-async def startup_event():
-    """No DDL at startup: schema changes run before deploy via
-    ``python -m backend.scripts.migrate`` (alembic upgrade head). This only
-    reports drift so a missed migration is visible immediately."""
-    try:
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-        from sqlalchemy import text
-        from pathlib import Path
-        head = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))).get_current_head()
-        with engine.connect() as conn:
-            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        if current != head:
-            logger.error("schema_out_of_date current=%s head=%s - run python -m backend.scripts.migrate", current, head)
-    except Exception as exc:
-        logger.warning("schema_version_check_skipped error_type=%s", type(exc).__name__)
-
-
 # ── Observability: trace IDs, metrics, structured audit trail ─────────────────
+_PATH_PARAM = re.compile(r"{([^}:]+)(?::[^}]+)?}")
+
+
+def _route_template(request: Request) -> str:
+    """Full route template for metrics and audit, e.g. /api/v1/jobs/board/{job_id}.
+
+    Newer FastAPI versions report only the router-relative path of the matched
+    route (e.g. "/me"), so the router prefix is recovered from the real request
+    path: the matched route's own part, with its parameters filled in, is the
+    tail of the path. Never contains raw parameter values."""
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if not template:
+        return "unmatched"
+    params = request.scope.get("path_params") or {}
+    try:
+        rendered = _PATH_PARAM.sub(lambda m: str(params[m.group(1)]), template)
+    except KeyError:
+        return template
+    path = request.scope.get("path") or ""
+    if rendered and path.endswith(rendered):
+        return path[: len(path) - len(rendered)] + template
+    return template
 _TRACE_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 _UNAUDITED = ("/health", "/metrics", "/api/v1/health")
 
@@ -173,7 +210,7 @@ async def observability_middleware(request: Request, call_next):
         path = request.url.path
         if not path.startswith(_UNAUDITED) and path != "/":
             elapsed = time.perf_counter() - started
-            route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+            route = _route_template(request)
             metrics.HTTP_REQUESTS.labels(request.method, route, str(status)).inc()
             metrics.HTTP_LATENCY.labels(request.method, route).observe(elapsed)
             if status == 429:
@@ -215,15 +252,13 @@ class AnalysisRequest(BaseModel):
     job_description: str
 
 # --- CORS SETUP ---
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")  # Set in Railway: https://baalebo.xyz
 
-if ENVIRONMENT == "production":
+if not IS_DEVELOPMENT:
     origins = [
         "https://baalebo.xyz",
         "https://www.baalebo.xyz",
         "https://job-hunter-saas-six.vercel.app",
-        "https://job-hunter-saas-production-bb41.up.railway.app",
     ]
     if FRONTEND_URL and FRONTEND_URL not in origins:
         origins.append(FRONTEND_URL)

@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { errorText } from '../lib/session';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://job-hunter-saas-production-bb41.up.railway.app/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 const PLANS = [
   {
@@ -18,7 +18,7 @@ const PLANS = [
     features: [
       '3 AI resume scans per month',
       'ATS score + keyword analysis',
-      'Basic PDF download',
+      'Tailored PDF + Word download',
       'Global job feed access',
       'Application tracker',
     ],
@@ -75,6 +75,19 @@ const Cross = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
+
+// Paid features being built. Subscribers receive each one automatically, at
+// no extra cost, the moment it ships; until then it is marked here so nobody
+// is told they already have it. Remove an entry when the feature goes live.
+const COMING_SOON = new Set([
+  'Priority AI processing',
+  'Resume history (last 30 scans)',
+  'Team access (up to 10 seats)',
+  'Bulk resume processing',
+  'API access for integrations',
+  'Dedicated Slack support',
+  'Custom branding on PDF exports',
+]);
 
 export default function PricingPage() {
   const [billing, setBilling]   = useState(null);
@@ -227,7 +240,12 @@ export default function PricingPage() {
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2.5">
                       <Check />
-                      <span className="text-slate-300 text-sm font-medium">{f}</span>
+                      <span className="text-slate-300 text-sm font-medium">
+                        {f}
+                        {COMING_SOON.has(f) && (
+                          <span className="ml-2 inline-block whitespace-nowrap align-middle text-[10px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">Coming soon</span>
+                        )}
+                      </span>
                     </li>
                   ))}
                   {plan.limits.map((l) => (
@@ -293,9 +311,9 @@ export default function PricingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
             {[
               ['Can I cancel anytime?', 'Yes — cancel anytime from the billing portal. You keep Pro access until the end of your billing period.'],
-              ['What counts as a scan?', 'Each time you upload a resume and run an AI analysis, that counts as one scan.'],
+              ['What counts as a scan?', 'Each tailored resume that is successfully created counts as one scan. If tailoring fails, nothing is counted.'],
               ['Do unused scans roll over?', 'Free plan scans reset monthly and do not roll over. Pro and Enterprise users have unlimited scans so rollover doesn\'t apply.'],
-              ['What payment methods are accepted?', 'All major credit/debit cards via Stripe. Paystack integration for Nigerian cards coming soon.'],
+              ['What payment methods are accepted?', 'All major credit and debit cards, processed securely by Stripe.'],
               ['Is there a refund policy?', 'Yes — if you are not satisfied within 7 days of your first payment, contact support for a full refund.'],
               ['Can I upgrade or downgrade?', 'Yes — upgrade or downgrade at any time from the billing portal. Changes take effect immediately.'],
             ].map(([q, a]) => (
