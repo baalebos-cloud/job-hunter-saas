@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import func
 
+from backend.app.dependencies.plan_guard import is_plan_exempt
+
 
 def _iso(value):
     return value.isoformat() + 'Z' if value else None
@@ -94,7 +96,8 @@ def overview(db) -> dict:
 
     summary = security_events.summary(db)
     pending = (db.query(User).filter(User.is_hr == True, User.hr_approved == False,  # noqa: E712
-                                     User.hr_rejected_at.is_(None)).order_by(User.created_at.asc()).all())
+                                     User.hr_rejected_at.is_(None), User.role.is_(None),
+                                     User.is_admin != True).order_by(User.created_at.asc()).all())
     sec_posture = posture(db)
     duplicates = [g for g in account_integrity.duplicate_groups(db) if g['active_duplicates']]
 
@@ -149,11 +152,19 @@ def overview(db) -> dict:
 
 # ── Users ────────────────────────────────────────────────────────────────────
 
+
+def _is_staff(u) -> bool:
+    """Admins open the employer portal by role; they never wait for employer approval."""
+    return bool(u.is_admin or u.role)
+
+
 def user_status(u) -> str:
     if u.suspended_at is not None:
         return 'suspended'
     if not u.is_verified:
         return 'unverified'
+    if _is_staff(u):
+        return 'active'
     if u.is_hr and u.hr_rejected_at:
         return 'rejected'
     if u.is_hr and not u.hr_approved:
@@ -188,7 +199,7 @@ def _users_query(db, *, q=None, role=None, status=None):
         query = query.filter(User.suspended_at.is_(None), User.is_verified != True)  # noqa: E712
     elif status == 'awaiting_approval':
         query = query.filter(User.suspended_at.is_(None), User.is_hr == True, User.hr_approved != True,  # noqa: E712
-                             User.hr_rejected_at.is_(None))
+                             User.hr_rejected_at.is_(None), User.role.is_(None), User.is_admin != True)  # noqa: E712
     elif status == 'active':
         query = query.filter(User.suspended_at.is_(None), User.is_verified == True)  # noqa: E712
     elif status == 'no_2fa':
@@ -211,7 +222,9 @@ def list_users(db, *, q=None, role=None, status=None, page: int = 1, page_size: 
     plans = dict(db.query(Subscription.user_id, Subscription.plan).filter(Subscription.user_id.in_(ids)).all()) if ids else {}
     return {'total': total, 'page': page, 'page_size': page_size, 'items': [{
         'id': u.id, 'email': u.email, 'full_name': u.full_name, 'company_name': u.company_name,
-        'role': user_role(u), 'status': user_status(u), 'plan': plans.get(u.id) or ('free' if not u.is_hr else None),
+        'role': user_role(u), 'status': user_status(u),
+        'plan': 'enterprise' if is_plan_exempt(u) else (plans.get(u.id) or ('free' if not u.is_hr else None)),
+        'plan_lifetime': is_plan_exempt(u),
         'mfa_enabled': bool(u.totp_enabled_at), 'force_password_reset': bool(u.force_password_reset),
         'suspended_reason': u.suspended_reason, 'last_login_at': _iso(u.last_login_at),
         'last_login_location': u.last_login_location, 'last_login_ip': u.last_login_ip,

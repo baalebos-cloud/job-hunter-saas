@@ -336,3 +336,33 @@ def test_employer_review_flags_risks_and_rejects(env, monkeypatch):
     assert body['counts'] == {'pending': 1, 'approved': 0, 'rejected': 1}
     assert body['items'][0]['rejected_reason'] == 'Free email domain'
     assert good.id in [c['id'] for c in env.client.get('/api/v1/admin/employers', headers=owner(env)).json()['items']]
+
+
+# ── Owner plan ───────────────────────────────────────────────────────────────
+
+def test_owner_has_enterprise_for_life_and_never_waits_for_employer_approval(env):
+    from backend.app.models.subscription import Subscription
+    me = env.db.query(User).filter_by(email=OWNER).one()
+    me.is_hr, me.hr_approved = True, False          # owner also opens the employer portal
+    env.db.add(Subscription(user_id=me.id, plan='free', status='canceled'))
+    pending_hr = user(env, 'hr@example.org', is_hr=True, hr_approved=False)
+    env.db.commit()
+
+    billing = env.client.get('/api/v1/billing/status', headers=owner(env)).json()
+    assert billing['plan'] == 'enterprise' and billing['plan_name'] == 'Enterprise' and billing['lifetime'] is True
+    assert billing['status'] == 'active' and billing['scans_limit'] == -1 and billing['price_monthly'] == 0
+    assert env.client.post('/api/v1/billing/checkout', params={'plan': 'pro'}, headers=owner(env)).status_code == 400
+
+    rows = {u['email']: u for u in env.client.get('/api/v1/admin/accounts', headers=owner(env)).json()['items']}
+    assert rows[OWNER]['plan'] == 'enterprise' and rows[OWNER]['plan_lifetime'] is True
+    assert rows[OWNER]['status'] == 'active'
+    assert rows[pending_hr.email]['status'] == 'awaiting_approval' and rows[pending_hr.email]['plan_lifetime'] is False
+    waiting = env.client.get('/api/v1/admin/accounts', params={'status': 'awaiting_approval'}, headers=owner(env)).json()
+    assert [u['email'] for u in waiting['items']] == [pending_hr.email]
+    employers = env.client.get('/api/v1/admin/employers', params={'status': 'pending'}, headers=owner(env)).json()
+    assert OWNER not in str(employers)
+
+    regular = user(env, 'candidate@example.org')
+    as_user = {'Authorization': 'Bearer ' + create_access_token({'sub': regular.email})}
+    plain = env.client.get('/api/v1/billing/status', headers=as_user).json()
+    assert plain['plan'] == 'free' and plain['lifetime'] is False and plain['scans_limit'] != -1

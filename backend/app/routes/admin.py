@@ -291,7 +291,9 @@ def reject_duplicates(payload: DuplicateReject, request: Request, db: Session = 
 def list_employers(status: str = 'pending', db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     from backend.app.services.account_integrity import employer_card
     base = db.query(User).filter(User.is_hr == True)  # noqa: E712
-    queries = {'pending': base.filter(User.hr_approved == False, User.hr_rejected_at.is_(None)),  # noqa: E712
+    # Admins reach the employer portal by role and never queue for approval.
+    queries = {'pending': base.filter(User.hr_approved == False, User.hr_rejected_at.is_(None),  # noqa: E712
+                                      User.role.is_(None), User.is_admin != True),  # noqa: E712
                'approved': base.filter(User.hr_approved == True),  # noqa: E712
                'rejected': base.filter(User.hr_rejected_at.isnot(None))}
     if status not in queries:

@@ -54,20 +54,23 @@ def get_billing_status(
         sub.reset_date = now
         db.commit()
 
-    exempt = is_plan_exempt(current_user)   # verified admins / the owner: no limits
+    exempt = is_plan_exempt(current_user)   # verified admins / the owner: Enterprise for life
+    if exempt:
+        plan_info = PLANS["enterprise"]
     scans_limit = -1 if exempt else plan_info["scans_per_month"]
     scans_left  = max(0, scans_limit - sub.scans_this_month) if scans_limit != -1 else -1
 
     return {
-        "plan":             sub.plan,
+        "plan":             "enterprise" if exempt else sub.plan,
         "plan_name":        plan_info["name"],
-        "status":           sub.status,
+        "status":           "active" if exempt else sub.status,
+        "lifetime":         exempt,         # never billed, never expires
         "scans_this_month": sub.scans_this_month,
         "scans_limit":      scans_limit,    # -1 = unlimited
         "scans_left":       scans_left,     # -1 = unlimited
         "is_pro":           exempt or sub.plan in ("pro", "enterprise"),
         "plan_exempt":      exempt,
-        "price_monthly":    plan_info["price"],
+        "price_monthly":    0 if exempt else plan_info["price"],
     }
 
 
@@ -79,6 +82,8 @@ def create_checkout_session(
     db: Session = Depends(get_db)
 ):
     """Create a Stripe Checkout session for the selected plan."""
+    if is_plan_exempt(current_user):
+        raise HTTPException(status_code=400, detail="Your account already has Enterprise for life. There is nothing to buy.")
     if plan not in PRICE_IDS or not PRICE_IDS[plan]:
         raise HTTPException(status_code=400, detail=f"Invalid plan or Stripe price ID not configured for '{plan}'")
 

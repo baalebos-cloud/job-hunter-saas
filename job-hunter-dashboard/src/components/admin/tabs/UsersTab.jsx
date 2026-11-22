@@ -198,7 +198,9 @@ export default function UsersTab({ notify, confirm, focus, duplicateCount, onCha
                           <div className="text-xs text-slate-500 truncate">{u.email}{u.company_name ? ` · ${u.company_name}` : ''}</div></div>
                       </div></Td>
                       <Td><Chip tone={roleTone}>{roleLabel}</Chip></Td>
-                      <Td className="capitalize">{u.plan || '—'}</Td>
+                      <Td>{u.plan_lifetime
+                        ? <Chip tone="violet" title="Enterprise for life: unlimited, never billed">Enterprise · Lifetime</Chip>
+                        : <span className="capitalize">{u.plan || '—'}</span>}</Td>
                       <Td><div className="flex flex-wrap gap-1"><Chip tone={statusTone} title={u.suspended_reason || ''}>{statusLabel}</Chip>
                         {u.mfa_enabled && <Chip tone="green">2FA</Chip>}{u.force_password_reset && <Chip tone="amber">Reset required</Chip>}</div></Td>
                       <Td className="text-slate-600 whitespace-nowrap" title={u.last_login_ip || ''}>{u.last_login_at ? <>{ago(u.last_login_at)}{u.last_login_location ? ` · ${u.last_login_location}` : ''}</> : 'Never'}</Td>

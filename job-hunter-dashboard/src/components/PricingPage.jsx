@@ -161,7 +161,10 @@ export default function PricingPage() {
             {billing.scans_limit === -1 && (
               <span className="text-emerald-400 text-sm font-bold">· Unlimited scans</span>
             )}
-            {billing.is_pro && (
+            {billing.lifetime && (
+              <span className="text-purple-300 text-sm font-bold">· Lifetime, never billed</span>
+            )}
+            {billing.is_pro && !billing.lifetime && (
               <button onClick={handlePortal}
                 className="text-xs font-black text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 px-3 py-1 rounded-lg transition-all ml-2">
                 Manage Billing →
@@ -237,14 +240,16 @@ export default function PricingPage() {
                 {/* CTA */}
                 <button
                   onClick={() => handleUpgrade(plan.id)}
-                  disabled={isCurrentPlan || upgrading === plan.id}
+                  disabled={isCurrentPlan || billing?.lifetime || upgrading === plan.id}
                   className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${
                     isCurrentPlan ? plan.ctaStyle : plan.ctaStyle
                   }`}>
                   {upgrading === plan.id
                     ? 'Opening Checkout...'
                     : isCurrentPlan
-                    ? '✓ Current Plan'
+                    ? (billing?.lifetime ? '✓ Your plan, for life' : '✓ Current Plan')
+                    : billing?.lifetime
+                    ? 'Included in your plan'
                     : plan.cta}
                 </button>
               </div>
