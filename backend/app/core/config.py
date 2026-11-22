@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # Help & support: new requests are alerted here and replies come from it.
     SUPPORT_EMAIL: str = "support@baalebo.xyz"
     FRONTEND_URL: str = "https://www.baalebo.xyz"
+    # Public https base of this API (e.g. https://api.baalebo.xyz). Optional:
+    # enables Gmail/Outlook's one-click "Unsubscribe" button on job alerts.
+    API_PUBLIC_URL: str = ""
     N8N_APPLICATION_WEBHOOK_URL: str = ""
     N8N_EVENTS_WEBHOOK_URL: str = ""
     N8N_WEBHOOK_SECRET: str = ""

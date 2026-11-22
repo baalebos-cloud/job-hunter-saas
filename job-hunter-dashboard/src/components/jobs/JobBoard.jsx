@@ -230,7 +230,9 @@ export default function JobBoard({ onApply, lastTaskId }) {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState(null);
+  // Links from job alert emails open straight to a job: /jobs?job=<id>
+  const deepLinked = useRef(Number(new URLSearchParams(window.location.search).get('job')) || null);
+  const [selected, setSelected] = useState(() => (deepLinked.current ? { id: deepLinked.current } : null));
   const [isWide, setIsWide] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   const wideRef = useRef(isWide);
   const listTop = useRef(null);
@@ -250,7 +252,10 @@ export default function JobBoard({ onApply, lastTaskId }) {
       const { data } = await axios.get(`${API}/jobs/board`, { params, headers: auth() });
       setItems(data.items);            // one page at a time
       setMeta(data); setPage(nextPage);
-      setSelected(sel => (wideRef.current ? (data.items[0] || null) : sel && data.items.find(j => j.id === sel.id) ? sel : null));
+      setSelected(sel => {
+        if (deepLinked.current && sel?.id === deepLinked.current) return sel;   // keep the job the link opened
+        return wideRef.current ? (data.items[0] || null) : sel && data.items.find(j => j.id === sel.id) ? sel : null;
+      });
     } catch (err) { setError(errorText(err, 'Jobs could not be loaded. Please retry.')); }
     finally { setLoading(false); }
   }, [filters, sort]);

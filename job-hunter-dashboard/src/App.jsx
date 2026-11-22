@@ -13,6 +13,7 @@ import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
 import HelpPage from './components/support/HelpPage'
 import MyResumes from './components/resumes/MyResumes'
+import UnsubscribePage from './components/support/UnsubscribePage'
 import { signOut, errorText } from './lib/session'
 import Signup from './components/auth/Signup'
 import Login from './components/auth/Login'
@@ -510,6 +511,7 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password"  element={<ResetPassword />} />
         <Route path="/verify-email"    element={<VerifyEmail />} />
+        <Route path="/unsubscribe"     element={<UnsubscribePage />} />
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/signup"       element={<HRSignup />} />
         <Route path="/hr/verify"       element={<VerifyEmail />} />

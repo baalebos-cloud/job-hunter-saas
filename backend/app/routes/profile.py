@@ -48,6 +48,8 @@ class ProfileUpdate(BaseModel):
     timezone:            Optional[str]  = None
     job_alerts_enabled:   Optional[bool] = None
     job_alert_work_type:  Optional[Literal["all", "remote", "hybrid", "onsite"]] = None
+    job_alert_frequency:  Optional[Literal["daily", "weekly"]] = None
+    job_alert_min_match:  Optional[Literal[0, 50, 70]] = None
 
 
 class SkillIn(BaseModel):
@@ -98,6 +100,8 @@ def _serialize_profile(user: User) -> dict:
         "is_admin":            user.is_admin,
         "job_alerts_enabled":   user.job_alerts_enabled,
         "job_alert_work_type":  user.job_alert_work_type,
+        "job_alert_frequency":  user.job_alert_frequency or "daily",
+        "job_alert_min_match":  user.job_alert_min_match or 0,
         "created_at":          user.created_at,
         "certified_skills":    [{"id": s.id, "name": s.name} for s in user.certified_skills if s.verified and s.name not in DEFAULT_CERTIFIED_SKILLS],
         "other_skills":        [{"id": s.id, "name": s.name} for s in user.other_skills],
@@ -137,7 +141,8 @@ def update_my_profile(
 ):
     updates = payload.dict(exclude_unset=True)
     # Nullable PATCH fields cannot erase database NOT NULL consent settings.
-    if any(field in updates and updates[field] is None for field in ("job_alerts_enabled", "job_alert_work_type")):
+    if any(field in updates and updates[field] is None for field in ("job_alerts_enabled", "job_alert_work_type",
+                                                                   "job_alert_frequency", "job_alert_min_match")):
         raise HTTPException(422, "Choose a valid job alert setting.")
     if updates.get("job_alerts_enabled"):
         if current_user.is_hr or current_user.is_admin:
