@@ -186,9 +186,11 @@ def test_async_failure_is_reported_and_not_charged(client, db, pipeline, async_m
 
 
 def test_stuck_jobs_expire_and_in_flight_jobs_count_against_quota(client, db, pipeline, async_mode):
+    from backend.app.models.subscription import PLANS
     first = upload(client).json()['task_id']
-    assert upload(client).status_code == 202
-    assert upload(client).status_code == 403  # free plan: 2 scans, both in flight
+    for _ in range(PLANS['free']['scans_per_month'] - 1):
+        assert upload(client).status_code == 202
+    assert upload(client).status_code == 403  # every free scan is in flight
     record = db.query(Resume).filter(Resume.filename == f'optimized_{first}.pdf').one()
     record.updated_at = datetime.utcnow() - timedelta(minutes=settings.RESUME_JOB_TIMEOUT_MINUTES + 1)
     db.commit()

@@ -9,6 +9,36 @@ import PartnerBanner from './PartnerBanner';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const auth = () => (localStorage.getItem('token') ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : {});
 
+const PAGE_SIZE = 20;
+const MAX_PAGES = 200;   // the API serves pages 1-200; narrow the search to see more
+
+// Page numbers to show: always first and last, the current page and two
+// neighbours either side, with gaps marked as null ("…").
+function pageWindow(current, total) {
+  const pages = new Set([1, total, current - 2, current - 1, current, current + 1, current + 2].filter(n => n >= 1 && n <= total));
+  const sorted = [...pages].sort((a, b) => a - b);
+  return sorted.flatMap((n, i) => (i && n - sorted[i - 1] > 1 ? [null, n] : [n]));
+}
+
+function Pagination({ page, totalPages, onPage, disabled }) {
+  if (totalPages <= 1) return null;
+  const btn = 'min-w-[36px] h-9 px-2.5 rounded-lg text-sm font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+  return (
+    <nav aria-label="Job results pages" className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+      <button type="button" onClick={() => onPage(page - 1)} disabled={disabled || page <= 1} aria-label="Previous page" title="Previous page"
+        className={`${btn} bg-white border-slate-200 text-slate-700 hover:bg-slate-50`}>‹</button>
+      {pageWindow(page, totalPages).map((n, i) => (n === null
+        ? <span key={`gap-${i}`} className="px-1 text-slate-400" aria-hidden="true">…</span>
+        : <button key={n} type="button" onClick={() => onPage(n)} disabled={disabled} aria-current={n === page ? 'page' : undefined}
+            aria-label={`Page ${n}`}
+            className={`${btn} ${n === page ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>{n}</button>))}
+      <button type="button" onClick={() => onPage(page + 1)} disabled={disabled || page >= totalPages} aria-label="Next page" title="Next page"
+        className={`${btn} bg-white border-slate-200 text-slate-700 hover:bg-slate-50`}>›</button>
+      <span className="w-full text-center text-xs text-slate-500 mt-1">Page {page} of {totalPages.toLocaleString()}</span>
+    </nav>
+  );
+}
+
 const CATEGORIES = [['', 'All categories'], ['engineering', 'Software engineering'], ['devops', 'DevOps & cloud'],
   ['data', 'Data & AI'], ['security', 'Security'], ['mobile', 'Mobile'], ['qa', 'QA & testing'], ['product', 'Product & design']];
 const REGIONS = [['', 'Anywhere'], ['worldwide', 'Worldwide remote'], ['africa', 'Africa'], ['europe', 'Europe'],
@@ -203,6 +233,7 @@ export default function JobBoard({ onApply, lastTaskId }) {
   const [selected, setSelected] = useState(null);
   const [isWide, setIsWide] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   const wideRef = useRef(isWide);
+  const listTop = useRef(null);
   wideRef.current = isWide;
 
   useEffect(() => {
@@ -215,16 +246,22 @@ export default function JobBoard({ onApply, lastTaskId }) {
   const load = useCallback(async (nextPage) => {
     setLoading(true); setError('');
     try {
-      const params = { sort, page: nextPage, page_size: 20, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) };
+      const params = { sort, page: nextPage, page_size: PAGE_SIZE, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) };
       const { data } = await axios.get(`${API}/jobs/board`, { params, headers: auth() });
-      setItems(prev => (nextPage === 1 ? data.items : [...prev, ...data.items]));
+      setItems(data.items);            // one page at a time
       setMeta(data); setPage(nextPage);
-      if (nextPage === 1) setSelected(sel => (wideRef.current ? (data.items[0] || null) : sel && data.items.find(j => j.id === sel.id) ? sel : null));
+      setSelected(sel => (wideRef.current ? (data.items[0] || null) : sel && data.items.find(j => j.id === sel.id) ? sel : null));
     } catch (err) { setError(errorText(err, 'Jobs could not be loaded. Please retry.')); }
     finally { setLoading(false); }
   }, [filters, sort]);
   useEffect(() => { load(1); }, [load]);
 
+  const totalPages = meta ? Math.min(MAX_PAGES, Math.max(1, Math.ceil(meta.total / (meta.page_size || PAGE_SIZE)))) : 1;
+  const goToPage = (next) => {
+    if (next < 1 || next > totalPages || next === page) return;
+    load(next);
+    listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const search = (e) => { e.preventDefault(); setFilters(f => ({ ...f, ...draft, q: draft.q.trim() })); };
   const toggle = (key) => setFilters(f => ({ ...f, [key]: !f[key] }));
   const select = (job) => { setSelected(job); if (!isWide) window.scrollTo({ top: 0 }); };
@@ -267,15 +304,14 @@ export default function JobBoard({ onApply, lastTaskId }) {
 
       {error && <p role="alert" className="mt-4 text-sm text-rose-700 bg-rose-50 rounded-xl p-4">{error} <button type="button" onClick={() => load(1)} className="font-semibold underline">Retry</button></p>}
 
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-4 items-start">
+      <div ref={listTop} className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-4 items-start scroll-mt-4">
         <div className={`min-w-0 space-y-3 ${!isWide && selected ? 'hidden' : ''}`}>
-          {items.map(job => <JobCard key={job.id} job={job} selected={selected?.id === job.id} onSelect={select} />)}
+          {!loading && items.map(job => <JobCard key={job.id} job={job} selected={selected?.id === job.id} onSelect={select} />)}
           {!loading && !items.length && !error && (
             <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center text-sm text-slate-500">
               No jobs match these filters. Try a broader search or clear a filter.</div>)}
           {loading && <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-emerald-600" /></div>}
-          {!loading && meta && items.length < meta.total && (
-            <div className="text-center"><button type="button" onClick={() => load(page + 1)} className="text-sm font-semibold text-slate-700 border border-slate-200 bg-white rounded-xl px-4 py-2 hover:bg-slate-50">Load more</button></div>)}
+          {meta && items.length > 0 && <Pagination page={page} totalPages={totalPages} onPage={goToPage} disabled={loading} />}
         </div>
         {selected && (
           <div className="min-w-0 bg-white border border-slate-200 rounded-2xl lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">

@@ -4,7 +4,8 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { startSession, errorText } from '../../lib/session';
+import { errorText } from '../../lib/session';
+import VerifyEmailNotice from './VerifyEmailNotice';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -47,6 +48,7 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const [refCode, setRefCode] = useState('');
+  const [sentTo, setSentTo] = useState('');   // set once the account exists: verify email, then sign in
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // ── Capture referral code from URL or localStorage ────────────────────────
@@ -62,46 +64,18 @@ export default function Signup() {
     setError('');
 
     try {
-      // Step 1: Create the account
+      // The account can sign in only after its email address is verified;
+      // the referral is recorded server-side at signup.
       const res = await axios.post(`${API_BASE_URL}/auth/signup`, {
         full_name:    form.name,
         email:        form.email,
         password:     form.password,
         career_track: form.career_track || null,
         country:      form.country || null,
+        ref_code:     refCode || null,
       });
-
-      const token = res.data.access_token || res.data.token || null;
-
-      // Step 2: Track referral if a ref code was present
-      if (refCode && form.email) {
-        try {
-          await axios.post(
-            `${API_BASE_URL}/referral/track`,
-            null,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-              params: {
-                ref_code:       refCode,
-                referred_email: form.email,
-              },
-            }
-          );
-          // Clear stored ref code after tracking
-          localStorage.removeItem('ref_code');
-        } catch (refErr) {
-          // Referral tracking failure must never block signup
-          console.warn('Referral tracking failed (non-blocking):', refErr.message);
-        }
-      }
-
-      // Step 3: Redirect
-      if (token?.trim()) {
-        startSession(token);
-        window.location.href = '/';
-      } else {
-        window.location.href = '/login';
-      }
+      if (refCode) localStorage.removeItem('ref_code');
+      setSentTo(res.data?.email || form.email);
 
     } catch (err) {
       setError(errorText(err, 'Signup failed. Please try again.'));
@@ -197,6 +171,7 @@ export default function Signup() {
             </div>
           )}
 
+          {sentTo ? <VerifyEmailNotice email={sentTo} title="Verify your email to finish" /> : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className={labelCls}>Full Name</label>
@@ -261,7 +236,7 @@ export default function Signup() {
                 </span>
               ) : 'Start My Global Job Search →'}
             </button>
-          </form>
+          </form>)}
 
           <div className="mt-6 pt-6 border-t border-slate-800 text-center">
             <p className="text-sm text-slate-500 font-medium">

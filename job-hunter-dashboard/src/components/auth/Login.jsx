@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import { startSession, errorText } from '../../lib/session';
 import MfaChallenge from './MfaChallenge';
+import VerifyEmailNotice from './VerifyEmailNotice';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -15,6 +16,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [mfaToken, setMfaToken] = useState(null);
+  const [unverified, setUnverified] = useState('');   // email that must be verified before signing in
 
   useEffect(() => {
     if (localStorage.getItem('token')) window.location.href = destination;
@@ -30,6 +32,8 @@ export default function Login() {
       if (token?.trim()) { startSession(token); window.location.href = destination; }
       else setError('Login succeeded but no token received.');
     } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (detail?.code === 'email_not_verified') { setUnverified(detail.email || form.email); return; }
       setError(errorText(err, 'Invalid email or password.'));
     } finally { setLoading(false); }
   };
@@ -135,7 +139,11 @@ export default function Login() {
             </div>
           )}
 
-          {mfaToken ? (
+          {unverified ? (
+            <VerifyEmailNotice email={unverified} title="Verify your email to sign in"
+              intro="Your account isn't active yet. We sent a verification link to"
+              onBack={() => setUnverified('')} />
+          ) : mfaToken ? (
             <MfaChallenge mfaToken={mfaToken} onCancel={() => setMfaToken(null)}
               onSuccess={(data) => { startSession(data.access_token); window.location.href = destination; }} />
           ) : (
