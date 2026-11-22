@@ -160,7 +160,7 @@ export default function HRSignup() {
             Verified HR accounts only. We review every company to keep our talent pool trusted and spam-free.
           </p>
           <div className="flex gap-6 mt-6">
-            {[['Free','To Post Jobs'],['Verified','Companies Only'],['Global','80+ Countries']].map(([v,l]) => (
+            {[['Free','To Post Jobs'],['Verified','Companies Only'],['Global','Remote & worldwide talent']].map(([v,l]) => (
               <div key={l}>
                 <div className="text-xl font-black text-white">{v}</div>
                 <div className="text-xs text-slate-500 font-semibold mt-0.5">{l}</div>
