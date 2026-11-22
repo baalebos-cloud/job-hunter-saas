@@ -285,14 +285,17 @@ export default function ProfilePage() {
         <aside className="space-y-4">
           <Section title="Job preferences" action={<EditButton onClick={() => { setError(''); setModal({ kind: 'preferences', data: {
             expected_pay_hourly: profile.expected_pay_hourly ?? '', notice_period_days: profile.notice_period_days ?? '',
-            job_alert_work_type: profile.job_alert_work_type || 'all', job_alerts_enabled: !!profile.job_alerts_enabled } }); }} />}>
+            job_alert_work_type: profile.job_alert_work_type || 'all', job_alerts_enabled: !!profile.job_alerts_enabled,
+            job_alert_frequency: profile.job_alert_frequency || 'daily', job_alert_min_match: profile.job_alert_min_match || 0 } }); }} />}>
             <dl className="space-y-2 text-sm">
               {[['Headline', profile.career_track || '—'],
                 ['Work type', { all: 'Any', remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' }[profile.job_alert_work_type] || 'Any'],
                 ['Expected pay', profile.expected_pay_hourly ? `$${profile.expected_pay_hourly} / hour` : '—'],
                 ['Notice period', profile.notice_period_days != null ? `${profile.notice_period_days} days` : '—'],
-                ['Job alerts', profile.job_alerts_enabled ? 'On' : 'Off']].map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className={`text-right ${v === 'On' ? 'text-emerald-700' : 'text-slate-900'}`}>{v}</dd></div>))}
+                ['Job alerts', profile.job_alerts_enabled
+                  ? `${profile.job_alert_frequency === 'weekly' ? 'Weekly' : 'Daily'}${profile.job_alert_min_match ? ` · ${profile.job_alert_min_match}%+ match` : ''}`
+                  : 'Off']].map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className={`text-right ${k === 'Job alerts' && v !== 'Off' ? 'text-emerald-700' : 'text-slate-900'}`}>{v}</dd></div>))}
             </dl>
           </Section>
 
@@ -383,6 +386,7 @@ export default function ProfilePage() {
             expected_pay_hourly: form.expected_pay_hourly === '' ? null : Number(form.expected_pay_hourly),
             notice_period_days: form.notice_period_days === '' ? null : Number(form.notice_period_days),
             job_alert_work_type: form.job_alert_work_type, job_alerts_enabled: form.job_alerts_enabled,
+            job_alert_frequency: form.job_alert_frequency, job_alert_min_match: Number(form.job_alert_min_match),
           }, 'Preferences saved')}>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Expected pay (USD / hour)"><input type="number" min="0" step="1" value={form.expected_pay_hourly} onChange={e => setForm({ expected_pay_hourly: e.target.value })} className={input} /></Field>
@@ -393,10 +397,18 @@ export default function ProfilePage() {
           {!profile.is_hr && !profile.is_admin && (
             <label className="flex items-start gap-3 text-sm text-slate-700">
               <input type="checkbox" className="mt-0.5 accent-emerald-600" disabled={!profile.is_verified} checked={form.job_alerts_enabled} onChange={e => setForm({ job_alerts_enabled: e.target.checked })} />
-              <span>Email me a daily digest of new jobs matching my headline and work type.
+              <span>Email me new jobs that match my headline, location and work type, with a match % for each.
                 {!profile.is_verified && <span className="block text-xs text-amber-700">Verify your email first.</span>}
                 {!profile.career_track && <span className="block text-xs text-amber-700">Add a headline in Edit profile first.</span>}</span>
             </label>)}
+          {!profile.is_hr && !profile.is_admin && form.job_alerts_enabled && (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="How often"><select value={form.job_alert_frequency} onChange={e => setForm({ job_alert_frequency: e.target.value })} className={input}>
+                <option value="daily">Daily</option><option value="weekly">Weekly</option></select></Field>
+              <Field label="Minimum match"><select value={form.job_alert_min_match} onChange={e => setForm({ job_alert_min_match: Number(e.target.value) })} className={input}>
+                <option value={0}>Any match</option><option value={50}>50% or more</option><option value={70}>70% or more</option></select></Field>
+              <p className="col-span-2 -mt-2 text-xs text-slate-500">Match % is the share of a job&apos;s listed skills found in your resume or profile. Jobs that list too few skills to score are only included with &quot;Any match&quot;.</p>
+            </div>)}
         </Modal>)}
     </div>
   );

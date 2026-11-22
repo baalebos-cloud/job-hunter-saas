@@ -5,7 +5,6 @@ gets a match percentage against the user's latest resume and profile skills.
 """
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timedelta
 from typing import Optional
@@ -63,9 +62,12 @@ def user_skills(db: Session, user) -> set[str]:
     latest = (db.query(Resume).filter(Resume.owner_id == user.id)
               .order_by(Resume.created_at.desc(), Resume.id.desc()).first())
     if latest is not None:
+        # Only the candidate's own resume content and skills they confirmed. The
+        # analysis also stores the job's requirements and the skills they are
+        # missing; reading those would credit them with skills they don't have.
         text.append(latest.parsed_data or '')
-        if latest.analysis_data:
-            text.append(json.dumps(latest.analysis_data)[:60000])
+        confirmed = (latest.analysis_data or {}).get('confirmed_keywords') or []
+        text += [k for k in confirmed if isinstance(k, str)]
     text += [s.name for s in db.query(CertifiedSkill).filter(CertifiedSkill.user_id == user.id)]
     text += [s.name for s in db.query(OtherSkill).filter(OtherSkill.user_id == user.id)]
     return set(find_terms('\n'.join(text)))

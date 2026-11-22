@@ -36,6 +36,7 @@ export default function OperationsTab({ system, grafanaUrl, notify, onScrape, sc
   const last = automation?.last_scrape;
   const summary = last?.summary || {};
   const counts = automation?.notification_counts || {};
+  const alerts = automation?.job_alerts || {};
   return (
     <div className="space-y-4">
       {error && <Banner onClose={() => setError('')}>{error}</Banner>}
@@ -52,14 +53,19 @@ export default function OperationsTab({ system, grafanaUrl, notify, onScrape, sc
           <div className="mt-auto pt-4"><Button variant="primary" icon={Play} busy={scraping} onClick={onScrape} className="w-full">Run now</Button></div>
         </div>
         <div className={`${card} p-5 flex flex-col`}>
-          <div className="flex items-center justify-between"><h2 className="font-semibold">Notifications (n8n)</h2>
-            <Chip tone={automation?.events_configured ? 'green' : 'slate'}>{automation?.events_configured ? 'Configured' : 'Not configured'}</Chip></div>
+          <div className="flex items-center justify-between"><h2 className="font-semibold">Notifications</h2>
+            <Chip tone={alerts.channel ? 'green' : 'slate'}>{alerts.channel === 'n8n' ? 'via n8n' : alerts.channel === 'email' ? 'via email (Resend)' : 'Not configured'}</Chip></div>
+          <dl className="mt-3 space-y-1.5 text-[13px]">
+            <div className="flex justify-between"><dt className="text-slate-500">Job alert subscribers</dt><dd>{num(alerts.subscribers)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Alert emails sent today</dt><dd>{num(alerts.sent_today)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Alerts waiting / failed</dt><dd>{num(alerts.pending)} / {num(alerts.failed)}</dd></div>
+          </dl>
           <div className="mt-4 grid grid-cols-3 gap-2 text-center">
             {[['pending', 'Queued'], ['sent', 'Accepted'], ['failed', 'Failed']].map(([k, label]) => (
               <div key={k} className="rounded-xl bg-slate-50 py-2"><div className="text-lg font-semibold">{num(counts[k])}</div><div className="text-[11px] text-slate-500">{label}</div></div>
             ))}
           </div>
-          {!automation?.events_configured && <p className="mt-3 text-xs text-slate-500">Set N8N_EVENTS_WEBHOOK_URL and N8N_WEBHOOK_SECRET on Railway.</p>}
+          {!alerts.channel && <p className="mt-3 text-xs text-slate-500">Set RESEND_API_KEY on Railway (or n8n), and schedule /automation/tick.</p>}
           <div className="mt-auto pt-4 flex gap-2">
             <Button icon={RefreshCw} onClick={load} className="flex-1">Refresh</Button>
             <Button icon={Send} busy={processing} onClick={processQueue} className="flex-1">Process queue</Button>

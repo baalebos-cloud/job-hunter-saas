@@ -45,6 +45,8 @@ class User(Base):
     job_alerts_enabled   = Column(Boolean, default=False, nullable=False)
     job_alerts_enabled_at = Column(DateTime, nullable=True)
     job_alert_work_type  = Column(String, default="all", nullable=False)
+    job_alert_frequency  = Column(String(10), default="daily", server_default="daily", nullable=False)  # daily | weekly
+    job_alert_min_match  = Column(Integer, default=0, server_default="0", nullable=False)               # 0 | 50 | 70
 
     # RBAC governance role (super_admin, security_auditor, engineering_lead,
     # compliance_officer, viewer); NULL for candidates and employers.
