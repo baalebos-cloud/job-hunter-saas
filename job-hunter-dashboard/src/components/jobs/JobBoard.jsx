@@ -4,6 +4,7 @@ import {
   BadgeCheck, Briefcase, Calendar, Clock, ExternalLink, Globe, Loader2, MapPin, Search, Sparkles, Wallet, X,
 } from 'lucide-react';
 import { errorText } from '../../lib/session';
+import PartnerBanner from './PartnerBanner';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const auth = () => (localStorage.getItem('token') ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : {});
@@ -261,6 +262,8 @@ export default function JobBoard({ onApply, lastTaskId }) {
               <option value="best">{meta?.personalised ? 'Best match' : 'Recommended'}</option><option value="newest">Newest</option></select></label>
         </div>
       </div>
+
+      <PartnerBanner />
 
       {error && <p role="alert" className="mt-4 text-sm text-rose-700 bg-rose-50 rounded-xl p-4">{error} <button type="button" onClick={() => load(1)} className="font-semibold underline">Retry</button></p>}
 
