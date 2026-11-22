@@ -2,9 +2,10 @@ import io
 import json
 import logging
 import re
+import time
 import pdfplumber
 from docx import Document
-from openai import OpenAI, BadRequestError
+from openai import OpenAI, BadRequestError, RateLimitError
 from pydantic import ValidationError
 from backend.app.utils.resume_contracts import ExtractedResume, ResumeRewrite, Requirements
 from backend.app.core.config import settings
@@ -45,19 +46,82 @@ def extract_text_with_ocr(file_content: bytes, filename='resume.pdf'):
     return text
 
 
-def get_client():
+def provider_chain():
+    """Every configured provider, in order of preference: (name, client, model)."""
+    chain = []
     if settings.GROQ_API_KEY:
-        return OpenAI(api_key=settings.GROQ_API_KEY, base_url='https://api.groq.com/openai/v1', timeout=60, max_retries=1), settings.GROQ_MODEL
+        chain.append(('groq', OpenAI(api_key=settings.GROQ_API_KEY, base_url='https://api.groq.com/openai/v1',
+                                     timeout=60, max_retries=1), settings.GROQ_MODEL))
     if settings.OPENROUTER_API_KEY:
-        return OpenAI(api_key=settings.OPENROUTER_API_KEY, base_url='https://openrouter.ai/api/v1', timeout=60, max_retries=1), 'anthropic/claude-3-haiku'
+        chain.append(('openrouter', OpenAI(api_key=settings.OPENROUTER_API_KEY, base_url='https://openrouter.ai/api/v1',
+                                           timeout=60, max_retries=1), 'anthropic/claude-3-haiku'))
     if settings.OPENAI_API_KEY:
-        return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=1), 'gpt-4o-mini'
-    raise ValueError('Resume analysis is currently unavailable. AI provider is not configured.')
+        chain.append(('openai', OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=1), 'gpt-4o-mini'))
+    return chain
+
+
+def get_client():
+    chain = provider_chain()
+    if not chain:
+        raise ValueError('Resume analysis is currently unavailable. AI provider is not configured.')
+    return chain[0][1], chain[0][2]
+
+
+# Wait out a short per-minute limit once; anything longer (a daily cap) moves
+# straight to the next configured provider instead of keeping the user waiting.
+RATE_LIMIT_MAX_WAIT_SECONDS = 20
+
+
+def _retry_after(exc) -> float | None:
+    headers = getattr(getattr(exc, 'response', None), 'headers', None) or {}
+    for name in ('retry-after', 'x-ratelimit-reset-tokens', 'x-ratelimit-reset-requests'):
+        value = headers.get(name)
+        if not value:
+            continue
+        try:
+            return float(value)
+        except ValueError:
+            match = re.fullmatch(r'(?:(\d+)m)?([\d.]+)s', value.strip())   # Groq style: "7.66s", "1m2.5s"
+            if match:
+                return int(match.group(1) or 0) * 60 + float(match.group(2))
+    return None
 
 
 def _json(prompt, contract=None, client_model=None):
+    """Structured completion with rate-limit resilience: a short wait is retried
+    once on the same provider, then each other configured provider is tried."""
+    explicit = client_model is not None
+    primary = client_model if explicit else get_client()
+    candidates = [('primary', *primary)]
+    last = None
+    index = 0
+    while index < len(candidates):
+        name, client, model = candidates[index]
+        for attempt in (1, 2):
+            try:
+                return _json_once(prompt, contract, (client, model))
+            except RateLimitError as exc:
+                last = exc
+                wait = _retry_after(exc)
+                logger.warning('resume_ai_rate_limited provider=%s attempt=%s retry_after=%s', name, attempt,
+                               None if wait is None else round(wait, 1))
+                if attempt == 1 and wait is not None and wait <= RATE_LIMIT_MAX_WAIT_SECONDS:
+                    time.sleep(wait + 0.5)
+                    continue
+                break
+        if index == 0 and not explicit:
+            # Only now build the other providers; skip the one that just refused.
+            candidates += [c for c in provider_chain() if c[2] != model]
+        index += 1
+        if index < len(candidates):
+            logger.warning('resume_ai_provider_fallback from=%s to=%s', name, candidates[index][0])
+    raise last
+
+
+def _json_once(prompt, contract=None, client_model=None):
     client, model = client_model if client_model is not None else get_client()
-    options = {'max_tokens': 6000}
+    # Claude 3 Haiku (OpenRouter fallback) accepts at most 4096 output tokens.
+    options = {'max_tokens': 4096 if 'claude-3-haiku' in model else 6000}
     if settings.GROQ_API_KEY and model in ('openai/gpt-oss-20b', 'openai/gpt-oss-120b'):
         # Groq GPT-OSS completion budgets also cover reasoning. Use JSON mode
         # and low effort so structured extraction has room for the full history.
