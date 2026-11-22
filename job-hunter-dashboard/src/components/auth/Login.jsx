@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { startSession, errorText } from '../../lib/session';
 import MfaChallenge from './MfaChallenge';
 import VerifyEmailNotice from './VerifyEmailNotice';
+import { useLiveStats } from '../../lib/liveStats';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -16,7 +17,8 @@ export default function Login() {
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [mfaToken, setMfaToken] = useState(null);
-  const [unverified, setUnverified] = useState('');   // email that must be verified before signing in
+  const [unverified, setUnverified] = useState('');
+  const stats = useLiveStats();   // real figures; hidden when unavailable   // email that must be verified before signing in
 
   useEffect(() => {
     if (localStorage.getItem('token')) window.location.href = destination;
@@ -58,16 +60,17 @@ export default function Login() {
             <span className="w-3 h-3 rounded-full bg-amber-500"/>
             <span className="w-3 h-3 rounded-full bg-emerald-500"/>
             <span className="text-slate-500 ml-2">ats_result.json</span>
+            <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-violet-300 bg-violet-500/15 rounded px-1.5 py-0.5">Example</span>
           </div>
           <div className="text-slate-400">{'{'}</div>
-          <div className="pl-4"><span className="text-blue-400">"ats_score"</span><span className="text-slate-400">: </span><span className="text-emerald-400">94</span><span className="text-slate-400">,</span></div>
-          <div className="pl-4"><span className="text-blue-400">"status"</span><span className="text-slate-400">: </span><span className="text-amber-400">"interview"</span></div>
+          <div className="pl-4"><span className="text-blue-400">"ats_score"</span><span className="text-slate-400">: </span><span className="text-emerald-400">82</span><span className="text-slate-400">,</span></div>
+          <div className="pl-4"><span className="text-blue-400">"status"</span><span className="text-slate-400">: </span><span className="text-amber-400">"review_required"</span></div>
           <div className="text-slate-400">{'}'}</div>
         </div>
 
         <div className="absolute bottom-48 right-12 bg-slate-900/80 backdrop-blur border border-blue-500/20 rounded-2xl p-4 text-xs font-mono shadow-xl z-10">
-          <div className="text-slate-500 mb-2">// AI Match Engine</div>
-          <div><span className="text-purple-400">const</span> <span className="text-blue-300">match</span> <span className="text-slate-400">= </span><span className="text-emerald-400">97.3</span><span className="text-slate-400">%</span></div>
+          <div className="text-slate-500 mb-2 flex items-center gap-3">// Match engine <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-violet-300 bg-violet-500/15 rounded px-1.5 py-0.5">Example</span></div>
+          <div><span className="text-purple-400">const</span> <span className="text-blue-300">match</span> <span className="text-slate-400">= </span><span className="text-emerald-400">86</span><span className="text-slate-400">%</span></div>
           <div><span className="text-purple-400">const</span> <span className="text-blue-300">role</span> <span className="text-slate-400">= </span><span className="text-amber-400">"DevOps Eng."</span></div>
         </div>
 
@@ -88,17 +91,18 @@ export default function Login() {
         <div className="relative z-10">
           <h2 className="text-5xl font-black text-white leading-[1.1] mb-5"
             style={{ fontFamily: "'Playfair Display', serif" }}>
-            Land Your<br/>
+            Tailor Your<br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-400">
-              Dream Tech Job
+              Resume to Every
             </span><br/>
-            With AI.
+            Tech Job.
           </h2>
           <p className="text-slate-400 text-base leading-relaxed mb-8 max-w-md">
             AI-powered resume optimization, real-time ATS scoring, and global job matching — all in one platform.
           </p>
           <div className="flex items-center gap-8">
-            {[['94%', 'Avg ATS Score'], ['5 min', 'To Optimize'], ['80+', 'Countries']].map(([v, l]) => (
+            {[stats && [stats.open_jobs.toLocaleString(), 'Open tech jobs'], ['PDF + Word', 'Tailored downloads'],
+              ['Remote', '& worldwide roles']].filter(Boolean).map(([v, l]) => (
               <div key={l}>
                 <div className="text-2xl font-black text-white">{v}</div>
                 <div className="text-xs text-slate-500 font-semibold mt-0.5">{l}</div>

@@ -119,3 +119,19 @@ def test_employer_cannot_post_the_same_role_twice_and_replaces_a_scraped_copy(db
     assert [(j.posted_by_hr, j.is_active) for j in db.query(Job).order_by(Job.id)] == [(False, False), (True, True)]
     again = client.post('/api/v1/hr/jobs', json={**body, 'title': 'Site Reliability Engineer - Remote'}, headers=headers)
     assert again.status_code == 409 and 'already posted' in again.json()['detail']
+
+
+def test_public_stats_count_matches_the_board_and_is_cached(db, monkeypatch):
+    from backend.app.routes import job_board
+    monkeypatch.setattr(job_board, '_STATS_CACHE', {'at': 0.0, 'value': None})
+    db.add_all([job(1, 'Backend Developer', 'Fabrikam'), job(2, 'Backend Dev', 'Fabrikam Ltd'),   # one role
+                job(3, 'Data Engineer', 'Contoso'), job(4, 'Closed role', 'Old')])
+    db.commit()
+    db.get(Job, 4).is_active = False
+    db.commit()
+    client = TestClient(app)
+    stats = client.get('/api/v1/jobs/stats').json()
+    assert stats['open_jobs'] == client.get('/api/v1/jobs/board').json()['total'] == 2
+    assert stats['updated_at'].endswith('Z')
+    db.add(job(5, 'QA Engineer', 'Litware')); db.commit()
+    assert client.get('/api/v1/jobs/stats').json()['open_jobs'] == 2      # cached for five minutes
