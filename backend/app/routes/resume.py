@@ -347,8 +347,9 @@ def _bulk_targets(db, job_ids: str | None, pasted: str | None) -> list[dict]:
     return targets
 
 
-def run_bulk_batch(batch_id: str, owner_id: int, content: bytes, filename: str, region: str, items: list[dict]):
-    """Sync mode: tailor each job in turn on priority capacity; each result lands in My resumes."""
+def run_bulk_batch(batch_id: str | None, owner_id: int, content: bytes, filename: str, region: str, items: list[dict]):
+    """Sync mode: tailor each job in turn on priority capacity; each result lands in My resumes.
+    Also used by the integrations API for single jobs (no batch)."""
     from backend.app.database import SessionLocal
     from backend.app.services.processing_gate import processing_slot
     db = SessionLocal()
@@ -362,7 +363,7 @@ def run_bulk_batch(batch_id: str, owner_id: int, content: bytes, filename: str, 
                 with processing_slot(True):
                     tailored, analysis, pdf = run_pipeline(content, filename, item['description'], item['title'],
                                                            region, item['task_id'], True)
-                analysis.update(item['meta'], batch_id=batch_id)
+                analysis.update(item['meta'], **({'batch_id': batch_id} if batch_id else {}))
                 complete_record(db, record, tailored, analysis, pdf)
             except Exception as exc:
                 db.rollback()

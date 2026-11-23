@@ -30,6 +30,8 @@ import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 import TeamJoin from './components/team/TeamJoin'
 import TeamSettings from './components/team/TeamSettings'
+import ApiKeys from './components/developers/ApiKeys'
+import ApiDocs from './components/developers/ApiDocs'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -290,6 +292,7 @@ function SettingsPage() {
       </div>
 
       <TeamSettings />
+      <ApiKeys />
 
       {/* Danger zone */}
       <div className="bg-rose-950/20 border border-rose-900/30 rounded-3xl p-6">
@@ -562,6 +565,9 @@ function App() {
         } />
         <Route path="/settings" element={
           <RequireAuth><DashboardLayout><SettingsPage /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/developers" element={
+          <DashboardLayout><ApiDocs /></DashboardLayout>
         } />
         <Route path="/help" element={
           <DashboardLayout><HelpPage /></DashboardLayout>
