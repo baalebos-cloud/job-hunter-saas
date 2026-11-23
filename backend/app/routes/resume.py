@@ -39,7 +39,20 @@ def _commit(db, record, failure_message='Could not save the resume. Nothing was 
         raise HTTPException(500, failure_message) from exc
 
 
-def _pdf_response(record, disposition):
+def branding_or_error(db, user):
+    """The branding to apply to a download the user asked to brand."""
+    from backend.app.dependencies.plan_guard import plan_for
+    from backend.app.services.branding import branding_for
+    if plan_for(db, user) != 'enterprise':
+        raise HTTPException(403, {'error': 'enterprise_required', 'message': 'Custom branding is part of the Enterprise plan.',
+                                  'upgrade_url': '/pricing'})
+    branding = branding_for(db, user)
+    if branding is None:
+        raise HTTPException(409, 'Set up your branding in Settings first: a brand name, a logo, or both.')
+    return branding
+
+
+def _pdf_response(record, disposition, branding=None):
     from backend.app.services.resume_storage import StorageIntegrityError, load_pdf
     from backend.app.utils.pdf_generator import download_filename
     if record.status != 'completed':
@@ -49,6 +62,9 @@ def _pdf_response(record, disposition):
         body = load_pdf(record)
     except StorageIntegrityError as exc:
         raise HTTPException(500, 'The stored resume failed an integrity check. Please regenerate it.') from exc
+    if branding is not None:
+        from backend.app.services.branding import brand_pdf
+        body = brand_pdf(body, branding)
     try:
         name = json.loads(record.parsed_data or '{}').get('name')
     except (TypeError, ValueError):
@@ -229,12 +245,13 @@ def status(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_c
 
 
 @router.get('/download/{task_id}')
-def download(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
-    return _pdf_response(owned_resume(task_id, db, current_user), 'attachment')
+def download(task_id: str, branded: bool=False, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    record = owned_resume(task_id, db, current_user)
+    return _pdf_response(record, 'attachment', branding_or_error(db, current_user) if branded else None)
 
 
 @router.get('/download/{task_id}/docx')
-def download_docx(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+def download_docx(task_id: str, branded: bool=False, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     """Editable Word copy of the tailored resume (same content as the PDF)."""
     from backend.app.utils.docx_export import build_docx
     from backend.app.utils.pdf_generator import download_filename
@@ -249,6 +266,9 @@ def download_docx(task_id: str, db: Session=Depends(get_db), current_user=Depend
         raise HTTPException(409, 'This resume has no editable content. Please run the analysis again.')
     region = ((record.analysis_data or {}).get('document') or {}).get('region')
     body = build_docx(tailored, region)
+    if branded:
+        from backend.app.services.branding import brand_docx
+        body = brand_docx(body, branding_or_error(db, current_user))
     ascii_name, utf8_name = download_filename(tailored.get('name'))
     ascii_name, utf8_name = (n.rsplit('.', 1)[0] + '.docx' for n in (ascii_name, utf8_name))
     header = f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(utf8_name)}'

@@ -257,12 +257,13 @@ def resume_status(task_id: str, db: Session = Depends(get_db), user: User = Depe
 
 
 @router.get('/resumes/{task_id}/pdf')
-def resume_pdf(task_id: str, db: Session = Depends(get_db), user: User = Depends(api_user)):
-    from backend.app.routes.resume import _pdf_response, owned_resume
-    return _pdf_response(owned_resume(task_id, db, user), 'attachment')
+def resume_pdf(task_id: str, branded: bool = False, db: Session = Depends(get_db), user: User = Depends(api_user)):
+    from backend.app.routes.resume import _pdf_response, branding_or_error, owned_resume
+    record = owned_resume(task_id, db, user)
+    return _pdf_response(record, 'attachment', branding_or_error(db, user) if branded else None)
 
 
 @router.get('/resumes/{task_id}/docx')
-def resume_docx(task_id: str, db: Session = Depends(get_db), user: User = Depends(api_user)):
+def resume_docx(task_id: str, branded: bool = False, db: Session = Depends(get_db), user: User = Depends(api_user)):
     from backend.app.routes.resume import download_docx
-    return download_docx(task_id, db, user)
+    return download_docx(task_id, branded, db, user)
