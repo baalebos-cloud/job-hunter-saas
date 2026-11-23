@@ -2,7 +2,7 @@
 
 
 def import_all_models():
-    from backend.app.models import (application, automation, job, referral, resume,  # noqa: F401
+    from backend.app.models import (api_key, application, automation, job, referral, resume,  # noqa: F401
                                     security, security_event, subscription, support, team, user)
     try:
         from backend.app.models import audit  # noqa: F401
