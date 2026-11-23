@@ -122,11 +122,13 @@ export default function ApiDocs() {
         </Endpoint>
         <Endpoint method="GET" path="/resumes/{task_id}/pdf">
           <p>The tailored resume as a PDF file. <code>409</code> while it is still being prepared.</p>
+          <p>Add <code>?branded=true</code> to include your branding (set up in <Link to="/settings#branding" className="text-emerald-700 font-semibold hover:underline">Settings → Branding</Link>)
+            in the header and footer. Returns <code>409</code> if no branding is set up yet.</p>
           <Code>{`curl -o resume.pdf ${BASE}/resumes/TASK_ID/pdf \\
   -H "Authorization: Bearer bb_live_YOUR_KEY"`}</Code>
         </Endpoint>
         <Endpoint method="GET" path="/resumes/{task_id}/docx">
-          <p>The same resume as an editable Word file.</p>
+          <p>The same resume as an editable Word file. <code>?branded=true</code> works here too.</p>
         </Endpoint>
       </section>
 
@@ -142,7 +144,7 @@ export default function ApiDocs() {
               <tr><td className="py-2 pr-4 font-mono">401</td><td><code>invalid_api_key</code>: the key is missing, wrong or revoked.</td></tr>
               <tr><td className="py-2 pr-4 font-mono">403</td><td><code>enterprise_required</code>: the account does not have Enterprise right now.</td></tr>
               <tr><td className="py-2 pr-4 font-mono">404</td><td>The job or resume does not exist, or is not yours.</td></tr>
-              <tr><td className="py-2 pr-4 font-mono">409</td><td>The resume is not ready yet.</td></tr>
+              <tr><td className="py-2 pr-4 font-mono">409</td><td>The resume is not ready yet, or a branded download was asked for before branding was set up.</td></tr>
               <tr><td className="py-2 pr-4 font-mono">429</td><td><code>rate_limited</code> (60 per minute) or <code>too_many_in_progress</code> (10 at once). Wait, then retry.</td></tr>
               <tr><td className="py-2 pr-4 font-mono">503</td><td>Processing is briefly unavailable. Retry later; nothing was charged.</td></tr>
             </tbody>

@@ -28,9 +28,22 @@ export default function MyResumes() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Enterprise: add the account's branding to PDF and Word downloads (remembered on this device).
+  const [branding, setBranding] = useState(null);
+  const [branded, setBranded] = useState(() => { try { return localStorage.getItem('brandedDownloads') === '1'; } catch { return false; } });
+  useEffect(() => {
+    axios.get(`${API}/branding`, { headers: headers() }).then(r => setBranding(r.data)).catch(() => {});
+  }, []);
+  const brandingReady = branding?.enabled && branding?.configured;
+  const toggleBranded = (on) => {
+    setBranded(on);
+    try { localStorage.setItem('brandedDownloads', on ? '1' : '0'); } catch { /* ignore */ }
+  };
+
   const fetchFile = async (item, kind) => {
-    const path = kind === 'docx' ? `/resume/download/${item.task_id}/docx`
+    const base = kind === 'docx' ? `/resume/download/${item.task_id}/docx`
       : kind === 'preview' ? `/resume/preview/${item.task_id}` : `/resume/download/${item.task_id}`;
+    const path = kind !== 'preview' && brandingReady && branded ? `${base}?branded=true` : base;
     setBusy(`${item.task_id}:${kind}`); setError('');
     try {
       const res = await axios.get(`${API}${path}`, { headers: headers(), responseType: 'blob' });
@@ -77,6 +90,13 @@ export default function MyResumes() {
         <button type="button" onClick={() => navigate('/optimizer')}
           className="text-sm font-semibold rounded-xl px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700">Tailor a new resume</button>
       </div>
+
+      {brandingReady && (
+        <label className="flex items-center gap-2 text-sm text-slate-700 bg-white border border-slate-200 rounded-xl px-4 py-3 cursor-pointer">
+          <input type="checkbox" className="accent-emerald-600" checked={branded} onChange={e => toggleBranded(e.target.checked)} />
+          Add {branding.brand_name ? <strong>{branding.brand_name}</strong> : 'your'} branding to PDF and Word downloads
+          <a href="/settings#branding" className="ml-auto text-xs font-semibold text-emerald-700 hover:underline">Edit branding</a>
+        </label>)}
 
       {error && <p role="alert" className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{error}</p>}
       {!data && !error && <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-emerald-600" /></div>}

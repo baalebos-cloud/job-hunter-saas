@@ -81,7 +81,6 @@ const Cross = () => (
 // is told they already have it. Remove an entry when the feature goes live.
 const COMING_SOON = new Set([
   'Dedicated Slack support',
-  'Custom branding on PDF exports',
 ]);
 
 export default function PricingPage() {
