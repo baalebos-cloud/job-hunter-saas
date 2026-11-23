@@ -13,6 +13,7 @@ import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
 import HelpPage from './components/support/HelpPage'
 import MyResumes from './components/resumes/MyResumes'
+import BulkTailor from './components/dashboard/BulkTailor'
 import UnsubscribePage from './components/support/UnsubscribePage'
 import { signOut, errorText } from './lib/session'
 import Signup from './components/auth/Signup'
@@ -110,6 +111,12 @@ function OptimizerPage() {
   const [failure, setFailure]               = useState('')
   const jobId = new URLSearchParams(window.location.search).get('job')
   const token = localStorage.getItem('token')
+  const [enterprise, setEnterprise] = useState(false)   // bulk tailoring is an Enterprise feature
+  const [mode, setMode] = useState('single')
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/billing/status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => setEnterprise(r.data?.plan === 'enterprise')).catch(() => {})
+  }, [token])
 
   useEffect(() => {
     let interval
@@ -147,6 +154,13 @@ function OptimizerPage() {
             className="text-sm font-semibold rounded-xl px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50">Tailor for another job</button>
         )}
       </div>
+      {enterprise && !analysisResult && !isAnalyzing && (
+        <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1" role="tablist" aria-label="Tailoring mode">
+          {[['single', 'One job'], ['bulk', 'Several jobs (up to 10)']].map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={mode === id} onClick={() => setMode(id)}
+              className={`px-3.5 py-1.5 text-sm font-medium rounded-lg ${mode === id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>))}
+        </div>)}
+      {enterprise && mode === 'bulk' && !analysisResult && !isAnalyzing ? <BulkTailor /> : (<>
       <ResumeStepper step={step} />
       {failure && <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{failure}</p>}
       {isAnalyzing ? (
@@ -168,6 +182,7 @@ function OptimizerPage() {
       ) : (
         <AtsResultView data={analysisResult} jobId={jobId} />
       )}
+      </>)}
     </div>
   )
 }
