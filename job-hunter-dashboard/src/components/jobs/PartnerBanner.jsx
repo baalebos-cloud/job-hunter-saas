@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { ArrowUpRight, Clock, Globe, Sparkles, Wallet, X } from 'lucide-react';
 
 // Partner opportunities shown on the Jobs page. Listings live on the partner's
@@ -30,6 +31,10 @@ export const PARTNERS = [{
 }];
 
 const DISMISS_KEY = 'partner-banner-dismissed';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+
+// Counts the click (no personal data) for the team's campaign results; never blocks the link.
+const countClick = (partner) => { axios.post(`${API}/track/partner-click`, { partner }).catch(() => {}); };
 
 function dismissed() {
   try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]'); } catch { return []; }
@@ -65,7 +70,7 @@ export default function PartnerBanner() {
           </ul>
         </div>
         <div className="shrink-0 flex flex-col items-start sm:items-end gap-1">
-          <a href={p.url} target="_blank" rel="noopener noreferrer sponsored"
+          <a href={p.url} target="_blank" rel="noopener noreferrer sponsored" onClick={() => countClick(p.id)}
             className="inline-flex items-center gap-1.5 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800">
             Browse {p.name} roles<ArrowUpRight size={16} /></a>
           <span className="text-[11px] text-slate-400">Opens {p.name}. Referral link: Baalebos may earn a reward.{p.note ? ` ${p.note}` : ''}</span>

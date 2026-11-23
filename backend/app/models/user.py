@@ -59,6 +59,11 @@ class User(Base):
     # reject duplicate sign-ups such as j.doe+2@gmail.com vs jdoe@gmail.com.
     email_canonical      = Column(String(255), nullable=True, index=True)
     signup_ip            = Column(String(64), nullable=True)
+    # First-touch marketing attribution (UTM tags on the link that brought the visitor).
+    signup_utm_source    = Column(String(80), nullable=True)
+    signup_utm_medium    = Column(String(80), nullable=True)
+    signup_utm_campaign  = Column(String(120), nullable=True)
+    signup_referrer      = Column(String(120), nullable=True)      # referring site's host name only
     suspended_at         = Column(DateTime, nullable=True)
     suspended_reason     = Column(String(255), nullable=True)
     force_password_reset = Column(Boolean, default=False, nullable=False, server_default="false")

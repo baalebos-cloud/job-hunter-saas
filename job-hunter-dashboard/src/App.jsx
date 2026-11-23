@@ -29,6 +29,7 @@ import ProfilePage from './components/ProfilePage'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 import TeamJoin from './components/team/TeamJoin'
+import { captureFirstTouch } from './lib/attribution'
 import TeamSettings from './components/team/TeamSettings'
 import ApiKeys from './components/developers/ApiKeys'
 import ApiDocs from './components/developers/ApiDocs'
@@ -68,7 +69,8 @@ function RequireRole({ role, children }) {
   )
 
   const GOVERNANCE = ['metrics:read', 'audit:read', 'users:read', 'reports:read']
-  const hasAccess = role === 'admin' ? profile?.is_admin
+  const CONSOLE = ['admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read', 'support:manage', 'users:manage_roles']
+  const hasAccess = role === 'admin' ? (profile?.is_admin || (profile?.permissions || []).some(p => CONSOLE.includes(p)))
     : role === 'governance' ? (profile?.permissions || []).some(p => GOVERNANCE.includes(p))
     : (profile?.is_admin || profile?.is_hr)
   if (!hasAccess) return <Navigate to="/" replace />
@@ -516,6 +518,7 @@ function App() {
     const params = new URLSearchParams(window.location.search)
     const ref = params.get('ref')
     if (ref) localStorage.setItem('ref_code', ref)
+    captureFirstTouch()
     if (params.get('upgraded') === 'true') {
       alert('Welcome to Pro! Your account has been upgraded.')
       window.history.replaceState({}, '', '/')

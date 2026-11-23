@@ -47,4 +47,6 @@ def unsubscribe(t: Optional[str] = None, body: Optional[UnsubscribeBody] = None,
     if user.job_alerts_enabled:
         user.job_alerts_enabled = False
         db.commit()
+        from backend.app.models.growth import bump
+        bump(db, 'alerts:unsubscribed')
     return {"unsubscribed": True}
