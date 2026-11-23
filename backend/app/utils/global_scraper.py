@@ -251,12 +251,47 @@ def _norm(value: str) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9]+', ' ', (value or '').lower())).strip()
 
 
-def dedupe_key(title: str, company: str) -> str:
+# Endings that say where or how a job is done, not which job it is. Removed from a
+# title only when they are a whole trailing segment ("- Remote", ", Berlin", "| Contract").
+_WHERE_WORDS = re.compile(
+    r'^(remote|fully remote|remote first|hybrid|on ?site|in office|office based|work from home|wfh|anywhere|worldwide|'
+    r'global|international|contract|contractor|freelance|full ?time|part ?time|temporary|temp|permanent|'
+    r'us|usa|united states|uk|united kingdom|eu|europe|emea|apac|asia|asia pacific|latam|latin america|americas|'
+    r'north america|south america|africa|middle east|mena|canada|germany|france|spain|netherlands|ireland|poland|'
+    r'portugal|india|nigeria|kenya|south africa|egypt|ghana|brazil|mexico|argentina|australia|singapore|japan|'
+    r'london|berlin|paris|amsterdam|dublin|madrid|lisbon|warsaw|new york|new york city|nyc|san francisco|sf|'
+    r'bay area|seattle|austin|boston|chicago|los angeles|toronto|vancouver|bangalore|bengaluru|lagos|nairobi|'
+    r'cape town|sydney|melbourne|tokyo|sao paulo|mexico city|dubai)'
+    r'(( or | and |/| | )(remote|hybrid|on ?site|us|uk|eu|emea|apac|latam|europe|americas|anywhere|worldwide|'
+    r'contract|full ?time|part ?time|nyc|sf|new york|san francisco|london|berlin|canada|india))*$')
+
+
+def _where(segment: str, location: str) -> bool:
+    """True when a title segment only names the place or work arrangement."""
+    seg = _norm(segment)
+    if not seg:
+        return True
+    if _WHERE_WORDS.match(seg):
+        return True
+    if not location:
+        return False
+    # Whole words only: "Berlin" matches "Berlin, Germany"; "US" never matches inside "Business".
+    seg_words, place_words = set(seg.split()), set(location.split())
+    return seg_words <= place_words or place_words <= seg_words
+
+
+def dedupe_key(title: str, company: str, location: str | None = None) -> str:
     """One key per role per company, so the same vacancy from several boards,
-    or reposted with a location suffix, is listed once.
+    or reposted with a location or work-arrangement suffix, is listed once.
+    Team or specialism suffixes are kept: "Software Engineer, Agents" and
+    "Software Engineer, Discovery" are different jobs.
     "Sr. DevOps Eng - Remote (EU)" at "Acme, Inc." -> "senior devops engineer|acme"."""
-    title = re.sub(r'\s*[-–—(|,].*$', '', title or '')        # drop "- Remote (EU)", "| Contract", ", Berlin"
-    title = _norm(title)
+    where = _norm(location or '')
+    text = re.sub(r'\([^)]*\)|\[[^\]]*\]', ' ', title or '')        # "(EU)", "(m/f/d)", "[Remote]"
+    parts = [p for p in re.split(r'\s+[-–—|/]\s+|\s*[,|]\s*|\s+[–—]\s*|\s*[–—]\s+', text) if p.strip()]
+    while len(parts) > 1 and _where(parts[-1], where):
+        parts.pop()
+    title = _norm(' '.join(parts))
     for pattern, replacement in _TITLE_ALIASES:
         title = re.sub(pattern, replacement, title)
     company = _COMPANY_SUFFIX.sub('', _norm(company)).strip()
@@ -281,7 +316,7 @@ def collapse_duplicate_jobs(db: Session) -> int:
     applied = {job_id for (job_id,) in db.query(Application.job_id).distinct()}
     groups = defaultdict(list)
     for job in db.query(Job).filter(Job.is_active == True).all():  # noqa: E712
-        key = dedupe_key(job.title, job.company)
+        key = dedupe_key(job.title, job.company, job.location)
         if job.dedupe_key != key:
             job.dedupe_key = key
         if _keyed(key):
@@ -611,7 +646,7 @@ def _prepare(jd: dict) -> dict:
     description = jd.get('description') or ''
     jd.setdefault('category', _guess_category(jd.get('title', '')))
     jd['work_type'] = jd.get('work_type') or _work_type(jd.get('location') or '', jd.get('title', ''), description)
-    jd['dedupe_key'] = dedupe_key(jd.get('title'), jd.get('company'))
+    jd['dedupe_key'] = dedupe_key(jd.get('title'), jd.get('company'), jd.get('location'))
     jd['skills'] = find_terms(f"{jd.get('title', '')}\n{description}")[:25]
     if not jd.get('salary_range'):
         jd['salary_range'] = _salary(description)
@@ -741,7 +776,7 @@ def _run_sources_concurrent(source_fns: list, max_workers: int = 6, source_resul
     ordered, seen = [], set()
     for name, _ in source_fns:
         for job in results.get(name, []):
-            key = dedupe_key(job.get('title'), job.get('company'))
+            key = dedupe_key(job.get('title'), job.get('company'), job.get('location'))
             if key in seen:
                 continue
             seen.add(key)

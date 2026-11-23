@@ -42,13 +42,13 @@ def post_job(
     scraped copy of the same role is closed so candidates see the employer's own."""
     from backend.app.utils.global_scraper import _keyed, dedupe_key
     company = job.company or hr_user.company_name or "Company"
-    key = dedupe_key(job.title, company)
+    key = dedupe_key(job.title, company, job.location)
     if _keyed(key):
         from sqlalchemy import or_
         # Rows saved before keys existed have none until the next clean-up: compare those by recomputing.
         candidates = db.query(Job).filter(Job.is_active == True,  # noqa: E712
                                           or_(Job.dedupe_key == key, Job.dedupe_key.is_(None))).all()
-        twins = [t for t in candidates if (t.dedupe_key or dedupe_key(t.title, t.company)) == key]
+        twins = [t for t in candidates if (t.dedupe_key or dedupe_key(t.title, t.company, t.location)) == key]
         if any(t.posted_by_hr for t in twins):
             raise HTTPException(409, "This role is already posted for this company. Edit or close the existing "
                                      "posting instead of creating a duplicate.")

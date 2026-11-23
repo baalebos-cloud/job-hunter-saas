@@ -140,7 +140,7 @@ def _one_per_role(rows):
     from backend.app.utils.global_scraper import _keyed, dedupe_key
     seen, kept = set(), []
     for row in rows:
-        key = dedupe_key(row.title, row.company)
+        key = dedupe_key(row.title, row.company, getattr(row, 'location', None))
         if _keyed(key):
             if key in seen:
                 continue
@@ -162,7 +162,7 @@ def public_stats(db: Session = Depends(get_read_db)):
     now = time.monotonic()
     if _STATS_CACHE['value'] is not None and now - _STATS_CACHE['at'] < STATS_TTL_SECONDS:
         return _STATS_CACHE['value']
-    rows = db.query(Job.title, Job.company).filter(Job.is_active == True).all()  # noqa: E712
+    rows = db.query(Job.title, Job.company, Job.location).filter(Job.is_active == True).all()  # noqa: E712
     last = db.query(func.max(Job.scraped_at)).filter(Job.posted_by_hr.isnot(True)).scalar()
     value = {'open_jobs': len(_one_per_role(rows)), 'updated_at': last.isoformat() + 'Z' if last else None}
     _STATS_CACHE.update(at=now, value=value)
@@ -181,7 +181,7 @@ def job_board(request: Request, q: Optional[str] = None, category: Optional[str]
     mine = user_skills(db, user)
     query = _filtered(db, q=(q or '').strip()[:100], category=category, work_type=work_type, region=region,
                       posted_within=posted_within, employer_only=employer_only, has_salary=has_salary)
-    rows = query.with_entities(Job.id, Job.posted_by_hr, Job.skills, Job.title, Job.company, Job.dedupe_key,
+    rows = query.with_entities(Job.id, Job.posted_by_hr, Job.skills, Job.title, Job.company, Job.location, Job.dedupe_key,
                                Job.published_at, Job.first_seen_at, Job.scraped_at).all()
 
     def score(row):

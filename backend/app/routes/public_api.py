@@ -160,7 +160,7 @@ def search_jobs(q: Optional[str] = Query(None, max_length=100), category: Option
     from backend.app.routes.job_board import _filtered, _one_per_role, _serialize, user_skills
     query = _filtered(db, q=(q or '').strip(), category=category, work_type=work_type, region=region,
                       posted_within=posted_within)
-    rows = query.with_entities(Job.id, Job.posted_by_hr, Job.title, Job.company,
+    rows = query.with_entities(Job.id, Job.posted_by_hr, Job.title, Job.company, Job.location,
                                Job.published_at, Job.first_seen_at, Job.scraped_at).all()
     rows.sort(key=lambda r: (bool(r.posted_by_hr),
                              (r.published_at or r.first_seen_at or r.scraped_at or datetime.min).timestamp()), reverse=True)
