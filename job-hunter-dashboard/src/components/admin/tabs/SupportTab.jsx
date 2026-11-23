@@ -146,6 +146,7 @@ export default function SupportTab({ notify }) {
                       </div>
                       <div className="mt-0.5 text-xs text-slate-500 truncate">{t.number} · {t.name || t.email}</div>
                       <div className="mt-1 flex items-center gap-1.5">
+                        {t.priority && <Chip tone="violet" title="Enterprise customer">Priority</Chip>}
                         <Chip tone={STATUS_TONE[t.status]}>{t.status_label}</Chip>
                         <Chip>{t.category_label}</Chip>
                         {t.has_attachment && <Paperclip size={12} className="text-slate-400" aria-label="Has screenshot" />}

@@ -34,7 +34,7 @@ def serialize(ticket, *, messages: bool = False, staff: bool = False) -> dict:
         'subject': ticket.subject, 'status': ticket.status, 'status_label': STATUS_LABELS.get(ticket.status, ticket.status),
         'created_at': _iso(ticket.created_at), 'updated_at': _iso(ticket.updated_at),
         'last_reply_at': _iso(ticket.last_reply_at), 'has_attachment': bool(ticket.attachment),
-        'message_count': len(ticket.messages),
+        'message_count': len(ticket.messages), 'priority': bool(ticket.priority),
     }
     if staff:
         out.update({'email': ticket.email, 'name': ticket.name, 'user_id': ticket.user_id,
@@ -97,8 +97,9 @@ def notify_created(ticket, message: str) -> None:
                      ('Category', CATEGORY_LABELS.get(ticket.category, ticket.category)),
                      ('Page', ticket.page or '—'), ('Browser', ticket.user_agent or '—'),
                      ('Screenshot', 'attached in the console' if ticket.attachment else 'none')))
-    _deliver(settings.SUPPORT_EMAIL, f'[{ticket.number}] {ticket.subject}', _layout(
-        f'New support request {ticket.number}',
+    tag = '[Priority] ' if ticket.priority else ''
+    _deliver(settings.SUPPORT_EMAIL, f'{tag}[{ticket.number}] {ticket.subject}', _layout(
+        f'New {"priority (Enterprise) " if ticket.priority else ""}support request {ticket.number}',
         f'<table style="font-size:13px;margin-bottom:14px;">{details}</table>{_quote(message)}'
         f'<p style="font-size:13px;color:#475569;margin-top:16px;">Reply in the '
         f'<a href="{_link("/admin?tab=support")}" style="color:#059669;">Owner console → Support</a> '
@@ -123,3 +124,55 @@ def notify_answer(ticket, message: str) -> None:
            if solved else 'You can reply under ')
         + f'<a href="{_link()}" style="color:#059669;">Help &amp; support → My requests</a> '
         f'or by answering this email.</p>'), reply_to=settings.SUPPORT_EMAIL)
+
+
+# ── Dedicated Slack support (Enterprise) ──────────────────────────────────────
+
+SLACK_PLAN_LABELS = {'paid': 'Paid Slack plan', 'free': 'Free Slack plan', 'none': 'No Slack yet'}
+SLACK_STATUS_LABELS = {'requested': 'Requested', 'invited': 'Invitation sent', 'connected': 'Connected',
+                       'closed': 'Closed'}
+
+
+def serialize_slack(row, *, staff: bool = False) -> dict:
+    out = {'id': row.id, 'company': row.company, 'slack_plan': row.slack_plan,
+           'slack_plan_label': SLACK_PLAN_LABELS.get(row.slack_plan, row.slack_plan), 'emails': list(row.emails or []),
+           'status': row.status, 'status_label': SLACK_STATUS_LABELS.get(row.status, row.status),
+           'channel_name': row.channel_name, 'staff_note': row.staff_note,
+           'created_at': _iso(row.created_at), 'updated_at': _iso(row.updated_at)}
+    if staff:
+        out.update(message=row.message, account_id=row.account_id)
+    return out
+
+
+def notify_slack_requested(row, requester_email: str) -> None:
+    people = ', '.join(row.emails or [])
+    _deliver(requester_email, 'We received your Slack support request', _layout(
+        'Your Slack support request is in',
+        f'<p style="color:#475569;font-size:14px;line-height:1.6;">Thanks. We will set up a shared Slack channel for '
+        f'<strong>{html.escape(row.company)}</strong> and invite: {html.escape(people)}. You will get an email from us, and '
+        f'an invitation from Slack, when it is ready. You can follow the status under '
+        f'<a href="{_link()}" style="color:#059669;">Help &amp; support</a>.</p>'))
+    details = ''.join(
+        f'<tr><td style="color:#64748b;padding:3px 12px 3px 0;">{k}</td><td style="color:#0f172a;">{html.escape(str(v))}</td></tr>'
+        for k, v in (('Company', row.company), ('Their Slack', SLACK_PLAN_LABELS.get(row.slack_plan, row.slack_plan)),
+                     ('Invite', people), ('Requested by', requester_email), ('Account', f'user #{row.account_id}')))
+    _deliver(settings.SUPPORT_EMAIL, f'[Priority] Slack channel request: {row.company}', _layout(
+        'New Slack support request (Enterprise)',
+        f'<table style="font-size:13px;margin-bottom:14px;">{details}</table>'
+        + (_quote(row.message) if row.message else '')
+        + f'<p style="font-size:13px;color:#475569;margin-top:16px;">Follow the setup checklist in the '
+        f'<a href="{_link("/admin?tab=slack")}" style="color:#059669;">Owner console → Slack</a>, then mark the request '
+        f'as invited there; the customer is emailed automatically.</p>'), reply_to=requester_email)
+
+
+def notify_slack_invited(row, requester_email: str) -> None:
+    channel = f'#{html.escape(row.channel_name)}' if row.channel_name else 'your support channel'
+    note = _quote(row.staff_note) if row.staff_note else ''
+    _deliver(requester_email, 'Your Baalebos Slack support channel is ready', _layout(
+        'Your Slack channel is ready',
+        f'<p style="color:#475569;font-size:14px;line-height:1.6;">We invited your team to {channel} with Slack Connect. '
+        f'Look for an email from Slack (or a notice in your Slack workspace) and accept the invitation. '
+        f'A Slack admin on your side may need to approve it.</p>{note}'
+        f'<p style="color:#475569;font-size:14px;line-height:1.6;margin-top:16px;">Email and '
+        f'<a href="{_link()}" style="color:#059669;">Help &amp; support</a> remain available too.</p>'),
+        reply_to=settings.SUPPORT_EMAIL)

@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
 from backend.app.dependencies.roles import require_admin
-from backend.app.models.support import CATEGORIES, STATUSES, SupportMessage, SupportTicket
+from backend.app.models.support import (CATEGORIES, SLACK_STATUSES, STATUSES, SlackRequest,
+                                         SupportMessage, SupportTicket)
 from backend.app.services import support as svc
 
 router = APIRouter(tags=['Support'])
@@ -98,7 +99,10 @@ def create_ticket(request: Request, background: BackgroundTasks, db: Session = D
     _limit(f'support:email:{_email_key(address)}', 10, 86400)
     attachment, kind = _screenshot(screenshot)
     now = datetime.utcnow()
+    from backend.app.dependencies.plan_guard import plan_for
+    priority = bool(user) and plan_for(db, user) == 'enterprise'
     ticket = SupportTicket(user_id=getattr(user, 'id', None), email=address.lower(), name=_clean(display, 120) or None,
+                           priority=priority,
                            category=category, subject=subject, status='open', page=_clean(page, 300) or None,
                            user_agent=_clean(request.headers.get('user-agent'), 300) or None,
                            attachment=attachment, attachment_type=kind, created_at=now, updated_at=now)
@@ -201,8 +205,8 @@ def staff_tickets(status: Optional[str] = None, q: Optional[str] = None, page: i
             conditions.append(SupportTicket.id == int(number))
         query = query.filter(or_(*conditions))
     total = query.count()
-    # Requests waiting for support first, then by latest activity.
-    rows = (query.order_by((SupportTicket.status != 'open'), SupportTicket.updated_at.desc())
+    # Requests waiting for support first, Enterprise (priority) first among them, then by latest activity.
+    rows = (query.order_by((SupportTicket.status != 'open'), SupportTicket.priority.desc(), SupportTicket.updated_at.desc())
             .offset((page - 1) * page_size).limit(page_size).all())
     counts = dict(db.query(SupportTicket.status, func.count(SupportTicket.id)).group_by(SupportTicket.status).all())
     return {'items': [svc.serialize(t, staff=True) for t in rows], 'total': total, 'page': page, 'page_size': page_size,
@@ -253,3 +257,108 @@ def staff_status(ticket_id: int, payload: StatusBody, db: Session = Depends(get_
 @router.get('/admin/tickets/{ticket_id}/attachment')
 def staff_attachment(ticket_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
     return _attachment(_staff_ticket(db, ticket_id))
+
+
+# ── Dedicated Slack support (Enterprise) ──────────────────────────────────────
+
+class SlackBody(BaseModel):
+    company: str = Field(..., min_length=2, max_length=120)
+    slack_plan: Literal['paid', 'free', 'none'] = 'paid'
+    emails: list[str] = Field(default_factory=list, max_length=10)
+    message: Optional[str] = Field(None, max_length=2000)
+
+
+class SlackUpdate(BaseModel):
+    status: Literal['requested', 'invited', 'connected', 'closed']
+    channel_name: Optional[str] = Field(None, max_length=80)
+    staff_note: Optional[str] = Field(None, max_length=2000)
+
+
+def _slack_account(db: Session, user):
+    """(account_id, can_request): the Enterprise account this user belongs to."""
+    from backend.app.dependencies.plan_guard import own_plan, team_owner
+    if own_plan(db, user) == 'enterprise':
+        return user.id, True
+    owner = team_owner(db, user)
+    return (owner.id, False) if owner is not None else (None, False)
+
+
+def _open_slack(db: Session, account_id: int):
+    return (db.query(SlackRequest).filter(SlackRequest.account_id == account_id, SlackRequest.status != 'closed')
+            .order_by(SlackRequest.id.desc()).first())
+
+
+@router.get('/slack')
+def my_slack(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    account_id, can_request = _slack_account(db, user)
+    row = _open_slack(db, account_id) if account_id else None
+    return {'eligible': account_id is not None, 'can_request': can_request,
+            'request': svc.serialize_slack(row) if row else None}
+
+
+@router.post('/slack', status_code=201)
+def request_slack(body: SlackBody, request: Request, background: BackgroundTasks, db: Session = Depends(get_db),
+                  user=Depends(get_current_user)):
+    account_id, can_request = _slack_account(db, user)
+    if account_id is None:
+        raise HTTPException(403, {'error': 'enterprise_required', 'message': 'Dedicated Slack support is part of the '
+                                  'Enterprise plan.', 'upgrade_url': '/pricing'})
+    if not can_request:
+        raise HTTPException(403, 'Your team owner can request the Slack channel for your team.')
+    if _open_slack(db, account_id):
+        raise HTTPException(409, 'You already have a Slack support request. Its status is shown on this page.')
+    emails = []
+    for raw in [user.email, *body.emails]:
+        try:
+            address = str(TypeAdapter(EmailStr).validate_python((raw or '').strip())).lower()
+        except ValidationError:
+            raise HTTPException(422, f'"{raw}" is not a valid email address.')
+        if address not in emails:
+            emails.append(address)
+    if len(emails) > 10:
+        raise HTTPException(422, 'Invite up to 10 people. You can add more in Slack later.')
+    _limit(f'slack:{user.id}', 5, 86400)
+    now = datetime.utcnow()
+    row = SlackRequest(account_id=account_id, company=_clean(body.company, 120), slack_plan=body.slack_plan, emails=emails,
+                       message=_clean(body.message, 2000) or None, status='requested', created_at=now, updated_at=now)
+    db.add(row)
+    db.commit()
+    background.add_task(svc.notify_slack_requested, row, user.email)
+    from backend.app.services.audit import record_event
+    record_event('support.slack_request', actor=user, trace_id=getattr(request.state, 'trace_id', None),
+                 details={'request_id': row.id})
+    return svc.serialize_slack(row)
+
+
+@router.get('/admin/slack')
+def staff_slack(db: Session = Depends(get_db), admin=Depends(require_admin)):
+    rows = db.query(SlackRequest).order_by((SlackRequest.status != 'requested'), SlackRequest.updated_at.desc()).limit(200).all()
+    counts = dict(db.query(SlackRequest.status, func.count(SlackRequest.id)).group_by(SlackRequest.status).all())
+    return {'items': [svc.serialize_slack(r, staff=True) for r in rows],
+            'counts': {s: counts.get(s, 0) for s in SLACK_STATUSES}}
+
+
+@router.patch('/admin/slack/{request_id}')
+def update_slack(request_id: int, body: SlackUpdate, request: Request, background: BackgroundTasks,
+                 db: Session = Depends(get_db), admin=Depends(require_admin)):
+    from backend.app.models.user import User
+    row = db.get(SlackRequest, request_id)
+    if not row:
+        raise HTTPException(404, 'Slack request not found.')
+    channel = _clean(body.channel_name, 80).lstrip('#') or None
+    if body.status == 'invited' and not (channel or row.channel_name):
+        raise HTTPException(422, 'Add the channel name you created before marking the request as invited.')
+    newly_invited = body.status == 'invited' and row.status != 'invited'
+    row.status, row.updated_at = body.status, datetime.utcnow()
+    if channel:
+        row.channel_name = channel
+    if body.staff_note is not None:
+        row.staff_note = _clean(body.staff_note, 2000) or None
+    db.commit()
+    owner = db.get(User, row.account_id)
+    if newly_invited and owner is not None:
+        background.add_task(svc.notify_slack_invited, row, owner.email)
+    from backend.app.services.audit import record_event
+    record_event('support.slack_update', actor=admin, trace_id=getattr(request.state, 'trace_id', None),
+                 details={'request_id': row.id, 'status': row.status})
+    return svc.serialize_slack(row, staff=True)

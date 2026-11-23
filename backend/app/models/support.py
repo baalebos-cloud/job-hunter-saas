@@ -1,7 +1,7 @@
 """Help & support requests and their conversation threads."""
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.app.database import Base
@@ -29,6 +29,8 @@ class SupportTicket(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_reply_at = Column(DateTime, nullable=True)       # last answer from support
+    # Enterprise customers' requests are answered first (set when the request is sent).
+    priority = Column(Boolean, nullable=False, default=False, server_default='false')
 
     messages = relationship('SupportMessage', back_populates='ticket', cascade='all, delete-orphan',
                             order_by='SupportMessage.id')
@@ -49,3 +51,27 @@ class SupportMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     ticket = relationship('SupportTicket', back_populates='messages')
+
+
+SLACK_PLANS = ('paid', 'free', 'none')            # the customer's own Slack: paid plan, free plan, no Slack
+SLACK_STATUSES = ('requested', 'invited', 'connected', 'closed')
+
+
+class SlackRequest(Base):
+    """Dedicated Slack support (Enterprise): a request for a shared Slack Connect
+    channel with the Baalebos support team. The channel itself is created by
+    the owner in Baalebos's Slack workspace (see docs/slack-support-checklist.md)."""
+    __tablename__ = 'slack_requests'
+
+    id = Column(Integer, primary_key=True)
+    # The Enterprise account: the subscriber, who may also cover a team.
+    account_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    company = Column(String(120), nullable=False)
+    slack_plan = Column(String(8), nullable=False, default='paid')
+    emails = Column(JSON, nullable=False, default=list)  # who should be invited to the channel
+    message = Column(Text, nullable=True)
+    status = Column(String(12), nullable=False, default='requested', index=True)
+    channel_name = Column(String(80), nullable=True)
+    staff_note = Column(Text, nullable=True)             # shown to the customer with the invite
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
