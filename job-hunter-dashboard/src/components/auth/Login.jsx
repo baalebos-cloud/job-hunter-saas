@@ -11,7 +11,9 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/
 export default function Login() {
   const location = useLocation();
   const requestedPath = location.state?.from;
-  const destination = ['/admin', '/hr', '/optimizer', '/jobs', '/applications', '/profile', '/settings', '/referral'].includes(requestedPath) ? requestedPath : '/';
+  const pendingInvite = (() => { try { return !!localStorage.getItem('teamInvite'); } catch { return false; } })();
+  const destination = ['/admin', '/hr', '/optimizer', '/resumes', '/jobs', '/applications', '/profile', '/settings', '/referral', '/team/join'].includes(requestedPath)
+    ? requestedPath : (pendingInvite ? '/team/join' : '/');
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

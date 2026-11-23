@@ -80,7 +80,6 @@ const Cross = () => (
 // no extra cost, the moment it ships; until then it is marked here so nobody
 // is told they already have it. Remove an entry when the feature goes live.
 const COMING_SOON = new Set([
-  'Team access (up to 10 seats)',
   'API access for integrations',
   'Dedicated Slack support',
   'Custom branding on PDF exports',

@@ -316,10 +316,8 @@ BULK_MAX_JOBS = 10
 
 
 def _has_enterprise(db, user) -> bool:
-    from backend.app.dependencies.plan_guard import effective_plan
-    from backend.app.models.subscription import Subscription
-    sub = db.query(Subscription).filter(Subscription.user_id == user.id).first()
-    return effective_plan(user, sub.plan if sub else None, sub.status if sub else None) == 'enterprise'
+    from backend.app.dependencies.plan_guard import plan_for
+    return plan_for(db, user) == 'enterprise'
 
 
 def _bulk_targets(db, job_ids: str | None, pasted: str | None) -> list[dict]:
