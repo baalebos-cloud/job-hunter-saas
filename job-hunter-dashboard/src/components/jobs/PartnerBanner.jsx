@@ -13,6 +13,20 @@ export const PARTNERS = [{
   facts: [[Globe, 'Remote, worldwide'], [Wallet, 'Paid hourly'], [Clock, 'Flexible hours']],
   url: 'https://refer.micro1.ai/referral/jobs?referralCode=ff238650-b95b-4a56-b3ae-b0dafef81ed2'
     + '&utm_source=referral&utm_medium=share&utm_campaign=job_referral',
+}, {
+  // Mercor's terms forbid implying affiliation or endorsement without written
+  // consent, so this card says "Referral opportunity" and "Not affiliated".
+  // Facts below are from Mercor's own pages (work.mercor.com, referral terms).
+  id: 'mercor',
+  name: 'Mercor',
+  initials: 'M',
+  label: 'Referral opportunity',
+  headline: 'Remote contract & expert projects on Mercor',
+  pitch: 'Mercor connects professionals with remote, project-based work for AI labs and companies. '
+    + 'Browse open projects and apply on Mercor.',
+  facts: [[Globe, 'Remote'], [Wallet, 'Paid hourly'], [Clock, 'Project-based']],
+  note: 'Not affiliated with Mercor.',
+  url: 'https://t.mercor.com/BQOQx',
 }];
 
 const DISMISS_KEY = 'partner-banner-dismissed';
@@ -33,7 +47,7 @@ export default function PartnerBanner() {
   };
 
   return visible.map(p => (
-    <aside key={p.id} aria-label={`Partner opportunity: ${p.name}`}
+    <aside key={p.id} aria-label={`${p.label || 'Partner opportunity'}: ${p.name}`}
       className="mt-4 relative overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 via-white to-emerald-50 p-4 sm:p-5">
       <button type="button" onClick={() => hide(p.id)} aria-label={`Hide ${p.name}`}
         className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white/70"><X size={16} /></button>
@@ -42,7 +56,7 @@ export default function PartnerBanner() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-violet-700 bg-violet-100 rounded-full px-2 py-0.5">
-              <Sparkles size={11} />Partner opportunity</span>
+              <Sparkles size={11} />{p.label || 'Partner opportunity'}</span>
           </div>
           <h3 className="mt-1 font-semibold text-slate-900">{p.headline}</h3>
           <p className="mt-0.5 text-sm text-slate-600 max-w-3xl">{p.pitch}</p>
@@ -54,7 +68,7 @@ export default function PartnerBanner() {
           <a href={p.url} target="_blank" rel="noopener noreferrer sponsored"
             className="inline-flex items-center gap-1.5 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800">
             Browse {p.name} roles<ArrowUpRight size={16} /></a>
-          <span className="text-[11px] text-slate-400">Opens {p.name}. Referral link: Baalebos may earn a reward.</span>
+          <span className="text-[11px] text-slate-400">Opens {p.name}. Referral link: Baalebos may earn a reward.{p.note ? ` ${p.note}` : ''}</span>
         </div>
       </div>
     </aside>

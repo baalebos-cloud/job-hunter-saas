@@ -54,6 +54,22 @@ def test_key_matches_the_same_role_written_differently():
     assert dedupe_key('DevOps Engineer', 'Acme') != dedupe_key('DevOps Engineer', 'Acme Health')   # different company
     assert dedupe_key('Data Engineer', 'Acme') != dedupe_key('Data Scientist', 'Acme')             # different role
     assert dedupe_key('Engineer', 'SA Power Networks').endswith('|sa power networks')               # suffix only at the end
+    # Place and work-arrangement endings are not part of the role.
+    assert dedupe_key('Full-Stack Developer - Remote, US', 'Acme') == dedupe_key('Full-Stack Developer', 'Acme')
+    assert dedupe_key('Platform Engineer | Contract', 'Acme') == dedupe_key('Platform Engineer', 'Acme')
+    assert dedupe_key('SRE - Lagos or Remote', 'Acme') == dedupe_key('SRE', 'Acme')
+    assert dedupe_key('Backend Engineer, Munich', 'Acme', 'Munich, Germany') == dedupe_key('Backend Engineer', 'Acme')
+
+
+def test_team_and_specialism_suffixes_are_different_jobs():
+    assert dedupe_key('Software Engineer, Agents', 'Mercor') != dedupe_key('Software Engineer, Discovery', 'Mercor')
+    assert dedupe_key('Product Manager, Applied AI', 'Mercor') != dedupe_key('Product Manager', 'Mercor')
+    assert dedupe_key('Research Engineer – Benchmarking', 'Mercor') != dedupe_key('Research Engineer', 'Mercor')
+    # Location matching is whole-word: "US" must not swallow "Business Intelligence".
+    assert dedupe_key('Data Engineer - Business Intelligence', 'Acme', 'US') != dedupe_key('Data Engineer', 'Acme')
+    # The same role in two offices is still one listing per company.
+    assert (dedupe_key('Software Engineer, Applied AI', 'Mercor', 'New York City')
+            == dedupe_key('Software Engineer, Applied AI', 'Mercor', 'San Francisco'))
 
 
 def test_existing_duplicates_are_closed_keeping_the_best_listing(db):
