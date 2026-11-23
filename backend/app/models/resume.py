@@ -34,3 +34,13 @@ class Resume(Base):
 
     # This name 'owner' MUST match the 'back_populates' in user.py
     owner = relationship("User", back_populates="resumes")
+
+
+class ResumeBatch(Base):
+    """One bulk tailoring run (Enterprise): one resume tailored to up to 10 jobs."""
+    __tablename__ = "resume_batches"
+
+    id = Column(String(36), primary_key=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_ids = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

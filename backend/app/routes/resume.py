@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -309,3 +309,134 @@ def delete_resume(task_id: str, db: Session=Depends(get_db), current_user=Depend
     db.delete(record)
     db.commit()
     return {'deleted': True}
+
+
+# ── Bulk resume processing (Enterprise) ───────────────────────────────────────
+BULK_MAX_JOBS = 10
+
+
+def _has_enterprise(db, user) -> bool:
+    from backend.app.dependencies.plan_guard import effective_plan
+    from backend.app.models.subscription import Subscription
+    sub = db.query(Subscription).filter(Subscription.user_id == user.id).first()
+    return effective_plan(user, sub.plan if sub else None, sub.status if sub else None) == 'enterprise'
+
+
+def _bulk_targets(db, job_ids: str | None, pasted: str | None) -> list[dict]:
+    """Jobs picked from the board (ids) plus pasted ones ({title, description})."""
+    from backend.app.models.job import Job
+    targets = []
+    for raw in (job_ids or '').split(','):
+        if raw.strip().isdigit():
+            job = db.get(Job, int(raw))
+            if job and job.is_active:
+                targets.append({'title': job.title, 'description': job.description or '',
+                                'meta': {'job_id': job.id, 'company': job.company}})
+    if pasted:
+        try:
+            items = json.loads(pasted)
+        except ValueError as exc:
+            raise HTTPException(400, 'Pasted jobs could not be read.') from exc
+        for item in items if isinstance(items, list) else []:
+            title = str((item or {}).get('title') or '').strip()[:200]
+            description = str((item or {}).get('description') or '').strip()
+            if title and len(description) >= 50:
+                targets.append({'title': title, 'description': description, 'meta': {}})
+    if not targets:
+        raise HTTPException(400, 'Choose at least one job, or paste a title and a full job description.')
+    if len(targets) > BULK_MAX_JOBS:
+        raise HTTPException(400, f'Choose up to {BULK_MAX_JOBS} jobs at a time.')
+    return targets
+
+
+def run_bulk_batch(batch_id: str, owner_id: int, content: bytes, filename: str, region: str, items: list[dict]):
+    """Sync mode: tailor each job in turn on priority capacity; each result lands in My resumes."""
+    from backend.app.database import SessionLocal
+    from backend.app.services.processing_gate import processing_slot
+    db = SessionLocal()
+    try:
+        for item in items:
+            record = db.query(Resume).filter(Resume.filename == f"optimized_{item['task_id']}.pdf",
+                                             Resume.owner_id == owner_id).first()
+            if record is None or record.status != 'processing':
+                continue
+            try:
+                with processing_slot(True):
+                    tailored, analysis, pdf = run_pipeline(content, filename, item['description'], item['title'],
+                                                           region, item['task_id'], True)
+                analysis.update(item['meta'], batch_id=batch_id)
+                complete_record(db, record, tailored, analysis, pdf)
+            except Exception as exc:
+                db.rollback()
+                message = getattr(exc, 'message', None) or getattr(exc, 'detail', None)
+                record = db.query(Resume).filter(Resume.filename == f"optimized_{item['task_id']}.pdf").first()
+                if record is not None:
+                    record.status = 'failed'
+                    record.error = (message if isinstance(message, str) else
+                                    f"Tailoring failed. Nothing was charged. Reference: {item['task_id']}")[:500]
+                    db.commit()
+    finally:
+        db.close()
+
+
+@router.post('/bulk', status_code=202)
+async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), job_ids: Optional[str]=Form(None),
+                      pasted_jobs: Optional[str]=Form(None), region: Optional[str]=Form(None),
+                      db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """Enterprise: tailor one resume to up to 10 jobs at once, in the background."""
+    from backend.app.models.resume import ResumeBatch
+    from backend.app.utils.upload_validation import MAX_UPLOAD_BYTES, UploadRejected, validate_upload
+    if not _has_enterprise(db, current_user):
+        raise HTTPException(403, {'error': 'enterprise_required', 'message': 'Bulk tailoring is part of the Enterprise plan.',
+                                  'upgrade_url': '/pricing'})
+    filename = file.filename or ''
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        await run_in_threadpool(validate_upload, filename, content)
+    except UploadRejected as exc:
+        raise HTTPException(400, str(exc)) from exc
+    targets = _bulk_targets(db, job_ids, pasted_jobs)
+    batch_id, resolved_region = str(uuid.uuid4()), _region_for(current_user, region)
+    items = []
+    for target in targets:
+        task_id = str(uuid.uuid4())
+        db.add(Resume(owner_id=current_user.id, filename=f'optimized_{task_id}.pdf', status='processing',
+                      analysis_data={'task_id': task_id, 'resume_id': task_id, 'job_title': target['title'],
+                                     'batch_id': batch_id, 'status': 'processing', **target['meta']}))
+        items.append({**target, 'task_id': task_id})
+    db.add(ResumeBatch(id=batch_id, owner_id=current_user.id, task_ids=[i['task_id'] for i in items]))
+    db.commit()
+    if settings.RESUME_PROCESSING_MODE == 'async':
+        from backend.app.tasks.resume_tasks import process_resume_upload
+        encoded = base64.b64encode(content).decode('ascii')
+        for item in items:
+            process_resume_upload.apply_async(
+                args=[item['task_id'], current_user.id, encoded, filename, item['description'], item['title'], resolved_region],
+                kwargs={'priority': True, 'job_meta': {**item['meta'], 'batch_id': batch_id}}, task_id=item['task_id'], priority=0)
+    else:
+        background.add_task(run_bulk_batch, batch_id, current_user.id, content, filename, resolved_region, items)
+    return {'batch_id': batch_id, 'count': len(items)}
+
+
+@router.get('/bulk/{batch_id}')
+def bulk_status(batch_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    from backend.app.models.resume import ResumeBatch
+    batch = db.query(ResumeBatch).filter(ResumeBatch.id == batch_id, ResumeBatch.owner_id == current_user.id).first()
+    if batch is None:
+        raise HTTPException(404, 'Batch not found.')
+    records = {r.filename: r for r in db.query(Resume).filter(
+        Resume.owner_id == current_user.id,
+        Resume.filename.in_([f'optimized_{t}.pdf' for t in batch.task_ids])).all()}
+    items = []
+    for task_id in batch.task_ids:
+        record = records.get(f'optimized_{task_id}.pdf')
+        if record is not None:
+            _expire_stuck(db, record)
+        analysis = (record.analysis_data or {}) if record else {}
+        scores = analysis.get('scores') or {}
+        items.append({'task_id': task_id, 'status': record.status if record else 'deleted',
+                      'job_title': analysis.get('job_title'), 'company': analysis.get('company'),
+                      'score_after': scores.get('after') if record and record.status == 'completed' else None,
+                      'error': record.error if record and record.status == 'failed' else None})
+    done = sum(i['status'] in ('completed', 'failed', 'deleted') for i in items)
+    return {'batch_id': batch_id, 'items': items, 'done': done, 'total': len(items)}
