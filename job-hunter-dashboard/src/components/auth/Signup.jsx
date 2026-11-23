@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { clearFirstTouch, firstTouch } from '../../lib/attribution';
 import { errorText } from '../../lib/session';
 import VerifyEmailNotice from './VerifyEmailNotice';
 import { updatedAgo, useLiveStats } from '../../lib/liveStats';
@@ -75,8 +76,10 @@ export default function Signup() {
         career_track: form.career_track || null,
         country:      form.country || null,
         ref_code:     refCode || null,
+        ...firstTouch(),
       });
       if (refCode) localStorage.removeItem('ref_code');
+      clearFirstTouch();
       setSentTo(res.data?.email || form.email);
 
     } catch (err) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Briefcase, Building2, Cpu, Crown, Database, Hash, LayoutDashboard, LifeBuoy, Play, RefreshCw, ScrollText, ShieldAlert, Users } from 'lucide-react';
+import { Activity, Briefcase, Building2, Cpu, Crown, Database, Hash, LayoutDashboard, LifeBuoy, Megaphone, Play, RefreshCw, ScrollText, ShieldAlert, TrendingUp, UserCog, Users } from 'lucide-react';
 import { adminGet, adminPost, ago, message, needsMfaEnrollment } from './adminApi';
 import MfaSetup from './MfaSetup';
 import { Banner, Button, ConfirmDialog, Spinner } from './ui';
@@ -12,22 +12,45 @@ import OperationsTab from './tabs/OperationsTab';
 import AuditTab from './tabs/AuditTab';
 import SupportTab from './tabs/SupportTab';
 import SlackTab from './tabs/SlackTab';
+import AnalyticsTab from './tabs/AnalyticsTab';
+import GrowthTab from './tabs/GrowthTab';
+import ContentTab from './tabs/ContentTab';
+import AccessTab from './tabs/AccessTab';
 
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || '';
 const TAB_ALIASES = { hr: 'employers', stats: 'overview', apps: 'jobs', automation: 'ops', ai: 'ops' };
+const has = (perms, ...wanted) => wanted.some(p => perms.includes(p));
+// Each tab shows only for the permission that its API requires (the server checks again).
 const TABS = [
-  ['overview', 'Overview', LayoutDashboard], ['security', 'Security', ShieldAlert], ['employers', 'Employers', Building2],
-  ['users', 'Users', Users], ['jobs', 'Jobs & applications', Briefcase], ['support', 'Support', LifeBuoy], ['slack', 'Slack', Hash], ['ops', 'Operations', Cpu], ['audit', 'Audit log', ScrollText],
+  ['overview', 'Overview', LayoutDashboard, p => has(p, 'admin:access', 'analytics:read')],
+  ['growth', 'Growth', TrendingUp, p => has(p, 'growth:read', 'campaigns:read')],
+  ['content', 'Content', Megaphone, p => has(p, 'content:read')],
+  ['security', 'Security', ShieldAlert, p => has(p, 'admin:access')],
+  ['employers', 'Employers', Building2, p => has(p, 'admin:access')],
+  ['users', 'Users', Users, p => has(p, 'admin:access')],
+  ['jobs', 'Jobs & applications', Briefcase, p => has(p, 'admin:access')],
+  ['support', 'Support', LifeBuoy, p => has(p, 'support:manage')],
+  ['slack', 'Slack', Hash, p => has(p, 'support:manage')],
+  ['ops', 'Operations', Cpu, p => has(p, 'admin:access')],
+  ['audit', 'Audit log', ScrollText, p => has(p, 'admin:access')],
+  ['access', 'Access control', UserCog, p => has(p, 'users:manage_roles')],
 ];
+const ROLE_LABELS = { super_admin: 'Admin', product_manager: 'Product manager', social_media_manager: 'Social media manager' };
+// One cheap call per first tab to learn whether two-step verification is still needed.
+const PROBE = { overview: '/console/analytics', growth: '/console/campaigns', content: '/console/content', support: '/support/admin/slack', slack: '/support/admin/slack' };
 
-function initialTab() {
+function initialTab(allowed) {
   const requested = new URLSearchParams(window.location.search).get('tab') || '';
   const id = TAB_ALIASES[requested] || requested;
-  return TABS.some(([t]) => t === id) ? id : 'overview';
+  return allowed.some(([t]) => t === id) ? id : allowed[0]?.[0];
 }
 
 export default function AdminDashboard() {
-  const [tab, setTab] = useState(initialTab);
+  const [profile, setProfile] = useState(null);
+  const perms = profile?.permissions || [];
+  const isAdmin = perms.includes('admin:access');
+  const tabs = TABS.filter(([, , , allowed]) => allowed(perms));
+  const [tab, setTab] = useState(null);
   const [focus, setFocus] = useState(null);
   const [overview, setOverview] = useState(null);
   const [security, setSecurity] = useState(null);
@@ -56,8 +79,21 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
-    loadOverview();
-  }, [loadOverview]);
+    adminGet('/auth/me').then(me => {
+      setProfile(me);
+      const p = me.permissions || [];
+      const allowed = TABS.filter(([, , , ok]) => ok(p));
+      if (!allowed.length) { setGate('denied'); return; }
+      setTab(initialTab(allowed));
+      if (p.includes('admin:access')) { loadOverview(); return; }
+      const probe = PROBE[allowed[0][0]];
+      if (probe) adminGet(probe).catch(err => { if (needsMfaEnrollment(err)) setGate('mfa'); });
+    }).catch(err => handle(err, 'Could not load your account.'));
+  }, [loadOverview, handle]);
+  const staffError = useCallback((err) => {
+    if (needsMfaEnrollment(err)) { setGate('mfa'); return true; }
+    return false;
+  }, []);
   useEffect(() => { if (tab === 'security' && !gate) loadSecurity(); }, [tab, gate, loadSecurity]);
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(''), 6000); return () => clearTimeout(t); }, [toast]);
 
@@ -67,7 +103,7 @@ export default function AdminDashboard() {
     url.searchParams.set('tab', next);
     window.history.replaceState(null, '', url);
   };
-  const refresh = async () => { setRefreshing(true); await Promise.all([loadOverview(), tab === 'security' ? loadSecurity() : null]); setRefreshing(false); };
+  const refresh = async () => { setRefreshing(true); await Promise.all([isAdmin ? loadOverview() : null, tab === 'security' ? loadSecurity() : null]); setRefreshing(false); };
   const scrape = async () => {
     setScraping(true);
     try {
@@ -84,10 +120,13 @@ export default function AdminDashboard() {
   if (gate === 'mfa') return (
     <div className="max-w-3xl mx-auto py-10 px-4 space-y-4">
       <div><h2 className="text-xl font-semibold tracking-tight text-slate-900">Set up two-step verification</h2>
-        <p className="text-sm text-slate-600 mt-1">Admin accounts must use two-step verification. Set it up once to continue; you will be asked for a code each time you sign in.</p></div>
-      <MfaSetup required onEnabled={() => { setGate(null); loadOverview(); }} />
+        <p className="text-sm text-slate-600 mt-1">Staff accounts must use two-step verification. Set it up once to continue; you will be asked for a code each time you sign in.</p></div>
+      <MfaSetup required onEnabled={() => { setGate(null); if (isAdmin) loadOverview(); }} />
     </div>
   );
+  if (!profile || !tab) return error ? <div className="max-w-xl mx-auto mt-16"><Banner>{error}</Banner></div> : <Spinner />;
+  if (!isAdmin) return <TeamConsole profile={profile} tabs={tabs} tab={tab} goTo={goTo} toast={toast} setToast={setToast}
+    staffError={staffError} dialog={dialog} setDialog={setDialog} />;
   if (!overview) return error ? <div className="max-w-xl mx-auto mt-16"><Banner>{error} <button type="button" onClick={loadOverview} className="font-semibold underline">Retry</button></Banner></div> : <Spinner />;
 
   const sys = overview.system;
@@ -123,7 +162,7 @@ export default function AdminDashboard() {
           </div>
         </div>
         <nav className="mt-5 flex items-center gap-1 overflow-x-auto pb-3" aria-label="Owner console sections">
-          {TABS.map(([id, label, Icon]) => (
+          {tabs.map(([id, label, Icon]) => (
             <button key={id} type="button" onClick={() => goTo(id)} aria-current={tab === id ? 'page' : undefined}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                 tab === id ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
@@ -147,6 +186,45 @@ export default function AdminDashboard() {
         {tab === 'support' && <SupportTab notify={setToast} />}
         {tab === 'slack' && <SlackTab notify={setToast} />}
         {tab === 'audit' && <AuditTab />}
+        {tab === 'growth' && <GrowthTab permissions={perms} />}
+        {tab === 'content' && <ContentTab />}
+        {tab === 'access' && <AccessTab notify={setToast} confirm={setDialog} />}
+      </main>
+      <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
+    </div>
+  );
+}
+
+
+/* eslint-disable react/prop-types -- the project does not use the prop-types package */
+// The console for product and marketing staff: only their tabs, no platform controls.
+function TeamConsole({ profile, tabs, tab, goTo, toast, setToast, staffError, dialog, setDialog }) {
+  const growthLabel = (profile.permissions || []).includes('growth:read') ? 'Growth' : 'Campaigns';
+  return (
+    <div className="-m-5 md:-m-9 min-h-full bg-slate-50 text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <header className="bg-white border-b border-slate-200 px-4 sm:px-8 pt-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">Team console</h2>
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-violet-200">
+            {ROLE_LABELS[profile.role] || profile.role}</span>
+        </div>
+        <p className="mt-1 text-[13px] text-slate-500">Signed in as {profile.full_name || profile.email}. You see the sections your role allows.</p>
+        <nav className="mt-5 flex items-center gap-1 overflow-x-auto pb-3" aria-label="Team console sections">
+          {tabs.map(([id, label, Icon]) => (
+            <button key={id} type="button" onClick={() => goTo(id)} aria-current={tab === id ? 'page' : undefined}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                tab === id ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+              <Icon size={16} />{id === 'growth' ? growthLabel : label}
+            </button>))}
+        </nav>
+      </header>
+      <main className="px-4 sm:px-8 py-6 space-y-4">
+        {toast && <Banner tone="green" onClose={() => setToast('')}>{toast}</Banner>}
+        {tab === 'overview' && <AnalyticsTab onError={staffError} />}
+        {tab === 'growth' && <GrowthTab permissions={profile.permissions || []} onError={staffError} />}
+        {tab === 'content' && <ContentTab />}
+        {tab === 'support' && <SupportTab notify={setToast} />}
+        {tab === 'slack' && <SlackTab notify={setToast} />}
       </main>
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
     </div>

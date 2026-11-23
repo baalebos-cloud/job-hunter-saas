@@ -25,7 +25,18 @@ PERMISSIONS = {
     'privacy:manage': 'Handle data-subject requests (export / erasure)',
     'system:diagnostics': 'Run provider and infrastructure diagnostics',
     'jobs:manage': 'Moderate job listings and approve employers',
+    # Team console (product and marketing staff). None of these expose security
+    # tools, user administration or the audit trail.
+    'analytics:read': 'Product analytics: totals and trends only, no personal data',
+    'growth:read': 'Go-to-market: funnel, plans and estimated revenue, referrals, job alert emails',
+    'campaigns:read': 'Campaign results: sign-ups by source and partner link clicks (counts only)',
+    'content:read': 'Job insights and ready-to-copy social posts built from live jobs',
+    'support:manage': 'Read and answer Help & support requests and Slack requests (contains personal data)',
 }
+
+# Any of these opens the Owner console; each tab still checks its own permission.
+CONSOLE_PERMISSIONS = ('admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read',
+                       'support:manage', 'users:manage_roles')
 
 DEFAULT_MATRIX = {
     'super_admin': ('Full platform administration', sorted(PERMISSIONS)),
@@ -36,6 +47,11 @@ DEFAULT_MATRIX = {
     'compliance_officer': ('GDPR/SOC2 evidence and data-subject requests',
                            ['audit:read', 'audit:export', 'reports:read', 'privacy:manage', 'users:read']),
     'viewer': ('Read-only dashboards', ['metrics:read', 'reports:read']),
+    'product_manager': ('Product, go-to-market and customer support',
+                        ['analytics:read', 'growth:read', 'campaigns:read', 'content:read', 'support:manage',
+                         'reports:read', 'metrics:read']),
+    'social_media_manager': ('Social media: content insights and campaign results (no personal data)',
+                             ['analytics:read', 'campaigns:read', 'content:read']),
 }
 ROLES = tuple(DEFAULT_MATRIX)
 # super_admin must always be able to administer roles (no lock-out).
@@ -100,6 +116,20 @@ def _forbidden(permission: str):
 def is_owner(user) -> bool:
     """Platform administrator (super_admin). Kept for existing call sites."""
     return bool(user and user.is_verified and getattr(user, 'role', None) == 'super_admin')
+
+
+def require_console(permission: str):
+    """A team-console permission, with the same two-step verification rule as admins."""
+    check = require_permission(permission)
+
+    def dependency(current_user=Depends(check)):
+        from backend.app.services.mfa import admin_2fa_required
+        if admin_2fa_required() and not current_user.totp_enabled_at:
+            raise HTTPException(403, {'code': 'mfa_enrollment_required',
+                                      'message': 'Turn on two-step verification to use the console.'})
+        return current_user
+    dependency.__name__ = f'require_console_{permission.replace(":", "_")}'
+    return dependency
 
 
 _require_admin_access = require_permission('admin:access')

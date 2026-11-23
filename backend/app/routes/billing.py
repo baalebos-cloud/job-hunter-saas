@@ -179,10 +179,14 @@ async def stripe_webhook(
         if sub:
             plan=data.get('metadata',{}).get('plan',sub.plan)
             if plan not in PRICE_IDS: return {"received":True}
+            newly_paid = not (sub.plan == plan and sub.status == 'active')
             sub.plan=plan; sub.status='active'; sub.stripe_sub_id=stripe_sub_id
             from backend.app.routes.referral import convert_referral
             convert_referral(sub.user_id,plan,db)
             db.commit()
+            if newly_paid:                       # renewals of an active plan are not upgrades
+                from backend.app.models.growth import bump
+                bump(db, 'plan:upgraded')
 
     # ── Subscription cancelled ────────────────────────────────────────────────
     elif event["type"] == "customer.subscription.deleted":
@@ -192,6 +196,8 @@ async def stripe_webhook(
             sub.plan   = "free"
             sub.status = "cancelled"
             db.commit()
+            from backend.app.models.growth import bump
+            bump(db, 'plan:cancelled')
             print(f"⚠️ Subscription {stripe_sub_id} cancelled — downgraded to free")
 
     # ── Payment failed ────────────────────────────────────────────────────────
@@ -201,6 +207,8 @@ async def stripe_webhook(
         if sub:
             sub.status = "past_due"
             db.commit()
+            from backend.app.models.growth import bump
+            bump(db, 'plan:payment_failed')
             print(f"❌ Payment failed for subscription {stripe_sub_id}")
 
     return {"received": True}

@@ -37,13 +37,18 @@ def get_matrix(db: Session = Depends(get_db), _=Depends(require_permission('user
 @router.get("/users")
 def list_role_holders(db: Session = Depends(get_db), _=Depends(require_permission('users:read')),
                       q: str = '', limit: int = 50):
-    query = db.query(User.id, User.email, User.full_name, User.role, User.is_verified)
+    query = db.query(User.id, User.email, User.full_name, User.role, User.is_verified, User.career_track,
+                     User.totp_enabled_at, User.created_at, User.last_login_at, User.is_hr)
     if q:
         query = query.filter(User.email.ilike(f'%{q.strip()}%'))
     else:
         query = query.filter(User.role.isnot(None))
     rows = query.order_by(User.email).limit(min(max(limit, 1), 200)).all()
-    return [{"id": r.id, "email": r.email, "full_name": r.full_name, "role": r.role, "is_verified": r.is_verified}
+    # Profile details shown before a role is assigned (Owner console -> Access control).
+    return [{"id": r.id, "email": r.email, "full_name": r.full_name, "role": r.role, "is_verified": r.is_verified,
+             "career_track": r.career_track, "two_step": bool(r.totp_enabled_at), "is_employer": bool(r.is_hr),
+             "joined": r.created_at.isoformat() + 'Z' if r.created_at else None,
+             "last_login": r.last_login_at.isoformat() + 'Z' if r.last_login_at else None}
             for r in rows]
 
 

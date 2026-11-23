@@ -1,6 +1,7 @@
 # =============================================================================
 # backend/app/routes/auth.py — sign-up, sign-in, sessions, verification, reset
 # =============================================================================
+import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -121,6 +122,22 @@ def _attribute_referral(db: Session, new_user: User, ref_code: str | None):
         db.rollback()
 
 
+_TAG = re.compile(r'[^a-z0-9_.\- ]+')
+
+
+def _attribution(user) -> dict:
+    """Campaign tags from the link that first brought the visitor, cleaned to
+    short lowercase labels. The referrer is kept as a host name only."""
+    def tag(value, limit):
+        cleaned = _TAG.sub('', str(value or '').strip().lower())[:limit].strip()
+        return cleaned or None
+    referrer = str(user.referrer or '').strip().lower()
+    host = re.sub(r'^[a-z]+://', '', referrer).split('/')[0].split(':')[0].removeprefix('www.')[:120]
+    return {'signup_utm_source': tag(user.utm_source, 80), 'signup_utm_medium': tag(user.utm_medium, 80),
+            'signup_utm_campaign': tag(user.utm_campaign, 120),
+            'signup_referrer': host if re.fullmatch(r'[a-z0-9.\-]+\.[a-z]{2,}', host or '') else None}
+
+
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 def signup(user: UserCreate, request: Request, response: Response, background_tasks: BackgroundTasks,
            db: Session = Depends(get_db)):
@@ -135,7 +152,7 @@ def signup(user: UserCreate, request: Request, response: Response, background_ta
                     email_canonical=canonical, signup_ip=client_ip(request),
                     hashed_password=hash_password(user.password), career_track=user.career_track,
                     country=user.country, is_hr=False, company_name=user.company_name,
-                    is_verified=False, verification_token=token_digest)
+                    is_verified=False, verification_token=token_digest, **_attribution(user))
     db.add(new_user)
     db.commit()
     db.refresh(new_user)

@@ -11,6 +11,11 @@ class UserCreate(BaseModel):
     is_hr: Optional[bool] = False
     company_name: Optional[str] = None
     ref_code: Optional[str] = None      # referral code from the invite link
+    # First-touch campaign tags captured by the website (counts only in reports).
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    referrer: Optional[str] = None
 
 
 class UserLogin(BaseModel):

@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
-from backend.app.dependencies.roles import require_admin
+from backend.app.dependencies.roles import require_console
+
+_support_staff = require_console('support:manage')   # super_admin and product_manager
 from backend.app.models.support import (CATEGORIES, SLACK_STATUSES, STATUSES, SlackRequest,
                                          SupportMessage, SupportTicket)
 from backend.app.services import support as svc
@@ -190,7 +192,7 @@ def _staff_ticket(db: Session, ticket_id: int) -> SupportTicket:
 
 @router.get('/admin/tickets')
 def staff_tickets(status: Optional[str] = None, q: Optional[str] = None, page: int = 1, page_size: int = 25,
-                  db: Session = Depends(get_db), admin=Depends(require_admin)):
+                  db: Session = Depends(get_db), admin=Depends(_support_staff)):
     page, page_size = max(1, page), min(max(1, page_size), 100)
     query = db.query(SupportTicket)
     if status in STATUSES:
@@ -214,7 +216,7 @@ def staff_tickets(status: Optional[str] = None, q: Optional[str] = None, page: i
 
 
 @router.get('/admin/tickets/{ticket_id}')
-def staff_ticket(ticket_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def staff_ticket(ticket_id: int, db: Session = Depends(get_db), admin=Depends(_support_staff)):
     return svc.serialize(_staff_ticket(db, ticket_id), messages=True, staff=True)
 
 
@@ -225,7 +227,7 @@ class StaffReply(BaseModel):
 
 @router.post('/admin/tickets/{ticket_id}/reply')
 def staff_reply(ticket_id: int, payload: StaffReply, request: Request, background: BackgroundTasks,
-                db: Session = Depends(get_db), admin=Depends(require_admin)):
+                db: Session = Depends(get_db), admin=Depends(_support_staff)):
     from backend.app.services import security_events
     ticket = _staff_ticket(db, ticket_id)
     body = _clean(payload.body, MAX_MESSAGE)
@@ -247,7 +249,7 @@ class StatusBody(BaseModel):
 
 
 @router.patch('/admin/tickets/{ticket_id}')
-def staff_status(ticket_id: int, payload: StatusBody, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def staff_status(ticket_id: int, payload: StatusBody, db: Session = Depends(get_db), admin=Depends(_support_staff)):
     ticket = _staff_ticket(db, ticket_id)
     ticket.status, ticket.updated_at = payload.status, datetime.utcnow()
     db.commit()
@@ -255,7 +257,7 @@ def staff_status(ticket_id: int, payload: StatusBody, db: Session = Depends(get_
 
 
 @router.get('/admin/tickets/{ticket_id}/attachment')
-def staff_attachment(ticket_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def staff_attachment(ticket_id: int, db: Session = Depends(get_db), admin=Depends(_support_staff)):
     return _attachment(_staff_ticket(db, ticket_id))
 
 
@@ -331,7 +333,7 @@ def request_slack(body: SlackBody, request: Request, background: BackgroundTasks
 
 
 @router.get('/admin/slack')
-def staff_slack(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def staff_slack(db: Session = Depends(get_db), admin=Depends(_support_staff)):
     rows = db.query(SlackRequest).order_by((SlackRequest.status != 'requested'), SlackRequest.updated_at.desc()).limit(200).all()
     counts = dict(db.query(SlackRequest.status, func.count(SlackRequest.id)).group_by(SlackRequest.status).all())
     return {'items': [svc.serialize_slack(r, staff=True) for r in rows],
@@ -340,7 +342,7 @@ def staff_slack(db: Session = Depends(get_db), admin=Depends(require_admin)):
 
 @router.patch('/admin/slack/{request_id}')
 def update_slack(request_id: int, body: SlackUpdate, request: Request, background: BackgroundTasks,
-                 db: Session = Depends(get_db), admin=Depends(require_admin)):
+                 db: Session = Depends(get_db), admin=Depends(_support_staff)):
     from backend.app.models.user import User
     row = db.get(SlackRequest, request_id)
     if not row:

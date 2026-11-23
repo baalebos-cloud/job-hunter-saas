@@ -27,6 +27,7 @@ from backend.app.routes import support as support_router
 from backend.app.routes import team as team_router
 from backend.app.routes import public_api as public_api_router
 from backend.app.routes import branding as branding_router
+from backend.app.routes import console as console_router
 from backend.app.routes import governance as governance_router
 from backend.app.services.ai_service import ai_engine
 
@@ -308,6 +309,8 @@ app.include_router(team_router.router, prefix="/api/v1/team", tags=["Team"])
 app.include_router(public_api_router.keys_router, prefix="/api/v1/api-keys", tags=["API keys"])
 app.include_router(public_api_router.router, prefix="/api/public/v1", tags=["Integrations API"])
 app.include_router(branding_router.router, prefix="/api/v1/branding", tags=["Branding"])
+app.include_router(console_router.router, prefix="/api/v1/console", tags=["Team console"])
+app.include_router(console_router.track_router, prefix="/api/v1/track", tags=["Tracking"])
 
 from backend.app.core.telemetry import init_tracing  # noqa: E402
 init_tracing(app)
