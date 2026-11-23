@@ -79,9 +79,7 @@ const Cross = () => (
 // Paid features being built. Subscribers receive each one automatically, at
 // no extra cost, the moment it ships; until then it is marked here so nobody
 // is told they already have it. Remove an entry when the feature goes live.
-const COMING_SOON = new Set([
-  'Dedicated Slack support',
-]);
+const COMING_SOON = new Set([]);
 
 export default function PricingPage() {
   const [billing, setBilling]   = useState(null);

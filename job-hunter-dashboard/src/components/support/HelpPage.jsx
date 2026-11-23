@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, ChevronRight, Clock, Inbox, Loader2, Mail, MessageSquare, Paperclip, Send } from 'lucide-react';
 import { errorText } from '../../lib/session';
 import SupportForm from './SupportForm';
+import SlackSupport from './SlackSupport';
 import {
   STATUS_TONE, SUPPORT_EMAIL, attachmentUrl, getTicket, listTickets, replyTicket, shortDate, signedIn, solveTicket,
 } from './supportApi';
@@ -148,6 +149,7 @@ export default function HelpPage() {
             <SupportForm onSent={() => setRefreshKey(k => k + 1)} />
           </section>
           {member && <MyRequests refreshKey={refreshKey} />}
+          {member && <SlackSupport />}
         </div>
         <section className="lg:col-span-2 min-w-0" aria-labelledby="faq-title">
           <h2 id="faq-title" className="font-semibold text-slate-900 mb-3">Common questions</h2>

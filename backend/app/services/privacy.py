@@ -33,6 +33,12 @@ def _team_export(db, user) -> dict:
                                for r in db.query(TeamMember).filter(TeamMember.owner_id == user.id)]}
 
 
+def _slack_export(db, user) -> list:
+    from backend.app.models.support import SlackRequest
+    return [{'company': r.company, 'emails': r.emails, 'status': r.status, 'created_at': r.created_at.isoformat()}
+            for r in db.query(SlackRequest).filter(SlackRequest.account_id == user.id)]
+
+
 def export_user_data(db, user) -> dict:
     """Machine-readable copy of everything held about ``user``."""
     from backend.app.models.application import Application
@@ -74,6 +80,7 @@ def export_user_data(db, user) -> dict:
                                                                      Referral.referred_user_id == user.id))],
         'notifications': [_row(e) for e in db.query(AutomationEvent).filter(AutomationEvent.recipient_id == user.id)],
         'team': _team_export(db, user),
+        'slack_support_requests': _slack_export(db, user),
         'active_sessions': [{'created_at': t.created_at.isoformat(), 'expires_at': t.expires_at.isoformat()}
                             for t in db.query(RefreshToken).filter(RefreshToken.user_id == user.id,
                                                                     RefreshToken.revoked_at.is_(None))],
@@ -127,6 +134,8 @@ def erase_user(db, user, requested_by: str = 'self') -> dict:
         from backend.app.models.support import SupportMessage, SupportTicket
         tickets = db.query(SupportTicket.id).filter(or_(SupportTicket.user_id == user.id, SupportTicket.email == user.email))
         db.query(SupportMessage).filter(SupportMessage.ticket_id.in_(tickets.scalar_subquery())).delete(synchronize_session=False)
+        from backend.app.models.support import SlackRequest
+        counts['slack_requests'] = db.query(SlackRequest).filter(SlackRequest.account_id == user.id).delete(synchronize_session=False)
         counts['support_tickets'] = db.query(SupportTicket).filter(
             or_(SupportTicket.user_id == user.id, SupportTicket.email == user.email)).delete(synchronize_session=False)
         counts['notifications'] = db.query(AutomationEvent).filter(AutomationEvent.recipient_id == user.id).delete(synchronize_session=False)
