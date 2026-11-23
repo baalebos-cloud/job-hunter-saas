@@ -315,7 +315,9 @@ def pipeline(monkeypatch):
 
 
 def upload(client, email='a@example.com', **data):
-    source = export_resume(resume()).pdf
+    # The uploaded file must contain what the (faked) extraction returns:
+    # extraction output is now verified against the file.
+    source = export_resume(resume(name=YORUBA_NAME, contact='olajide@example.com | Lagos, Nigeria')).pdf
     return client.post('/api/v1/resume/upload', headers=auth(email), files={'file': ('cv.pdf', source, 'application/pdf')},
                        data={'job_title': 'Engineer', 'job_description': 'Python and Terraform skills required for this engineering role.', **data})
 

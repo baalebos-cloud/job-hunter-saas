@@ -62,12 +62,14 @@ def _run_pipeline(content, filename, job_description, job_title, region, task_id
         from backend.app.utils.ats_engine import (clean_job_description, extract_requirements, extract_resume_data,
                                                   extract_text, extract_text_with_ocr, prepare_resume_text,
                                                   rewrite_resume_for_job)
-        from backend.app.utils.resume_quality import merge_rewrite, score_requirements
+        from backend.app.utils.resume_quality import merge_rewrite, score_requirements, verify_extraction
         stage = 'extract_text'
         text = prepare_resume_text(extract_text_with_ocr(content, filename), filename)
         clean_jd = clean_job_description(job_description)
         stage = 'extract_resume_data'
         original = extract_resume_data(text)
+        stage = 'verify_extraction'
+        original, extraction_guard = verify_extraction(original, text)
         stage = 'extract_requirements'
         requirements = extract_requirements(job_description)
         stage = 'score_original'
@@ -90,7 +92,7 @@ def _run_pipeline(content, filename, job_description, job_title, region, task_id
         confirmation_questions=rewrite.get('confirmation_questions', []),
         suggestions_applied=rewrite.get('suggestions_applied', []),
         # What the guard reverted to source wording (invented numbers or tools).
-        rewrite_guard=rewrite.get('rewrite_guard', {}), job_title=job_title,
+        rewrite_guard=rewrite.get('rewrite_guard', {}), extraction_guard=extraction_guard, job_title=job_title,
         job_description=clean_jd, task_id=task_id, resume_id=task_id, status='success',
         # Missing requirements are suggestions only; they enter the resume
         # solely through /regenerate with explicit confirmation.

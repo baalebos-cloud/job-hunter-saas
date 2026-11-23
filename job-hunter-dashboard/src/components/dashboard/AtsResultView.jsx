@@ -76,6 +76,7 @@ export default function AtsResultView({ data: initialData, jobId }) {
   const suggested = (data?.suggested_skills ?? data?.missing_list ?? []).filter(k => typeof k === 'string').slice(0, 12);
   const changes = (data?.suggestions_applied || []).map(String).filter(Boolean).slice(0, 6);
   const reverted = Object.values(data?.rewrite_guard || {}).reduce((n, v) => n + (Array.isArray(v) ? v.length : Number(v) || 0), 0);
+  const leftOut = Number(data?.extraction_guard?.total_removed) || 0;   // items the AI read that are not in the file
   const doc = data?.document || {};
   const pageSize = typeof doc.page_size === 'string' ? doc.page_size : doc.region && ['US', 'CA'].includes(doc.region) ? 'Letter' : 'A4';
 
@@ -170,6 +171,7 @@ export default function AtsResultView({ data: initialData, jobId }) {
             {(changes.length ? changes : ['Summary and bullets re-ordered around the job’s main requirements',
               'Skills grouped to mirror the job’s wording']).map(c => <li key={c} className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />{c}</li>)}
             <li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />Nothing invented: every claim comes from your original resume{reverted ? ` (${reverted} unsupported edit${reverted > 1 ? 's' : ''} reverted)` : ''}</li>
+            {leftOut > 0 && <li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />{leftOut} item{leftOut > 1 ? 's' : ''} that could not be found in your file {leftOut > 1 ? 'were' : 'was'} left out. Check the preview and add anything missing to your original resume.</li>}
           </ul>
         </section>
 
