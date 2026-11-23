@@ -35,6 +35,38 @@ def effective_plan(user, stored_plan: str | None, status: str | None = "active")
     return stored_plan if stored_plan and status == "active" else "free"
 
 
+def own_plan(db: Session, user) -> str:
+    """The plan this account holds by itself (its own subscription or the owner role)."""
+    sub = db.query(Subscription).filter(Subscription.user_id == user.id).first()
+    return effective_plan(user, sub.plan if sub else None, sub.status if sub else None)
+
+
+def team_owner(db: Session, user):
+    """The Enterprise owner whose team this user belongs to, or None.
+
+    Live check: when the owner's Enterprise plan ends, members fall back to
+    their own plan straight away; when it is renewed, they get it back."""
+    from backend.app.models.team import TeamMember
+    row = db.query(TeamMember).filter(TeamMember.user_id == user.id, TeamMember.status == "active").first()
+    if not row:
+        return None
+    owner = db.get(User, row.owner_id)
+    return owner if owner and own_plan(db, owner) == "enterprise" else None
+
+
+def plan_for(db: Session, user) -> str:
+    """The plan a user can use right now: their own, or Enterprise through a team."""
+    plan = own_plan(db, user)
+    if plan != "enterprise" and team_owner(db, user) is not None:
+        return "enterprise"
+    return plan
+
+
+def _unlimited(db: Session, user) -> bool:
+    """Owner/admins, and members of an Enterprise team, are never limited by quotas."""
+    return is_plan_exempt(user) or (user is not None and team_owner(db, user) is not None)
+
+
 def _get_or_create_sub(user_id: int, db: Session) -> Subscription:
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
     if not sub:
@@ -59,7 +91,7 @@ def require_scan_quota(
         @router.post("/upload")
         async def upload_resume(..., _=Depends(require_scan_quota)):
     """
-    if is_plan_exempt(current_user):
+    if _unlimited(db, current_user):
         return current_user
     sub = _get_or_create_sub(current_user.id, db)
     plan_info = PLANS.get(sub.plan if sub.status == "active" else "free", PLANS["free"])
@@ -102,24 +134,22 @@ def require_pro(
         @router.get("/export/all")
         def export_all(..., _=Depends(require_pro)):
     """
-    if is_plan_exempt(current_user):
+    if plan_for(db, current_user) in ("pro", "enterprise"):
         return current_user
     sub = _get_or_create_sub(current_user.id, db)
-    if sub.status != 'active' or sub.plan not in ("pro", "enterprise"):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error":       "pro_required",
-                "message":     "This feature requires a Pro or Enterprise plan.",
-                "plan":        sub.plan,
-                "upgrade_url": "/pricing",
-            }
-        )
-    return current_user
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "error":       "pro_required",
+            "message":     "This feature requires a Pro or Enterprise plan.",
+            "plan":        sub.plan,
+            "upgrade_url": "/pricing",
+        }
+    )
 
 
 def consume_scan(user_id, db):
-    if is_plan_exempt(db.get(User, user_id)):
+    if _unlimited(db, db.get(User, user_id)):
         return  # unlimited: nothing to count against a quota
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).with_for_update().first()
     if not sub: raise HTTPException(409, "Subscription not initialized")
@@ -131,7 +161,7 @@ def consume_scan(user_id, db):
 
 def remaining_scans(user_id, db):
     """Scans left this month, or None for unlimited plans and exempt users."""
-    if is_plan_exempt(db.get(User, user_id)):
+    if _unlimited(db, db.get(User, user_id)):
         return None
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
     if not sub:

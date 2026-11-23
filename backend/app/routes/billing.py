@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_current_user
-from backend.app.dependencies.plan_guard import is_plan_exempt
+from backend.app.dependencies.plan_guard import is_plan_exempt, own_plan, team_owner
 from backend.app.models.user import User
 from backend.app.models.subscription import Subscription, PLANS
 
@@ -57,20 +57,28 @@ def get_billing_status(
     exempt = is_plan_exempt(current_user)   # verified admins / the owner: Enterprise for life
     if exempt:
         plan_info = PLANS["enterprise"]
-    scans_limit = -1 if exempt else plan_info["scans_per_month"]
+    # Members of an Enterprise team use the owner's plan; their own subscription is untouched.
+    owner = None if exempt or own_plan(db, current_user) == "enterprise" else team_owner(db, current_user)
+    via_team = owner is not None
+    if via_team:
+        plan_info = PLANS["enterprise"]
+    unlimited = exempt or via_team
+    scans_limit = -1 if unlimited else plan_info["scans_per_month"]
     scans_left  = max(0, scans_limit - sub.scans_this_month) if scans_limit != -1 else -1
 
     return {
-        "plan":             "enterprise" if exempt else sub.plan,
+        "plan":             "enterprise" if unlimited else sub.plan,
         "plan_name":        plan_info["name"],
-        "status":           "active" if exempt else sub.status,
+        "status":           "active" if unlimited else sub.status,
         "lifetime":         exempt,         # never billed, never expires
         "scans_this_month": sub.scans_this_month,
         "scans_limit":      scans_limit,    # -1 = unlimited
         "scans_left":       scans_left,     # -1 = unlimited
-        "is_pro":           exempt or sub.plan in ("pro", "enterprise"),
+        "is_pro":           unlimited or sub.plan in ("pro", "enterprise"),
         "plan_exempt":      exempt,
-        "price_monthly":    0 if exempt else plan_info["price"],
+        "price_monthly":    0 if unlimited else plan_info["price"],
+        "via_team":         ({"owner_name": owner.full_name or owner.email.split("@")[0], "owner_email": owner.email}
+                             if via_team else None),
     }
 
 
@@ -84,6 +92,9 @@ def create_checkout_session(
     """Create a Stripe Checkout session for the selected plan."""
     if is_plan_exempt(current_user):
         raise HTTPException(status_code=400, detail="Your account already has Enterprise for life. There is nothing to buy.")
+    if own_plan(db, current_user) != "enterprise" and team_owner(db, current_user) is not None:
+        raise HTTPException(status_code=400, detail="You already have Enterprise through your team. "
+                                                    "Leave the team in Settings first if you want your own plan.")
     if plan not in PRICE_IDS or not PRICE_IDS[plan]:
         raise HTTPException(status_code=400, detail=f"Invalid plan or Stripe price ID not configured for '{plan}'")
 

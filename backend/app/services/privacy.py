@@ -25,6 +25,14 @@ def _row(obj, exclude=()):
     return data
 
 
+def _team_export(db, user) -> dict:
+    from backend.app.models.team import TeamMember
+    member_of = db.query(TeamMember).filter(TeamMember.user_id == user.id).first()
+    return {'member_of_owner_id': member_of.owner_id if member_of else None,
+            'invited_by_you': [{'email': r.email, 'status': r.status, 'invited_at': r.invited_at.isoformat()}
+                               for r in db.query(TeamMember).filter(TeamMember.owner_id == user.id)]}
+
+
 def export_user_data(db, user) -> dict:
     """Machine-readable copy of everything held about ``user``."""
     from backend.app.models.application import Application
@@ -65,6 +73,7 @@ def export_user_data(db, user) -> dict:
         'referrals': [_row(r) for r in db.query(Referral).filter(or_(Referral.referrer_id == user.id,
                                                                      Referral.referred_user_id == user.id))],
         'notifications': [_row(e) for e in db.query(AutomationEvent).filter(AutomationEvent.recipient_id == user.id)],
+        'team': _team_export(db, user),
         'active_sessions': [{'created_at': t.created_at.isoformat(), 'expires_at': t.expires_at.isoformat()}
                             for t in db.query(RefreshToken).filter(RefreshToken.user_id == user.id,
                                                                     RefreshToken.revoked_at.is_(None))],
@@ -121,6 +130,10 @@ def erase_user(db, user, requested_by: str = 'self') -> dict:
         counts['support_tickets'] = db.query(SupportTicket).filter(
             or_(SupportTicket.user_id == user.id, SupportTicket.email == user.email)).delete(synchronize_session=False)
         counts['notifications'] = db.query(AutomationEvent).filter(AutomationEvent.recipient_id == user.id).delete(synchronize_session=False)
+        from backend.app.models.team import TeamMember
+        counts['team_memberships'] = db.query(TeamMember).filter(
+            or_(TeamMember.owner_id == user.id, TeamMember.user_id == user.id,
+                TeamMember.email_canonical == (user.email_canonical or user.email.lower()))).delete(synchronize_session=False)
         counts['referrals_made'] = db.query(Referral).filter(Referral.referrer_id == user.id).delete(synchronize_session=False)
         counts['referrals_anonymised'] = db.query(Referral).filter(Referral.referred_user_id == user.id).update(
             {Referral.referred_user_id: None, Referral.referred_email: 'erased'}, synchronize_session=False)

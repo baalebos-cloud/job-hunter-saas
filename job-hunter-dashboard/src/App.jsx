@@ -28,6 +28,8 @@ import HRLogin from './components/hr/HRLogin'
 import ProfilePage from './components/ProfilePage'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
+import TeamJoin from './components/team/TeamJoin'
+import TeamSettings from './components/team/TeamSettings'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -287,6 +289,8 @@ function SettingsPage() {
         </form>
       </div>
 
+      <TeamSettings />
+
       {/* Danger zone */}
       <div className="bg-rose-950/20 border border-rose-900/30 rounded-3xl p-6">
         <p className="text-rose-400 font-black text-sm mb-1">Sign Out</p>
@@ -527,6 +531,7 @@ function App() {
         <Route path="/reset-password"  element={<ResetPassword />} />
         <Route path="/verify-email"    element={<VerifyEmail />} />
         <Route path="/unsubscribe"     element={<UnsubscribePage />} />
+        <Route path="/team/join"       element={<TeamJoin />} />
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/signup"       element={<HRSignup />} />
         <Route path="/hr/verify"       element={<VerifyEmail />} />

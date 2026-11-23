@@ -24,6 +24,7 @@ from backend.app.routes import automation as automation_router
 from backend.app.routes import rbac as rbac_router
 from backend.app.routes import privacy as privacy_router
 from backend.app.routes import support as support_router
+from backend.app.routes import team as team_router
 from backend.app.routes import governance as governance_router
 from backend.app.services.ai_service import ai_engine
 
@@ -301,6 +302,7 @@ app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
 app.include_router(privacy_router.router, prefix="/api/v1/privacy", tags=["Privacy"])
 app.include_router(governance_router.router, prefix="/api/v1/governance", tags=["Governance"])
 app.include_router(support_router.router, prefix="/api/v1/support", tags=["Support"])
+app.include_router(team_router.router, prefix="/api/v1/team", tags=["Team"])
 
 from backend.app.core.telemetry import init_tracing  # noqa: E402
 init_tracing(app)

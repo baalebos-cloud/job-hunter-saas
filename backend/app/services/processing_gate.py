@@ -69,11 +69,9 @@ def gate() -> ProcessingGate:
 
 
 def has_priority(db, user) -> bool:
-    """Pro and Enterprise subscribers, and the owner / verified admins."""
-    from backend.app.dependencies.plan_guard import effective_plan
-    from backend.app.models.subscription import Subscription
-    sub = db.query(Subscription).filter(Subscription.user_id == user.id).first()
-    return effective_plan(user, sub.plan if sub else None, sub.status if sub else None) in ("pro", "enterprise")
+    """Pro and Enterprise subscribers (including Enterprise team members), and the owner / verified admins."""
+    from backend.app.dependencies.plan_guard import plan_for
+    return plan_for(db, user) in ("pro", "enterprise")
 
 
 @contextmanager
