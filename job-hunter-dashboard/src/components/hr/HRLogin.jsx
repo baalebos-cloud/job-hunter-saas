@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState } from 'react';
 import axios from 'axios';
+import PasswordInput from '../auth/PasswordInput';
 import { startSession, errorText } from '../../lib/session';
 import MfaChallenge from '../auth/MfaChallenge';
 
@@ -194,7 +195,7 @@ export default function HRLogin() {
                   Forgot password?
                 </a>
               </div>
-              <input type="password" required placeholder="Your password" className={inputCls}
+              <PasswordInput accent="hover:text-blue-400" autoComplete="current-password" required placeholder="Your password" className={inputCls}
                 value={form.password} onChange={e => set('password', e.target.value)} />
             </div>
 

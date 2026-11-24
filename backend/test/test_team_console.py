@@ -231,3 +231,18 @@ def test_content_posts_use_only_live_jobs_and_carry_campaign_tags(ctx):
 ])
 def test_salary_ranking_reads_yearly_pay_only(text, value):
     assert salary_top(text) == value
+
+
+def test_signup_accepts_a_typed_career_track_and_tidies_it(ctx):
+    client, db = ctx
+    response = client.post('/api/v1/auth/signup', json={
+        'email': 'typed@example.com', 'full_name': 'Typed Track', 'password': secrets.token_urlsafe(12),
+        'career_track': '  LLM / Generative AI   Engineer\n', 'country': ' Nigeria '})
+    assert response.status_code == 201, response.text
+    user = db.query(User).filter_by(email='typed@example.com').one()
+    assert user.career_track == 'LLM / Generative AI Engineer' and user.country == 'Nigeria'
+    long = client.post('/api/v1/auth/signup', json={
+        'email': 'long@example.com', 'full_name': 'Long Track', 'password': secrets.token_urlsafe(12),
+        'career_track': 'x' * 300})
+    assert long.status_code == 201
+    assert len(db.query(User).filter_by(email='long@example.com').one().career_track) == 80

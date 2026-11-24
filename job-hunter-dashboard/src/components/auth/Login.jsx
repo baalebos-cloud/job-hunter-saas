@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { startSession, errorText } from '../../lib/session';
 import MfaChallenge from './MfaChallenge';
 import VerifyEmailNotice from './VerifyEmailNotice';
+import PasswordInput from './PasswordInput';
 import { useLiveStats } from '../../lib/liveStats';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -17,7 +18,6 @@ export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showPass, setShowPass] = useState(false);
   const [mfaToken, setMfaToken] = useState(null);
   const [unverified, setUnverified] = useState('');
   const stats = useLiveStats();   // real figures; hidden when unavailable   // email that must be verified before signing in
@@ -163,15 +163,9 @@ export default function Login() {
 
             <div>
               <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Password</label>
-              <div className="relative">
-                <input type={showPass ? 'text' : 'password'} required placeholder="••••••••"
-                  className="w-full px-4 py-4 rounded-2xl border-2 border-slate-800 bg-slate-900 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600 pr-16"
-                  value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-                <button type="button" onClick={() => setShowPass(!showPass)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-emerald-400 text-xs font-black transition-colors">
-                  {showPass ? 'HIDE' : 'SHOW'}
-                </button>
-              </div>
+              <PasswordInput required autoComplete="current-password" placeholder="••••••••"
+                className="w-full px-4 py-4 rounded-2xl border-2 border-slate-800 bg-slate-900 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600"
+                value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
             </div>
 
             <div className="flex justify-end">

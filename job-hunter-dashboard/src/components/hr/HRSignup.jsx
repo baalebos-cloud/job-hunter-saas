@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState } from 'react';
 import axios from 'axios';
+import PasswordInput from '../auth/PasswordInput';
 import { errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -235,7 +236,7 @@ export default function HRSignup() {
 
             <div>
               <label className={labelCls}>Password *</label>
-              <input type="password" required placeholder="Min. 8 characters" className={inputCls}
+              <PasswordInput accent="hover:text-blue-400" autoComplete="new-password" required placeholder="Min. 8 characters" className={inputCls}
                 value={form.password} onChange={e => set('password', e.target.value)} />
             </div>
 

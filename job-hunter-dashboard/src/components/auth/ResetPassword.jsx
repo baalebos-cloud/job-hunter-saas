@@ -4,6 +4,7 @@
 // =============================================================================
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import PasswordInput from './PasswordInput';
 import { errorText } from '../../lib/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -122,7 +123,7 @@ export default function ResetPassword() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className={labelCls}>New Password</label>
-            <input type="password" required placeholder="Min. 8 characters"
+            <PasswordInput required autoComplete="new-password" placeholder="Min. 8 characters"
               className={inputCls} value={form.password}
               onChange={handlePasswordChange} />
             {form.password && (
@@ -141,7 +142,7 @@ export default function ResetPassword() {
 
           <div>
             <label className={labelCls}>Confirm New Password</label>
-            <input type="password" required placeholder="Re-enter your password"
+            <PasswordInput required autoComplete="new-password" placeholder="Re-enter your password"
               className={`${inputCls} ${form.confirm && form.confirm !== form.password ? 'border-rose-500' : form.confirm && form.confirm === form.password ? 'border-emerald-500' : ''}`}
               value={form.confirm} onChange={e => set('confirm', e.target.value)} />
             {form.confirm && form.confirm !== form.password && (
