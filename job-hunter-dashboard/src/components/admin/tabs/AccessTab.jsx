@@ -34,14 +34,15 @@ export default function AccessTab({ notify, confirm }) {
     const role = draft[person.id] ?? person.role ?? '';
     confirm({
       title: role ? `Make ${person.full_name || person.email} a ${label(role)}?` : `Remove ${person.email}'s role?`,
-      body: role ? `${matrix.roles[role]?.description || ''}. They will be signed out everywhere and get the new access at their next sign-in.`
-        : 'They will lose console access and be signed out everywhere.',
+      body: role ? `${matrix.roles[role]?.description || ''}. They will be signed out everywhere and get the new access at their next sign-in. We email them right away with an overview of the role and what to do next.`
+        : 'They will lose console access and be signed out everywhere. We email them to let them know.',
       confirmLabel: role ? 'Assign role' : 'Remove role',
       tone: role ? undefined : 'red',
       errorText: (err) => message(err, 'The role could not be changed.'),
       onConfirm: async () => {
         await axios.put(`${API}/rbac/users/${person.id}/role`, { role: role || null }, { headers: headers() });
-        notify(role ? `${person.email} is now a ${label(role)}.` : `${person.email} no longer has a staff role.`);
+        notify(role ? `${person.email} is now a ${label(role)}. We emailed them their role overview and next steps.`
+          : `${person.email} no longer has a staff role. We emailed them.`);
         setDraft(d => ({ ...d, [person.id]: undefined })); search(q);
       },
     });

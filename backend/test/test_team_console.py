@@ -246,3 +246,37 @@ def test_signup_accepts_a_typed_career_track_and_tidies_it(ctx):
         'career_track': 'x' * 300})
     assert long.status_code == 201
     assert len(db.query(User).filter_by(email='long@example.com').one().career_track) == 80
+
+
+def test_assigning_a_role_emails_the_person_with_an_overview_and_next_steps(ctx, monkeypatch):
+    client, db = ctx
+    sent = []
+    monkeypatch.setattr('backend.app.utils.email.send_account_message',
+                        lambda to, subject, body, reply_to=None: sent.append((to, subject, body, reply_to)) or True)
+    person = db.query(User).filter_by(email=NOBODY).one()
+    person.full_name = 'Tolu <b>Ade</b>'; db.commit()
+    result = client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': 'product_manager'}, headers=auth(OWNER)).json()
+    assert result['notified'] is True
+    (to, subject, body, reply_to), = sent
+    assert to == NOBODY and subject == 'You are now a Product manager on Baalebos' and reply_to == 'support@baalebo.xyz'
+    assert 'Growth: funnel' in body and 'Support and Slack' in body                     # role overview
+    assert 'Sign in again' in body and 'Turn on two-step verification' in body           # next steps (2FA is off)
+    assert '/admin' in body and 'Open Team console' in body
+    assert '<b>Ade</b>' not in body and 'Tolu' in body                                   # names are escaped
+
+    sent.clear()                                                                         # same role again: no email
+    assert client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': 'product_manager'},
+                      headers=auth(OWNER)).json()['notified'] is False
+    assert sent == []
+
+    person = db.query(User).filter_by(email=NOBODY).one()
+    person.totp_enabled_at = datetime.utcnow(); db.commit()
+    client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': 'social_media_manager'}, headers=auth(OWNER))
+    (_, subject, body, _), = sent
+    assert subject == 'You are now a Social media manager on Baalebos'
+    assert 'No customer personal data' in body and 'Turn on two-step verification' not in body   # 2FA already on
+
+    sent.clear()
+    client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': None}, headers=auth(OWNER))
+    (_, subject, body, _), = sent
+    assert subject == 'Your Baalebos staff role was removed' and 'Social media manager' in body
