@@ -1,5 +1,15 @@
-from pydantic import BaseModel, EmailStr
+import re
 from typing import Optional
+
+from pydantic import BaseModel, EmailStr, field_validator
+
+
+def _tidy(value: Optional[str], limit: int) -> Optional[str]:
+    """Free text from the sign-up form: one line, no control characters, capped in length."""
+    if value is None:
+        return None
+    value = re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f\x7f]', ' ', str(value))).strip()[:limit]
+    return value or None
 
 
 class UserCreate(BaseModel):
@@ -16,6 +26,17 @@ class UserCreate(BaseModel):
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
     referrer: Optional[str] = None
+
+    # Career track is typed freely (suggestions are offered); country comes from the list.
+    @field_validator('career_track')
+    @classmethod
+    def _track(cls, value):
+        return _tidy(value, 80)
+
+    @field_validator('country')
+    @classmethod
+    def _country(cls, value):
+        return _tidy(value, 60)
 
 
 class UserLogin(BaseModel):

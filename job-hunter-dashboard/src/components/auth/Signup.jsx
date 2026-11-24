@@ -7,40 +7,11 @@ import axios from 'axios';
 import { clearFirstTouch, firstTouch } from '../../lib/attribution';
 import { errorText } from '../../lib/session';
 import VerifyEmailNotice from './VerifyEmailNotice';
+import PasswordInput from './PasswordInput';
+import { COUNTRIES, TECH_TRACKS, cleanTrack, matchCountry } from '../../lib/signupOptions';
 import { updatedAgo, useLiveStats } from '../../lib/liveStats';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-
-const CAREER_TRACKS = [
-  { value: 'Frontend Developer',      label: '🎨 Frontend Developer' },
-  { value: 'Backend Engineer',        label: '⚙️ Backend Engineer' },
-  { value: 'Full Stack Developer',    label: '🔥 Full Stack Developer' },
-  { value: 'DevOps Engineer',         label: '🚀 DevOps Engineer' },
-  { value: 'Cloud Engineer',          label: '☁️ Cloud Engineer' },
-  { value: 'Data Engineer',           label: '📊 Data Engineer' },
-  { value: 'Data Scientist',          label: '🧠 Data Scientist' },
-  { value: 'Machine Learning Engineer', label: '🤖 ML Engineer' },
-  { value: 'Cybersecurity Engineer',  label: '🔒 Cybersecurity' },
-  { value: 'Product Manager',         label: '📋 Product Manager' },
-  { value: 'UI/UX Designer',          label: '✏️ UI/UX Designer' },
-  { value: 'Mobile Developer',        label: '📱 Mobile Developer' },
-  { value: 'QA Engineer',             label: '🧪 QA Engineer' },
-  { value: 'Platform Engineer',       label: '🏗️ Platform Engineer' },
-  { value: 'Software Engineer',       label: '💻 Software Engineer' },
-];
-
-const COUNTRIES = [
-  'Worldwide / Remote','Nigeria','United States','United Kingdom','Canada','Germany',
-  'France','Netherlands','Sweden','Norway','Denmark','Finland','Switzerland','Austria',
-  'Belgium','Ireland','Spain','Portugal','Italy','Poland','Czech Republic','Romania',
-  'Hungary','Ukraine','Turkey','Israel','UAE','Saudi Arabia','South Africa','Kenya',
-  'Ghana','Egypt','India','Pakistan','Bangladesh','Sri Lanka','Singapore','Malaysia',
-  'Indonesia','Philippines','Vietnam','Thailand','Japan','South Korea','China','Taiwan',
-  'Hong Kong','Australia','New Zealand','Brazil','Argentina','Mexico','Colombia','Chile',
-  'Peru','Venezuela','Ecuador','Bolivia','Uruguay','Paraguay','Costa Rica','Panama',
-  'Jamaica','Trinidad and Tobago','Ethiopia','Tanzania','Uganda','Rwanda','Senegal',
-  'Ivory Coast','Cameroon','Zimbabwe','Zambia','Mozambique','Morocco','Tunisia','Algeria',
-];
 
 const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-800 bg-slate-900 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600';
 const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-500 mb-2';
@@ -63,8 +34,12 @@ export default function Signup() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+    const track = cleanTrack(form.career_track);
+    if (!track) { setError('Type or choose your career track.'); return; }
+    const country = form.country.trim() ? matchCountry(form.country) : null;
+    if (form.country.trim() && !country) { setError('Choose your country from the list (start typing to see suggestions).'); return; }
+    setLoading(true);
 
     try {
       // The account can sign in only after its email address is verified;
@@ -73,8 +48,8 @@ export default function Signup() {
         full_name:    form.name,
         email:        form.email,
         password:     form.password,
-        career_track: form.career_track || null,
-        country:      form.country || null,
+        career_track: track,
+        country:      country,
         ref_code:     refCode || null,
         ...firstTouch(),
       });
@@ -193,41 +168,30 @@ export default function Signup() {
             </div>
 
             <div>
-              <label className={labelCls}>Password</label>
-              <input type="password" required placeholder="Min. 8 characters" className={inputCls}
-                value={form.password} onChange={e => set('password', e.target.value)} />
+              <label className={labelCls} htmlFor="signup-password">Password</label>
+              <PasswordInput id="signup-password" required minLength={8} autoComplete="new-password" placeholder="Min. 8 characters"
+                className={inputCls} value={form.password} onChange={e => set('password', e.target.value)} />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Career Track</label>
-                <div className="relative">
-                  <select required
-                    className={`${inputCls} appearance-none pr-8 cursor-pointer`}
-                    style={{ color: form.career_track ? '#fff' : '#4b5563' }}
-                    value={form.career_track} onChange={e => set('career_track', e.target.value)}>
-                    <option value="" disabled>Select role...</option>
-                    {CAREER_TRACKS.map(t => (
-                      <option key={t.value} value={t.value} style={{ color: '#fff', background: '#0f172a' }}>{t.label}</option>
-                    ))}
-                  </select>
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-xs">▾</span>
-                </div>
+                <label className={labelCls} htmlFor="signup-track">Career Track</label>
+                <input id="signup-track" list="signup-track-options" required maxLength={80} autoComplete="off"
+                  placeholder="Type or pick, e.g. DevOps Engineer" className={inputCls}
+                  value={form.career_track} onChange={e => set('career_track', e.target.value)} />
+                <datalist id="signup-track-options">
+                  {TECH_TRACKS.map(t => <option key={t} value={t} />)}
+                </datalist>
               </div>
 
               <div>
-                <label className={labelCls}>Country 🌍</label>
-                <div className="relative">
-                  <select className={`${inputCls} appearance-none pr-8 cursor-pointer`}
-                    style={{ color: form.country ? '#fff' : '#4b5563' }}
-                    value={form.country} onChange={e => set('country', e.target.value)}>
-                    <option value="" style={{ color: '#4b5563', background: '#0f172a' }}>Select country...</option>
-                    {COUNTRIES.map(c => (
-                      <option key={c} value={c} style={{ color: '#fff', background: '#0f172a' }}>{c}</option>
-                    ))}
-                  </select>
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-xs">▾</span>
-                </div>
+                <label className={labelCls} htmlFor="signup-country">Country</label>
+                <input id="signup-country" list="signup-country-options" maxLength={60} autoComplete="country-name"
+                  placeholder="Start typing, e.g. Nigeria" className={inputCls}
+                  value={form.country} onChange={e => set('country', e.target.value)} />
+                <datalist id="signup-country-options">
+                  {COUNTRIES.map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
             </div>
 
