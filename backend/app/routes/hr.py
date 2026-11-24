@@ -28,6 +28,15 @@ class HRJobPost(BaseModel):
     work_type: Optional[str] = "remote"
     category: Optional[str] = "Software Engineer"
     url: Optional[str] = None  # Application URL / company careers page
+    application_form: Optional[dict] = None  # what applicants are asked (jobs without url only)
+
+
+def _checked_form(raw):
+    from backend.app.services.application_form import normalize_form
+    try:
+        return normalize_form(raw)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/jobs")
@@ -41,6 +50,7 @@ def post_job(
     One active posting per role per company: a repeat is refused, and a
     scraped copy of the same role is closed so candidates see the employer's own."""
     from backend.app.utils.global_scraper import _keyed, dedupe_key
+    form = _checked_form(job.application_form)
     company = job.company or hr_user.company_name or "Company"
     key = dedupe_key(job.title, company, job.location)
     if _keyed(key):
@@ -64,6 +74,7 @@ def post_job(
         work_type=job.work_type,
         category=job.category,
         url=job.url,
+        application_form=form,
         source="HR Posted",
         posted_by_hr=True,
         hr_user_id=hr_user.id,
@@ -84,7 +95,19 @@ def my_posted_jobs(
     jobs = db.query(Job).filter(
         Job.hr_user_id == hr_user.id
     ).order_by(Job.scraped_at.desc()).all()
-    return jobs
+    from backend.app.services.application_form import form_of
+    return [{**{c.name: getattr(j, c.name) for c in Job.__table__.columns}, "application_form": form_of(j)} for j in jobs]
+
+
+@router.put("/jobs/{job_id}/application-form")
+def update_application_form(job_id: int, payload: dict, db: Session = Depends(get_db), hr_user: User = Depends(require_hr)):
+    """Change what applicants are asked. Applications already sent keep the answers they were sent with."""
+    job = db.query(Job).filter(Job.id == job_id, Job.hr_user_id == hr_user.id).first()
+    if not job:
+        raise HTTPException(404, "Job not found or not yours")
+    job.application_form = _checked_form(payload)
+    db.commit()
+    return {"application_form": job.application_form}
 
 
 @router.delete("/jobs/{job_id}")
@@ -126,13 +149,16 @@ def job_applications(
         {
             "application_id": a.id,
             "resume_available": a.resume_id is not None and a.submission_method == "baalebos",
-            "applicant_name": a.user.full_name if a.user else "Unknown",
+            "applicant_name": (a.applicant_details or {}).get("full_name") or (a.user.full_name if a.user else "Unknown"),
             "applicant_email": a.user.email if a.user else "Unknown",
-            "applicant_country": a.user.country if a.user else None,
+            "applicant_country": (a.applicant_details or {}).get("country") or (a.user.country if a.user else None),
             "career_track": a.user.career_track if a.user else None,
             "ats_score": a.ats_score,
             "status": a.status,
             "applied_at": a.created_at,
+            # What the candidate sent on Baalebos (None for older or external applications).
+            "details": a.applicant_details,
+            "answers": a.answers or [],
         }
         for a in apps
     ]

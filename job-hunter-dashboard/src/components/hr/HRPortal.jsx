@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   Briefcase, Users, CalendarCheck, Plus, MapPin, Wallet, Building2, Globe2, Trash2, Eye,
-  FileText, BadgeCheck, CheckCircle2, AlertCircle, X, ExternalLink, ChevronLeft, Inbox,
+  FileText, BadgeCheck, CheckCircle2, AlertCircle, X, ExternalLink, ChevronLeft, Inbox, ClipboardList, ChevronDown,
 } from 'lucide-react';
 import { errorText } from '../../lib/session';
+import ApplicationFormBuilder from './ApplicationFormBuilder';
+import { defaultApplicationForm, formProblems } from '../../lib/applicationForm';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const h = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -36,7 +38,26 @@ const NEW_STATUSES = new Set(['pending', 'submitted_internal', 'submitted_extern
 const stageId = status => (!status || NEW_STATUSES.has(status) ? 'pending' : status);
 const stage = status => STAGES.find(s => s.id === stageId(status)) || { id: status, label: status, cls: 'bg-slate-100 text-slate-700' };
 const workTypeLabel = id => WORK_TYPES.find(w => w.id === id)?.label || id;
-const EMPTY_FORM = { title: '', company: '', location: '', description: '', salary_range: '', work_type: 'remote', category: 'Software Engineer', url: '' };
+const EMPTY_FORM = { title: '', company: '', location: '', description: '', salary_range: '', work_type: 'remote', category: 'Software Engineer', url: '', application_form: null };
+const answerText = (v) => (v == null || v === '' ? 'Not provided' : Array.isArray(v) ? v.join(', ') : v === 'yes' ? 'Yes' : v === 'no' ? 'No' : String(v));
+const isLink = (v) => typeof v === 'string' && v.startsWith('https://');
+
+// What the candidate sent with an application on Baalebos.
+function AnswersPanel({ app }) {
+  const d = app.details || {};
+  const rows = [['Phone', d.phone], ['Country', d.country], ...app.answers.map(a => [a.label, a.value])];
+  return (
+    <dl className="mt-3 grid sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-xl bg-slate-50 p-4 text-sm">
+      {rows.filter(([, v]) => v !== undefined).map(([label, value], i) => (
+        <div key={i} className="contents">
+          <dt className="text-slate-500">{label}</dt>
+          <dd className={`break-words whitespace-pre-line ${value == null || value === '' ? 'text-slate-400' : 'text-slate-900'}`}>
+            {isLink(value) ? <a href={value} target="_blank" rel="noopener noreferrer nofollow" className="text-emerald-700 hover:underline">{value}</a> : answerText(value)}
+          </dd>
+        </div>))}
+    </dl>
+  );
+}
 
 const inputCls = 'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10';
 const labelCls = 'block text-sm font-medium text-slate-700 mb-1.5';
@@ -92,6 +113,9 @@ export default function HRPortal() {
   const [showCatSuggestions, setShowCatSuggestions] = useState(false);
   const catRef = useRef(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [formEditor, setFormEditor] = useState(null);   // { job, value, saving, error }
+  const [openAnswers, setOpenAnswers] = useState(null);
+  const [answerFilter, setAnswerFilter] = useState('');   // "label||yes" or ''
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
@@ -114,7 +138,7 @@ export default function HRPortal() {
 
   const loadApplications = async (jobId) => {
     setSelectedJob(jobId);
-    setResumeError('');
+    setResumeError(''); setOpenAnswers(null); setAnswerFilter('');
     const r = await axios.get(`${API}/hr/jobs/${jobId}/applications`, { headers: h() });
     setApplications(r.data);
     setTab('applications');
@@ -122,10 +146,13 @@ export default function HRPortal() {
 
   const postJob = async (e) => {
     e.preventDefault();
+    const appForm = form.application_form || defaultApplicationForm();
+    const problems = form.url ? [] : formProblems(appForm);
+    if (problems.length) { setNotice({ type: 'error', text: `Application form: ${problems[0]}` }); return; }
     setPosting(true);
     setNotice(null);
     try {
-      await axios.post(`${API}/hr/jobs`, form, { headers: h() });
+      await axios.post(`${API}/hr/jobs`, { ...form, url: form.url || null, application_form: form.url ? null : appForm }, { headers: h() });
       setNotice({ type: 'success', text: `“${form.title}” is live in the job feed.` });
       setForm({ ...EMPTY_FORM, company: dashboard?.company || '' });
       setCategoryQuery(EMPTY_FORM.category);
@@ -145,6 +172,19 @@ export default function HRPortal() {
       loadJobs();
     } catch (err) {
       setNotice({ type: 'error', text: errorText(err, 'The job could not be deleted.') });
+    }
+  };
+
+  const saveForm = async () => {
+    const problems = formProblems(formEditor.value);
+    if (problems.length) { setFormEditor(f => ({ ...f, error: problems[0] })); return; }
+    setFormEditor(f => ({ ...f, saving: true, error: '' }));
+    try {
+      await axios.put(`${API}/hr/jobs/${formEditor.job.id}/application-form`, formEditor.value, { headers: h() });
+      setNotice({ type: 'success', text: `Application form for “${formEditor.job.title}” saved. It applies to new applications.` });
+      setFormEditor(null); loadJobs();
+    } catch (err) {
+      setFormEditor(f => ({ ...f, saving: false, error: errorText(err, 'The application form could not be saved.') }));
     }
   };
 
@@ -171,6 +211,11 @@ export default function HRPortal() {
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const yesNoLabels = [...new Set(applications.flatMap(a => (a.answers || []).filter(x => x.type === 'yes_no').map(x => x.label)))];
+  const shown = !answerFilter ? applications : applications.filter(a => {
+    const [label, value] = answerFilter.split('||');
+    return (a.answers || []).some(x => x.label === label && x.value === value);
+  });
   const selectedJobInfo = myJobs.find(j => j.id === selectedJob);
 
   if (loading) return (
@@ -203,6 +248,30 @@ export default function HRPortal() {
               </div>
             </div>
             <iframe title={`Submitted resume for ${resumePreview.name}`} src={resumePreview.url} className="w-full flex-1 rounded-b-2xl bg-slate-50" />
+          </section>
+        </div>
+      )}
+
+      {formEditor && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm p-4 flex items-center justify-center">
+          <section role="dialog" aria-modal="true" aria-labelledby="form-editor-title" className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-200">
+              <div>
+                <h2 id="form-editor-title" className="font-semibold text-slate-900">Application form</h2>
+                <p className="text-sm text-slate-500">{formEditor.job.title} · changes apply to new applications; ones already received keep their answers.</p>
+              </div>
+              <button onClick={() => setFormEditor(null)} aria-label="Close" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <ApplicationFormBuilder value={formEditor.value} onChange={v => setFormEditor(f => ({ ...f, value: v, error: '' }))}
+                copyFrom={myJobs.filter(j => j.id !== formEditor.job.id && !j.url && j.application_form)} />
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex flex-wrap items-center justify-end gap-3">
+              {formEditor.error && <p role="alert" className="mr-auto text-sm text-rose-700">{formEditor.error}</p>}
+              <button onClick={() => setFormEditor(null)} className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+              <button onClick={saveForm} disabled={formEditor.saving}
+                className="rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-5 py-2.5 disabled:opacity-60">{formEditor.saving ? 'Saving…' : 'Save form'}</button>
+            </div>
           </section>
         </div>
       )}
@@ -333,6 +402,19 @@ export default function HRPortal() {
               </div>
             </div>
 
+            <div className="p-6">
+              <h3 className="font-semibold text-slate-900">Application form</h3>
+              {form.url ? (
+                <p className="text-sm text-slate-500 mt-1">Candidates apply on your careers page, so they are not asked any questions on Baalebos.</p>
+              ) : (<>
+                <p className="text-sm text-slate-500 mt-0.5">Choose what applicants for this job must tell you, and add your own questions.</p>
+                <div className="mt-5">
+                  <ApplicationFormBuilder value={form.application_form || defaultApplicationForm()} onChange={v => set('application_form', v)}
+                    copyFrom={myJobs.filter(j => !j.url && j.application_form)} />
+                </div>
+              </>)}
+            </div>
+
             <div className="p-6 flex flex-wrap items-center justify-end gap-3 bg-slate-50/60 rounded-b-2xl">
               <button type="button" onClick={() => { setForm({ ...EMPTY_FORM, company: dashboard?.company || '' }); setCategoryQuery(EMPTY_FORM.category); }}
                 className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Clear form</button>
@@ -395,6 +477,11 @@ export default function HRPortal() {
                     <a href={job.url} target="_blank" rel="noopener noreferrer" title="External application page"
                       className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><ExternalLink size={16} /></a>
                   )}
+                  {!job.url && (
+                    <button onClick={() => setFormEditor({ job, value: job.application_form || defaultApplicationForm(), saving: false, error: '' })}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                      <ClipboardList size={16} />Application form
+                    </button>)}
                   <button onClick={() => loadApplications(job.id)}
                     className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                     <Users size={16} />View applicants
@@ -425,6 +512,16 @@ export default function HRPortal() {
                 <span className="text-sm text-slate-500">{applications.length} applicant{applications.length === 1 ? '' : 's'}</span>
               </div>
               <p className="text-sm text-slate-500">The match score is a screening aid based on the resume and the job description, not a verified qualification or a hiring decision.</p>
+              {yesNoLabels.length > 0 && (
+                <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">Filter by answer
+                  <select value={answerFilter} onChange={e => setAnswerFilter(e.target.value)} aria-label="Filter applicants by answer"
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+                    <option value="">Everyone ({applications.length})</option>
+                    {yesNoLabels.flatMap(label => ['yes', 'no'].map(v => (
+                      <option key={`${label}||${v}`} value={`${label}||${v}`}>{label} Answered {v === 'yes' ? 'Yes' : 'No'}</option>)))}
+                  </select>
+                  {answerFilter && <span className="text-slate-500">{shown.length} of {applications.length}</span>}
+                </label>)}
               {resumeError && <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-800">{resumeError}</p>}
               {applications.length === 0 ? (
                 <div className={`${card} border-dashed p-12 text-center`}>
@@ -433,12 +530,14 @@ export default function HRPortal() {
                 </div>
               ) : (
                 <div className={`${card} divide-y divide-slate-100`}>
-                  {applications.map(app => {
+                  {shown.length === 0 && <p className="p-5 text-sm text-slate-500">No applicants gave that answer.</p>}
+                  {shown.map(app => {
                     const score = app.ats_score;
                     const bar = score >= 80 ? 'bg-emerald-600' : score >= 60 ? 'bg-amber-500' : 'bg-slate-400';
                     const current = stage(app.status);
                     return (
-                      <div key={app.application_id} className="p-5 grid md:grid-cols-[minmax(0,1fr)_11rem_auto] gap-4 items-center">
+                      <div key={app.application_id} className="p-5">
+                      <div className="grid md:grid-cols-[minmax(0,1fr)_11rem_auto] gap-4 items-center">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 shrink-0 rounded-full bg-emerald-50 text-emerald-800 flex items-center justify-center text-sm font-semibold">{initials(app.applicant_name)}</div>
                           <div className="min-w-0">
@@ -475,6 +574,16 @@ export default function HRPortal() {
                             {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                           </select>
                         </div>
+                      </div>
+                      {(app.details || app.answers?.length > 0) && (<>
+                        <button type="button" onClick={() => setOpenAnswers(o => (o === app.application_id ? null : app.application_id))}
+                          aria-expanded={openAnswers === app.application_id}
+                          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800">
+                          <ChevronDown size={15} className={openAnswers === app.application_id ? 'rotate-180' : ''} />
+                          {openAnswers === app.application_id ? 'Hide application' : `View application (${app.answers?.length || 0} answer${app.answers?.length === 1 ? '' : 's'})`}
+                        </button>
+                        {openAnswers === app.application_id && <AnswersPanel app={app} />}
+                      </>)}
                       </div>
                     );
                   })}

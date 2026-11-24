@@ -9,6 +9,7 @@ import GovernanceDashboard from './components/governance/GovernanceDashboard'
 import TalentOverview from './components/TalentOverview'
 import ApplicationsTable from './components/dashboard/ApplicationsTable'
 import JobBoard from './components/jobs/JobBoard'
+import ApplyPage from './components/jobs/ApplyPage'
 import ResumeUpload from './components/dashboard/ResumeUpload'
 import AtsResultView from './components/dashboard/AtsResultView'
 import HelpPage from './components/support/HelpPage'
@@ -558,6 +559,9 @@ function App() {
         } />
         <Route path="/jobs" element={
           <RequireAuth><DashboardLayout><JobsPage /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/apply/:jobId" element={
+          <RequireAuth><DashboardLayout><ApplyPage /></DashboardLayout></RequireAuth>
         } />
         <Route path="/applications" element={
           <RequireAuth><DashboardLayout><ApplicationsPage /></DashboardLayout></RequireAuth>

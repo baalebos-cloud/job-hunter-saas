@@ -214,25 +214,30 @@ function JobDetail({ jobId, onApply, onClose }) {
         <div className="mt-5 space-y-3">
           <div className="flex flex-wrap gap-2">
             <a href={`/optimizer?job=${job.id}`} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700"><Sparkles size={16} />Tailor my resume to this job</a>
-            <button type="button" disabled={busy || (internal && !attach)} onClick={apply} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60">
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Briefcase size={16} />}
-              {job.url ? 'Track and apply on employer site' : 'Apply on Baalebos'}</button>
+            {internal ? (
+              <a href={localStorage.getItem('token') ? `/apply/${job.id}` : '/login'} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800">
+                <Briefcase size={16} />Apply on Baalebos</a>
+            ) : (
+              <button type="button" disabled={busy} onClick={apply} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60">
+                {busy ? <Loader2 size={16} className="animate-spin" /> : <Briefcase size={16} />}Track and apply on employer site</button>
+            )}
             {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1.5 text-sm font-semibold rounded-xl px-4 py-2.5 border border-slate-200 hover:bg-slate-50">Original posting <ExternalLink size={14} /></a>}
           </div>
-          {tailored.length > 0 ? (
+          {internal ? (
+            <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3">{job.company} receives applications on Baalebos: your details, a resume tailored for this job{tailored.length ? ' (you have one ready)' : ''} and their questions.</p>
+          ) : tailored.length > 0 ? (
             <label className="flex flex-wrap gap-2 items-center text-sm text-slate-600">
-              <span>{internal ? 'Resume to send' : 'Resume to track with this application'}</span>
+              <span>Resume to track with this application</span>
               <select value={attach} onChange={e => setAttach(e.target.value)} aria-label="Tailored resume to attach"
                 className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
-                {!internal && <option value="">Don&apos;t attach a resume</option>}
+                <option value="">Don&apos;t attach a resume</option>
                 {tailored.map(r => <option key={r.task_id} value={r.task_id}>
                   {r.job_title}{r.score != null ? ` · match ${Math.round(r.score)}%` : ''}{r.created_at ? ` · ${new Date(r.created_at).toLocaleDateString()}` : ''}</option>)}
               </select>
             </label>
           ) : localStorage.getItem('token') && (
             <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3">
-              {internal ? 'This employer receives applications on Baalebos with a resume tailored for this job. Tailor yours first, then come back to apply.'
-                : 'No resume tailored for this job yet. Tailor one to see your match and keep it with this application.'}</p>
+              No resume tailored for this job yet. Tailor one to see your match and keep it with this application.</p>
           )}
           {applyError && <p role="alert" className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{applyError}</p>}
         </div>
