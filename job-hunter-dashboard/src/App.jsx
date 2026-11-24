@@ -320,7 +320,7 @@ function JobsPage() {
       { headers: { Authorization: `Bearer ${token}` } })
     return res.data
   }, [token])
-  return <JobBoard onApply={handleApply} lastTaskId={localStorage.getItem('lastTaskId')} />
+  return <JobBoard onApply={handleApply} />
 }
 
 // ── Landing page (public) ─────────────────────────────────────────────────────

@@ -140,28 +140,38 @@ function JobCard({ job, selected, onSelect }) {
   );
 }
 
-function JobDetail({ jobId, onApply, lastTaskId, onClose }) {
+function JobDetail({ jobId, onApply, onClose }) {
   const [job, setJob] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [applyError, setApplyError] = useState('');
-  const [attach, setAttach] = useState(false);
+  // Only resumes tailored for THIS job can be attached; '' means "no resume".
+  const [tailored, setTailored] = useState([]);
+  const [attach, setAttach] = useState('');
   useEffect(() => {
     let active = true;
-    setJob(null); setError(''); setResult(null); setApplyError(''); setAttach(false);
+    setJob(null); setError(''); setResult(null); setApplyError(''); setTailored([]); setAttach('');
     axios.get(`${API}/jobs/board/${jobId}`, { headers: auth() })
       .then(r => { if (active) setJob(r.data); })
       .catch(err => { if (active) setError(errorText(err, 'This job could not be loaded.')); });
+    if (localStorage.getItem('token')) {
+      axios.get(`${API}/jobs/${jobId}/my-resumes`, { headers: auth() })
+        .then(r => { if (active) { setTailored(r.data.items || []); setAttach(r.data.items?.[0]?.task_id || ''); } })
+        .catch(() => {});
+    }
     return () => { active = false; };
   }, [jobId]);
 
   const apply = async () => {
     setBusy(true); setApplyError('');
-    try { setResult(await onApply(job.id, job.url, attach ? lastTaskId : null)); }
+    // Open the employer's form straight away (before any await, so the browser allows the new tab).
+    if (job.url && localStorage.getItem('token')) window.open(job.url, '_blank', 'noopener,noreferrer');
+    try { setResult(await onApply(job.id, job.url, attach || null)); }
     catch (err) { setApplyError(errorText(err, 'Could not prepare your application. Please retry.')); }
     finally { setBusy(false); }
   };
+  const internal = !job?.url;
 
   if (error) return <div className="p-6 text-sm text-rose-700">{error}</div>;
   if (!job) return <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-emerald-600" /></div>;
@@ -204,12 +214,26 @@ function JobDetail({ jobId, onApply, lastTaskId, onClose }) {
         <div className="mt-5 space-y-3">
           <div className="flex flex-wrap gap-2">
             <a href={`/optimizer?job=${job.id}`} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700"><Sparkles size={16} />Tailor my resume to this job</a>
-            <button type="button" disabled={busy} onClick={apply} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60">
+            <button type="button" disabled={busy || (internal && !attach)} onClick={apply} className="inline-flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60">
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Briefcase size={16} />}
               {job.url ? 'Track and apply on employer site' : 'Apply on Baalebos'}</button>
             {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1.5 text-sm font-semibold rounded-xl px-4 py-2.5 border border-slate-200 hover:bg-slate-50">Original posting <ExternalLink size={14} /></a>}
           </div>
-          {lastTaskId && <label className="flex gap-2 items-center text-sm text-slate-600"><input type="checkbox" checked={attach} onChange={e => setAttach(e.target.checked)} className="accent-emerald-600" />Attach my latest tailored resume</label>}
+          {tailored.length > 0 ? (
+            <label className="flex flex-wrap gap-2 items-center text-sm text-slate-600">
+              <span>{internal ? 'Resume to send' : 'Resume to track with this application'}</span>
+              <select value={attach} onChange={e => setAttach(e.target.value)} aria-label="Tailored resume to attach"
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
+                {!internal && <option value="">Don&apos;t attach a resume</option>}
+                {tailored.map(r => <option key={r.task_id} value={r.task_id}>
+                  {r.job_title}{r.score != null ? ` · match ${Math.round(r.score)}%` : ''}{r.created_at ? ` · ${new Date(r.created_at).toLocaleDateString()}` : ''}</option>)}
+              </select>
+            </label>
+          ) : localStorage.getItem('token') && (
+            <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3">
+              {internal ? 'This employer receives applications on Baalebos with a resume tailored for this job. Tailor yours first, then come back to apply.'
+                : 'No resume tailored for this job yet. Tailor one to see your match and keep it with this application.'}</p>
+          )}
           {applyError && <p role="alert" className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{applyError}</p>}
         </div>
       )}
@@ -221,7 +245,7 @@ function JobDetail({ jobId, onApply, lastTaskId, onClose }) {
   );
 }
 
-export default function JobBoard({ onApply, lastTaskId }) {
+export default function JobBoard({ onApply }) {
   const [draft, setDraft] = useState({ q: '', category: '', region: '', posted_within: '' });
   const [filters, setFilters] = useState({ q: '', category: '', region: '', posted_within: '', work_type: '', employer_only: false, has_salary: false });
   const [sort, setSort] = useState('best');
@@ -320,7 +344,7 @@ export default function JobBoard({ onApply, lastTaskId }) {
         </div>
         {selected && (
           <div className="min-w-0 bg-white border border-slate-200 rounded-2xl lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-            <JobDetail jobId={selected.id} onApply={onApply} lastTaskId={lastTaskId} onClose={isWide ? null : () => setSelected(null)} />
+            <JobDetail jobId={selected.id} onApply={onApply} onClose={isWide ? null : () => setSelected(null)} />
           </div>
         )}
       </div>

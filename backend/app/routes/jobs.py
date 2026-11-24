@@ -52,13 +52,31 @@ def _apply_country_filter(q, country: str):
                         Job.location.ilike("%worldwide%"), Job.location.ilike("%anywhere%")))
 
 
+def _plain(text) -> str:
+    """Job text as the tailoring pipeline stores it: markup removed, spacing collapsed."""
+    from backend.app.utils.sanitize import sanitize_untrusted_text
+    return " ".join(sanitize_untrusted_text(text or "").split())
+
+
+def tailored_for(resume, job) -> bool:
+    """Was this resume tailored for this job? A resume started from the job
+    records its id; one made from a pasted description must match the job's text
+    (compared after the same clean-up the pipeline applies, so HTML in a scraped
+    posting no longer makes a correctly tailored resume look like a mismatch)."""
+    analysis = (resume.analysis_data if resume else None) or {}
+    if analysis.get('job_id') not in (None, ''):
+        try:
+            return int(analysis['job_id']) == job.id
+        except (TypeError, ValueError):
+            return False
+    stored = analysis.get('job_description')
+    return bool(stored) and bool(job.description) and _plain(stored) == _plain(job.description)
+
+
 def _compute_ats_score(resume, job):
-    if not resume or not resume.analysis_data:
+    if not resume or not resume.analysis_data or not tailored_for(resume, job):
         return None
-    analysis = resume.analysis_data
-    if analysis.get('job_description') != job.description:
-        return None
-    return analysis.get('overall_score')
+    return resume.analysis_data.get('overall_score')
 
 
 @router.get("/", response_model=List[JobResponse])
@@ -154,6 +172,28 @@ def create_job(
     return new_job
 
 
+@router.get("/{job_id}/my-resumes")
+def my_resumes_for_job(job_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """The candidate's finished resumes tailored for this job, newest first: the only ones that can be attached."""
+    job = db.query(Job).filter(Job.id == job_id, Job.is_active == True).first()  # noqa: E712
+    if not job:
+        raise HTTPException(404, "Active job not found")
+    rows = (db.query(Resume).filter(Resume.owner_id == current_user.id, Resume.status == 'completed',
+                                    Resume.filename.like('optimized_%'))
+            .order_by(Resume.created_at.desc(), Resume.id.desc()).limit(100).all())
+    items = []
+    for record in rows:
+        if not tailored_for(record, job):
+            continue
+        analysis = record.analysis_data or {}
+        scores = analysis.get('scores') or {}
+        items.append({'task_id': record.filename[len('optimized_'):-len('.pdf')],
+                      'job_title': analysis.get('job_title') or job.title,
+                      'created_at': record.created_at.isoformat() + 'Z' if record.created_at else None,
+                      'score': scores.get('after', analysis.get('overall_score'))})
+    return {'items': items[:10], 'internal': bool(job.posted_by_hr and not job.url)}
+
+
 # ── FIX 1 & 2: Apply endpoint — real ATS score + returns job URL ──────────────
 class ApplicationRequest(BaseModel):
     resume_id: Optional[str] = None
@@ -169,7 +209,9 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
     if payload.resume_id:
         selected = db.query(Resume).filter(Resume.filename == f"optimized_{payload.resume_id}.pdf", Resume.owner_id == current_user.id).first()
         if not selected: raise HTTPException(404, "Resume not found")
-        if (selected.analysis_data or {}).get('job_description') != job.description:
+        if selected.status != 'completed':
+            raise HTTPException(409, "This resume is still being prepared. Try again once it is ready.")
+        if not tailored_for(selected, job):
             raise HTTPException(409, "Tailor the selected resume to this job description before attaching it.")
     internal = bool(job.posted_by_hr and not job.url)
     if internal and not selected:

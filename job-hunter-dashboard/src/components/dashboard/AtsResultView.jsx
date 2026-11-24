@@ -61,6 +61,11 @@ export default function AtsResultView({ data: initialData, jobId }) {
   const [downloading, setDownloading] = useState('');
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(null);
+  const [job, setJob] = useState(null);   // the job this resume was tailored for, when started from one
+  useEffect(() => {
+    if (!jobId) return;
+    axios.get(`${API}/jobs/detail/${jobId}`).then(r => setJob(r.data)).catch(() => {});
+  }, [jobId]);
 
   const resumeId = data?.resume_id || data?.task_id;
   const scores = data?.scores || {};
@@ -110,6 +115,8 @@ export default function AtsResultView({ data: initialData, jobId }) {
 
   const apply = async () => {
     setApplying(true); setNotice(null);
+    // Employer-hosted application: open their form now (before any await, so the browser allows the tab).
+    if (job?.url) window.open(job.url, '_blank', 'noopener,noreferrer');
     try {
       const res = await axios.post(`${API}/jobs/${jobId}/apply`, { resume_id: resumeId }, { headers: headers() });
       setApplied(res.data);
@@ -186,11 +193,14 @@ export default function AtsResultView({ data: initialData, jobId }) {
           {jobId && !applied && (
             <button type="button" onClick={apply} disabled={applying || !previewReady}
               className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-              {applying ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Apply to this job with this resume</button>)}
+              {applying ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{job?.url ? 'Apply on the employer’s site' : 'Apply to this job with this resume'}</button>)}
+          {jobId && !applied && job?.url && <p className="text-xs text-slate-500 text-center">Opens {job.company ? `${job.company}’s` : 'the employer’s'} application form in a new tab and tracks it in Applications. Download your resume first to upload it there.</p>}
           {applied && (
             <div role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">
-              {applied.message || 'Application recorded.'}
-              {applied.job_url && <a href={applied.job_url} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-1 font-semibold">Finish on the employer’s site <ExternalLink size={13} /></a>}
+              {applied.job_url ? `We opened ${job?.company ? `${job.company}’s` : 'the employer’s'} application form in a new tab and saved this job to Applications. Finish the form there, then mark it as submitted in Applications.`
+                : applied.message || 'Application recorded.'}
+              {applied.job_url && <a href={applied.job_url} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-1 font-semibold">Tab didn’t open? Go to the employer’s form <ExternalLink size={13} /></a>}
+              <a href="/applications" className="mt-1 block font-semibold">View my applications →</a>
             </div>)}
           {!jobId && <a href="/jobs" className="block text-center text-sm font-semibold text-slate-600 hover:text-slate-900">Find jobs that match this resume →</a>}
         </section>
