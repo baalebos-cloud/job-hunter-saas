@@ -48,6 +48,14 @@ def _profile_resume_export(db, user):
             'read_from_file': kept.extracted, 'download_path': '/api/v1/profile/resume/file'}
 
 
+def _studio_export(db, user):
+    from backend.app.models.studio import StudioDocument
+    doc = db.get(StudioDocument, user.id)
+    if doc is None:
+        return None
+    return {'paper': doc.paper, 'preset': doc.preset, 'updated_at': doc.updated_at.isoformat() + 'Z', 'resume': doc.data}
+
+
 def export_user_data(db, user) -> dict:
     """Machine-readable copy of everything held about ``user``."""
     from backend.app.models.application import Application
@@ -83,6 +91,7 @@ def export_user_data(db, user) -> dict:
         'profile_details': profile_children,
         'resumes': resumes,
         'profile_resume': _profile_resume_export(db, user),
+        'resume_studio': _studio_export(db, user),
         'applications': [_row(a) for a in db.query(Application).filter(Application.user_id == user.id)],
         'outreach_messages': [_row(m) for m in db.query(OutreachMessage).filter(OutreachMessage.user_id == user.id)],
         'subscription': [_row(s) for s in db.query(Subscription).filter(Subscription.user_id == user.id)],
@@ -142,6 +151,8 @@ def erase_user(db, user, requested_by: str = 'self') -> dict:
         from backend.app.models.user import ProfilePhoto, ProfileResume
         counts['profile_photos'] = db.query(ProfilePhoto).filter(ProfilePhoto.user_id == user.id).delete(synchronize_session=False)
         counts['profile_resumes'] = db.query(ProfileResume).filter(ProfileResume.user_id == user.id).delete(synchronize_session=False)
+        from backend.app.models.studio import StudioDocument
+        counts['studio_documents'] = db.query(StudioDocument).filter(StudioDocument.user_id == user.id).delete(synchronize_session=False)
         from backend.app.models.support import SupportMessage, SupportTicket
         tickets = db.query(SupportTicket.id).filter(or_(SupportTicket.user_id == user.id, SupportTicket.email == user.email))
         db.query(SupportMessage).filter(SupportMessage.ticket_id.in_(tickets.scalar_subquery())).delete(synchronize_session=False)
