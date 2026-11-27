@@ -181,3 +181,12 @@ def test_job_meta_records_the_job_and_company(db):
     db.add(Job(id=9, title='SRE', company='Northwind', is_active=True)); db.commit()
     assert _job_meta(db, 9) == {'job_id': 9, 'company': 'Northwind'}
     assert _job_meta(db, None) == {} and _job_meta(db, 404) == {}
+
+
+def test_a_chosen_page_length_reaches_the_worker(db, monkeypatch):
+    from backend.app.routes import resume as routes
+    from backend.app.tasks import resume_tasks
+    sent = []
+    monkeypatch.setattr(resume_tasks.process_resume_upload, 'apply_async', lambda **kw: sent.append(kw))
+    routes._enqueue(db, db.get(User, 2), 'two-pages', b'%PDF', 'cv.pdf', 'JD', 'DevOps', 'US', True, {}, 2)
+    assert sent[0]['kwargs'] == {'priority': True, 'job_meta': {}, 'max_pages': 2}

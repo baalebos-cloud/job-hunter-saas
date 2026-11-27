@@ -83,7 +83,7 @@ def huge_resume(roles=8, bullets=7):
 @pytest.mark.parametrize('region', ['NG', 'US'])
 def test_strict_one_page_keeps_protected_facts(region):
     data = huge_resume()
-    result = export_resume(data, region=region, priority_keywords=['Python'])
+    result = export_resume(data, region=region, priority_keywords=['Python'], max_pages=1)
     assert len(PdfReader(io.BytesIO(result.pdf)).pages) == 1 == result.pages
     assert result.condensed and result.layout == 'compact'
     # Condense order: secondary content before experience bullets.
@@ -101,7 +101,7 @@ def test_strict_one_page_keeps_protected_facts(region):
 
 def test_layout_profiles_fit_before_trimming():
     data = huge_resume(roles=3, bullets=5)
-    result = export_resume(data)
+    result = export_resume(data, max_pages=1)
     assert result.pages == 1
     assert result.layout in ('standard', 'balanced', 'compact')
     if result.layout != 'compact':
@@ -126,7 +126,9 @@ def test_unfittable_resume_is_rejected_not_truncated():
     data = huge_resume()
     data['certifications'] = [f'Certification number {i} with a long official title' for i in range(150)]
     with pytest.raises(ResumeExportError, match='one page'):
-        export_resume(data)
+        export_resume(data, max_pages=1)
+    with pytest.raises(ResumeExportError, match='two pages'):
+        export_resume(data, max_pages=2)
 
 
 def test_reportlab_markup_injection_is_neutralised():

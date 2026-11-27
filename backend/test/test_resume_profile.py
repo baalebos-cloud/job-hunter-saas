@@ -106,7 +106,8 @@ def test_word_copy_of_the_tailored_resume(db):
     r = client.get('/api/v1/resume/download/task123/docx', headers=auth())
     assert r.status_code == 200 and r.headers['content-disposition'].split('filename="')[1].split('"')[0].endswith('.docx')
     text = '\n'.join(p.text for p in Document(io.BytesIO(r.content)).paragraphs)
-    assert 'JORDAN LEE' in text and 'Migrated 40 services to Kubernetes on AWS EKS.' in text
+    # The name is written as in the PDF (which keeps the candidate's own capitalisation).
+    assert text.startswith('Jordan Lee') and 'Migrated 40 services to Kubernetes on AWS EKS.' in text
     assert 'Terraform' in text and 'University of Lagos' in text
     assert '1990' not in text and 'Open to relocation' in text   # US convention: no date of birth
     assert client.get('/api/v1/resume/download/task123/docx', headers=auth('other@example.com')).status_code == 404

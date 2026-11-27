@@ -32,7 +32,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -56,6 +56,8 @@ for _family, (_regular, _bold, _italic, _bold_italic) in FONT_FAMILIES.items():
                                   italic=f'{_family}-Italic', boldItalic=f'{_family}-BoldItalic')
 # The base family of the document being rendered; fallbacks are relative to it.
 _DOCUMENT_FONT = contextvars.ContextVar('resume_document_font', default=PRIMARY_FONT)
+# Main language of the resume being rendered (PDF /Lang; right alignment for Arabic/Hebrew).
+_DOCUMENT_LANG = contextvars.ContextVar('resume_document_lang', default='en')
 
 ACCENT_COLOR = colors.HexColor('#1F4E79')   # name, headings and rules only; carries no meaning
 TEXT_COLOR = colors.HexColor('#1A1A1A')
@@ -64,9 +66,13 @@ MUTED_HEX = '#555555'
 
 REGIONS = ('US', 'CA', 'UK', 'EU', 'NG', 'OTHER')
 LETTER_REGIONS = {'US', 'CA'}
-# Personal details that US/Canadian conventions (and anti-discrimination
-# guidance) exclude. They are never added; for US/CA they are also dropped
-# when the source resume contains them.
+# Where employers expect one page by default; elsewhere a resume may use two.
+ONE_PAGE_REGIONS = {'US', 'CA'}
+# Personal details that US, Canadian and UK conventions (and anti-discrimination
+# guidance) exclude. They are never added; for these regions they are also
+# dropped when the source resume contains them. Elsewhere they are kept and
+# the export says so in its warnings.
+STRIP_PERSONAL_REGIONS = {'US', 'CA', 'UK'}
 PERSONAL_DETAIL_PATTERN = re.compile(
     r'\b(date of birth|d\.?o\.?b\.?|birth ?date|age|marital status|religion|gender|sex|'
     r'state of origin|lga|local government|nationality|next of kin)\b\s*[:\-]', re.IGNORECASE)
@@ -115,6 +121,20 @@ def resolve_region(region: str | None = None, country: str | None = None) -> str
 
 def page_size_for_region(region: str | None) -> tuple[float, float]:
     return LETTER if resolve_region(region) in LETTER_REGIONS else A4
+
+
+def resolve_max_pages(region: str | None, requested=None) -> int | str:
+    """1, 2 or 'auto' (one page when it fits, otherwise up to two).
+
+    Default: 1 for US/Canada, 'auto' elsewhere. An explicit 1 or 2 always wins."""
+    value = str(requested).strip().lower() if requested is not None else ''
+    if value in ('1', '2'):
+        return int(value)
+    if value == 'auto':
+        return 'auto'
+    if value:
+        raise ResumeExportError('Page length must be 1, 2 or auto.')
+    return 1 if resolve_region(region) in ONE_PAGE_REGIONS else 'auto'
 
 
 # ── Normalisation ─────────────────────────────────────────────────────────────
@@ -326,11 +346,28 @@ def has_exportable_content(data: dict) -> bool:
     return bool(data.get('name')) and any(data.get(k) for k in ('summary', 'experience', 'skills', 'education', 'projects'))
 
 
+_PHOTO_LINE = re.compile(r'\b(photo|photograph|headshot|passport picture)\b', re.IGNORECASE)
+
+
+def personal_details(data: dict) -> list[str]:
+    """Personal-detail labels present in the contact line or additional information."""
+    found = []
+    text = '\n'.join([data.get('additional_information', ''), *data.get('contact', '').split(' | ')])
+    for match in PERSONAL_DETAIL_PATTERN.finditer(text):
+        label = match.group(1).strip().lower()
+        if label not in found:
+            found.append(label)
+    if _PHOTO_LINE.search(data.get('additional_information', '')) and 'photo' not in found:
+        found.append('photo')
+    return found
+
+
 def apply_region_rules(data: dict, region: str) -> dict:
-    """US/CA convention: no DOB, marital status, photo or similar details."""
-    if resolve_region(region) not in LETTER_REGIONS:
+    """US/CA/UK convention: no DOB, marital status, photo or similar details."""
+    if resolve_region(region) not in STRIP_PERSONAL_REGIONS:
         return data
-    lines = [line for line in data.get('additional_information', '').splitlines() if not PERSONAL_DETAIL_PATTERN.search(line)]
+    lines = [line for line in data.get('additional_information', '').splitlines()
+             if not PERSONAL_DETAIL_PATTERN.search(line) and not _PHOTO_LINE.search(line)]
     contact = ' | '.join(p for p in data.get('contact', '').split(' | ') if not PERSONAL_DETAIL_PATTERN.search(p))
     return {**data, 'additional_information': '\n'.join(lines), 'contact': contact}
 
@@ -370,7 +407,7 @@ LAYOUTS = (
     Layout('compact', body=9, leading=10.8, margin=24, title=14, section_gap=3.5, entry_gap=1.5),
 )
 MIN_BODY_FONT = 9
-MAX_PAGES = 1
+MAX_PAGES = 2            # the most any export may use; 1 is the default for US/CA
 
 
 @dataclass
@@ -385,10 +422,14 @@ class ExportResult:
     condensed_items: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
+    max_pages: int | str = 1
+    lang: str = 'en'
+    content: dict = field(default_factory=dict)   # what was rendered (after region rules and condensing)
+
     def info(self) -> dict:
         return {'pages': self.pages, 'page_size': self.page_size, 'region': self.region, 'layout': self.layout,
                 'font': self.font, 'condensed': self.condensed, 'condensed_items': list(self.condensed_items),
-                'warnings': list(self.warnings)}
+                'warnings': list(self.warnings), 'max_pages': self.max_pages, 'lang': self.lang}
 
 
 # ── Unicode font fallback ────────────────────────────────────────────────────
@@ -570,6 +611,9 @@ def _styles(layout: Layout, font: str) -> dict[str, ParagraphStyle]:
     bold, italic = f'{font}-Bold', f'{font}-Italic'
     base = dict(fontName=font, fontSize=layout.body, leading=layout.leading, textColor=TEXT_COLOR,
                 splitLongWords=1, uriWasteReduce=0.3)
+    from backend.app.utils.language import RTL_LANGS
+    if _DOCUMENT_LANG.get() in RTL_LANGS:
+        base['alignment'] = TA_RIGHT     # right-to-left resumes read from the right margin
     return {
         'name': ParagraphStyle('Name', **{**base, 'fontName': bold, 'fontSize': layout.title,
                                           'leading': layout.title * 1.2, 'textColor': ACCENT_COLOR,
@@ -689,7 +733,7 @@ def _render(data: dict, layout: Layout, pagesize) -> tuple[bytes, int]:
         buffer, pagesize=pagesize, leftMargin=layout.margin, rightMargin=layout.margin,
         topMargin=layout.margin, bottomMargin=layout.margin,
         title=f"{data['name']} - Resume", author=data['name'], subject='Resume', creator='',
-        producer='', keywords='', lang='en', displayDocTitle=1,
+        producer='', keywords='', lang=_DOCUMENT_LANG.get(), displayDocTitle=1,
         # Otherwise ReportLab references a non-embedded Helvetica as the canvas default.
         initialFontName=font, initialFontSize=layout.body, initialLeading=layout.leading)
     doc.build(_story(data, layout, font))
@@ -775,29 +819,38 @@ def strip_branding(data: dict) -> dict:
 
 
 def export_resume(resume_data, region: str | None = None, page_size: str | None = None,
-                  priority_keywords=None, **_ignored) -> ExportResult:
-    """Render a strictly one-page resume and report what was done to fit it.
+                  priority_keywords=None, max_pages=None, **_ignored) -> ExportResult:
+    """Render a one- or two-page resume and report what was done to fit it.
 
-    Layout profiles are tried first (standard -> balanced -> compact); only if
-    the compact profile still overflows is secondary content condensed. The
-    page count is verified with pypdf before returning.
+    ``max_pages`` is 1, 2 or 'auto' (default: 1 for US/CA, 'auto' elsewhere).
+    'auto' uses one page when the resume fits one page at any layout profile
+    without removing anything, otherwise up to two. Layout profiles are tried
+    first (standard -> balanced -> compact); only if the content still
+    overflows the limit is secondary content condensed, and every cut is
+    listed in the warnings. The page count is verified with pypdf.
     """
     data = strip_branding(resume_data)
     if not has_exportable_content(data):
         raise ResumeExportError('Resume content could not be read, so no resume was generated. '
                                 'Please retry or upload a text-based PDF or DOCX.')
+    from backend.app.utils.language import detect_language, resume_text
     font = choose_font(data)
-    token = _DOCUMENT_FONT.set(font)
+    lang = detect_language(resume_text(data))
+    token, lang_token = _DOCUMENT_FONT.set(font), _DOCUMENT_LANG.set(lang)
     try:
-        result = _export(data, region, page_size, priority_keywords)
+        result = _export(data, region, page_size, priority_keywords, max_pages)
     finally:
         _DOCUMENT_FONT.reset(token)
-    result.font = font
+        _DOCUMENT_LANG.reset(lang_token)
+    result.font, result.lang = font, lang
     return result
 
 
-def _export(data: dict, region, page_size, priority_keywords) -> ExportResult:
+def _export(data: dict, region, page_size, priority_keywords, max_pages=None) -> ExportResult:
     region = resolve_region(region)
+    setting = resolve_max_pages(region, max_pages)
+    limit = 1 if setting == 1 else 2
+    found = personal_details(data)
     data = apply_region_rules(data, region)
     if page_size:
         size_name = page_size.strip().upper()
@@ -813,29 +866,43 @@ def _export(data: dict, region, page_size, priority_keywords) -> ExportResult:
     if missing:
         warnings.append('Some characters are not supported by the installed resume fonts and may not display: '
                         + ''.join(missing[:20]))
+    if found:
+        if region in STRIP_PERSONAL_REGIONS:
+            warnings.append(f'Removed personal details employers in this region do not expect: {", ".join(found)}.')
+        else:
+            warnings.append(f'Kept personal details from your resume ({", ".join(found)}). Remove them if the '
+                            'employer or country does not ask for them.')
 
+    # One page first: for a 1-page setting, and for 'auto' when it fits without cuts.
     pdf, pages, layout = b'', 0, LAYOUTS[0]
-    for layout in LAYOUTS:
-        pdf, pages = _render(data, layout, pagesize)
-        if pages <= MAX_PAGES:
+    for target in ((1,) if limit == 1 else (1, 2)):
+        for layout in LAYOUTS:
+            pdf, pages = _render(data, layout, pagesize)
+            if pages <= target:
+                break
+        if pages <= target:
             break
-    condensed_items = []
-    if pages > MAX_PAGES:
+    condensed_items, content = [], data
+    if pages > limit:
         for description, candidate in _condense_steps(data, keywords):
             if not condensed_items or condensed_items[-1] != description:
                 condensed_items.append(description)
             pdf, pages = _render(candidate, layout, pagesize)
-            if pages <= MAX_PAGES:
+            content = copy.deepcopy(candidate)
+            if pages <= limit:
                 break
-    if pages > MAX_PAGES or _page_count(pdf) != MAX_PAGES:
-        raise ResumeExportError('The resume could not be fitted on one page without removing employers, '
-                                'titles, dates, degrees or certifications. Please shorten the source resume.')
+    pages = _page_count(pdf) if pdf else pages
+    length = 'one page' if limit == 1 else 'two pages'
+    if pages > limit:
+        raise ResumeExportError(f'The resume could not be fitted on {length} without removing employers, titles, '
+                                'dates, degrees or certifications. Please shorten the source resume.')
     if condensed_items:
-        warnings.append('To fit one page, some lower-priority content was shortened: '
+        warnings.append(f'To fit {length}, some lower-priority content was shortened: '
                         + '; '.join(condensed_items[:6]) + ('...' if len(condensed_items) > 6 else '') + '.')
     _record_fit(layout.name, bool(condensed_items))
-    return ExportResult(pdf=pdf, pages=1, page_size=size_name, region=region, layout=layout.name,
-                        condensed=bool(condensed_items), condensed_items=condensed_items, warnings=warnings)
+    return ExportResult(pdf=pdf, pages=pages, page_size=size_name, region=region, layout=layout.name,
+                        condensed=bool(condensed_items), condensed_items=condensed_items, warnings=warnings,
+                        max_pages=setting, content=content)
 
 
 def _record_fit(layout: str, condensed: bool):

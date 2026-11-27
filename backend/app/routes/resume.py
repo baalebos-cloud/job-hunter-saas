@@ -29,6 +29,15 @@ def _region_for(user, requested=None):
     return resolve_region(requested, getattr(user, 'country', None))
 
 
+def _pages_for(region, requested=None):
+    """1, 2 or 'auto' for this export; 400 for anything else."""
+    from backend.app.utils.pdf_generator import ResumeExportError, resolve_max_pages
+    try:
+        return resolve_max_pages(region, requested)
+    except ResumeExportError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 def _commit(db, record, failure_message='Could not save the resume. Nothing was charged; please retry.'):
     """Postgres + object storage are the source of truth (Railway disk is ephemeral)."""
     from backend.app.services.resume_storage import commit_with_storage
@@ -98,7 +107,7 @@ def _in_flight(db, user_id) -> int:
 @router.post('/upload')
 async def upload_resume(file: Optional[UploadFile]=File(None), job_description: str=Form(...), job_title: str=Form(...),
                         region: Optional[str]=Form(None), job_id: Optional[int]=Form(None),
-                        use_profile_resume: bool=Form(False),
+                        use_profile_resume: bool=Form(False), max_pages: Optional[str]=Form(None),
                         db: Session=Depends(get_db), current_user=Depends(require_scan_quota)):
     from backend.app.utils.upload_validation import MAX_UPLOAD_BYTES, UploadRejected, validate_upload
     if use_profile_resume:
@@ -122,17 +131,18 @@ async def upload_resume(file: Optional[UploadFile]=File(None), job_description: 
         raise HTTPException(400, 'Provide a target job title up to 200 characters.')
     task_id = str(uuid.uuid4())
     resolved_region = _region_for(current_user, region)
+    pages = _pages_for(resolved_region, max_pages)     # validated; None means the region's default
 
     from backend.app.services.processing_gate import has_priority, processing_slot
     priority = has_priority(db, current_user)
     job_meta = _job_meta(db, job_id)
     if settings.RESUME_PROCESSING_MODE == 'async':
         return _enqueue(db, current_user, task_id, content, filename, job_description, job_title, resolved_region,
-                        priority, job_meta)
+                        priority, job_meta, pages if max_pages else None)
 
     def tailor():
         with processing_slot(priority):
-            return run_pipeline(content, filename, job_description, job_title, resolved_region, task_id, priority)
+            return run_pipeline(content, filename, job_description, job_title, resolved_region, task_id, priority, pages)
     try:
         tailored, analysis, pdf = await run_in_threadpool(tailor)
     except PipelineFailure as exc:
@@ -158,7 +168,8 @@ def _job_meta(db, job_id) -> dict:
     return {'job_id': job.id, 'company': job.company} if job else {}
 
 
-def _enqueue(db, user, task_id, content, filename, job_description, job_title, region, priority=False, job_meta=None):
+def _enqueue(db, user, task_id, content, filename, job_description, job_title, region, priority=False, job_meta=None,
+             max_pages=None):
     """202 Accepted: the heavy OCR/LLM/PDF work runs on a Celery worker."""
     from backend.app.dependencies.plan_guard import remaining_scans
     remaining = remaining_scans(user.id, db)
@@ -172,7 +183,9 @@ def _enqueue(db, user, task_id, content, filename, job_description, job_title, r
         from backend.app.tasks.resume_tasks import process_resume_upload
         process_resume_upload.apply_async(
             args=[task_id, user.id, base64.b64encode(content).decode('ascii'), filename, job_description, job_title, region],
-            kwargs={'priority': priority, 'job_meta': job_meta or {}}, task_id=task_id,
+            # max_pages only when chosen, so a worker on the previous release still accepts the task.
+            kwargs={'priority': priority, 'job_meta': job_meta or {}, **({'max_pages': max_pages} if max_pages else {})},
+            task_id=task_id,
             # Redis priority queue: 0 is served first (paid), 6 after (free).
             priority=0 if priority else 6)
     except Exception as exc:
@@ -187,6 +200,7 @@ def _enqueue(db, user, task_id, content, filename, job_description, job_title, r
 class RegenerateRequest(BaseModel):
     confirmed_keywords: list[str] = Field(default_factory=list, max_length=50)
     region: Optional[str] = None
+    max_pages: Optional[str] = None          # '1', '2' or 'auto'; default: what this resume used
 
 
 @router.post('/regenerate/{task_id}')
@@ -213,11 +227,12 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
         raise HTTPException(422, 'Only suggested skills from this analysis can be confirmed.')
     confirmed = previous + [allowed.get(normalize(k), k) for k in requested if normalize(k) not in {normalize(p) for p in previous}]
     region = _region_for(current_user, body.region or analysis.get('document', {}).get('region'))
+    pages = _pages_for(region, body.max_pages or analysis.get('document', {}).get('max_pages'))
     requirements = [{'phrase': r.get('requirement'), 'priority': r.get('priority')}
                     for r in analysis.get('requirements', []) if isinstance(r, dict)]
     try:
         updated = merge_confirmed_keywords(tailored, confirmed)
-        exported_resume = export_strict(updated, region, requirements)
+        exported_resume = export_strict(updated, region, requirements, pages)
         rescored = score_requirements(extract_text(exported_resume.pdf, 'resume.pdf'),
                                       analysis.get('job_description', ''), requirements)
     except ResumeExportError as exc:
@@ -275,8 +290,18 @@ def download_docx(task_id: str, branded: bool=False, db: Session=Depends(get_db)
         tailored = {}
     if not isinstance(tailored, dict) or not tailored:
         raise HTTPException(409, 'This resume has no editable content. Please run the analysis again.')
-    region = ((record.analysis_data or {}).get('document') or {}).get('region')
-    body = build_docx(tailored, region)
+    document = (record.analysis_data or {}).get('document') or {}
+    region = document.get('region')
+    # Same content as the PDF: the same page length, region rules and condensing.
+    from backend.app.utils.pdf_generator import ResumeExportError, export_resume
+    requirements = [r.get('requirement') for r in (record.analysis_data or {}).get('requirements', []) if isinstance(r, dict)]
+    try:
+        rendered = export_resume(tailored, region=region, page_size=document.get('page_size'),
+                                 priority_keywords=requirements, max_pages=document.get('max_pages', 1))
+        content = rendered.content
+    except ResumeExportError:
+        content = tailored
+    body = build_docx(content, region, document.get('page_size'))
     if branded:
         from backend.app.services.branding import brand_docx
         body = brand_docx(body, branding_or_error(db, current_user))
@@ -378,7 +403,8 @@ def _bulk_targets(db, job_ids: str | None, pasted: str | None) -> list[dict]:
     return targets
 
 
-def run_bulk_batch(batch_id: str | None, owner_id: int, content: bytes, filename: str, region: str, items: list[dict]):
+def run_bulk_batch(batch_id: str | None, owner_id: int, content: bytes, filename: str, region: str, items: list[dict],
+                   max_pages=None):
     """Sync mode: tailor each job in turn on priority capacity; each result lands in My resumes.
     Also used by the integrations API for single jobs (no batch)."""
     from backend.app.database import SessionLocal
@@ -393,7 +419,7 @@ def run_bulk_batch(batch_id: str | None, owner_id: int, content: bytes, filename
             try:
                 with processing_slot(True):
                     tailored, analysis, pdf = run_pipeline(content, filename, item['description'], item['title'],
-                                                           region, item['task_id'], True)
+                                                           region, item['task_id'], True, max_pages)
                 analysis.update(item['meta'], **({'batch_id': batch_id} if batch_id else {}))
                 complete_record(db, record, tailored, analysis, pdf)
             except Exception as exc:
@@ -412,6 +438,7 @@ def run_bulk_batch(batch_id: str | None, owner_id: int, content: bytes, filename
 @router.post('/bulk', status_code=202)
 async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), job_ids: Optional[str]=Form(None),
                       pasted_jobs: Optional[str]=Form(None), region: Optional[str]=Form(None),
+                      max_pages: Optional[str]=Form(None),
                       db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     """Enterprise: tailor one resume to up to 10 jobs at once, in the background."""
     from backend.app.models.resume import ResumeBatch
@@ -427,6 +454,7 @@ async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), j
         raise HTTPException(400, str(exc)) from exc
     targets = _bulk_targets(db, job_ids, pasted_jobs)
     batch_id, resolved_region = str(uuid.uuid4()), _region_for(current_user, region)
+    pages = _pages_for(resolved_region, max_pages)
     items = []
     for target in targets:
         task_id = str(uuid.uuid4())
@@ -442,9 +470,11 @@ async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), j
         for item in items:
             process_resume_upload.apply_async(
                 args=[item['task_id'], current_user.id, encoded, filename, item['description'], item['title'], resolved_region],
-                kwargs={'priority': True, 'job_meta': {**item['meta'], 'batch_id': batch_id}}, task_id=item['task_id'], priority=0)
+                kwargs={'priority': True, 'job_meta': {**item['meta'], 'batch_id': batch_id},
+                        **({'max_pages': pages} if max_pages else {})},
+                task_id=item['task_id'], priority=0)
     else:
-        background.add_task(run_bulk_batch, batch_id, current_user.id, content, filename, resolved_region, items)
+        background.add_task(run_bulk_batch, batch_id, current_user.id, content, filename, resolved_region, items, pages)
     return {'batch_id': batch_id, 'count': len(items)}
 
 

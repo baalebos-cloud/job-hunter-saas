@@ -109,11 +109,12 @@ def long_resume():
                              {'degree': 'MSc Computing', 'institution': 'University of Ibadan', 'year': '2012'}])
 
 
-@pytest.mark.parametrize('data', [resume(), long_resume()])
-def test_ats_structure_fonts_and_page_count(data):
+@pytest.mark.parametrize('data, pages', [(resume(), 1), (long_resume(), 2)])
+def test_ats_structure_fonts_and_page_count(data, pages):
+    # Nigeria uses 'auto': one page when it fits, otherwise up to two.
     result = export_resume(data, region='NG')
     with pdfplumber.open(io.BytesIO(result.pdf)) as doc:
-        assert len(doc.pages) == 1 == result.pages
+        assert len(doc.pages) == pages == result.pages
         for page in doc.pages:
             assert page.find_tables() == []
             # pdfplumber derives sizes from text matrices; 9pt can read as 8.999999.
@@ -145,7 +146,7 @@ def _fonts(pdf):
 
 def test_strict_one_page_keeps_every_employer_degree_and_certification():
     data = long_resume()
-    result = export_resume(data, priority_keywords=['Python'])
+    result = export_resume(data, priority_keywords=['Python'], max_pages=1)
     assert result.pages == 1 and result.condensed
     text = pdf_text(result.pdf)
     for job in data['experience']:
