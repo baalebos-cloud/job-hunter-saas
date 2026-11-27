@@ -2,7 +2,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20261208_profile_resume_multiselect"
+revision = "20261208_profile_resume"
 down_revision = "20261207_legal_documents"
 branch_labels = None
 depends_on = None
