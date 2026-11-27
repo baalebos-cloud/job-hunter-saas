@@ -228,14 +228,16 @@ def forgot_password(payload: ForgotPasswordRequest, request: Request, background
     Gmail dots and +tags), and requests are rate-limited per address and per
     network so the endpoint cannot be used to flood someone's inbox."""
     from backend.app.core.rate_limit import _email_key, hit
-    from backend.app.services.account_integrity import find_account
+    from backend.app.services.account_integrity import canonical_email, find_account
     from backend.app.services.password_reset import deliver_reset_link
     generic = {"message": "If that email is registered, a reset link is on its way. Check your inbox and spam folder."}
     email = (payload.email or '').strip()
     allowed_ip, retry = hit(f'pwreset:ip:{client_ip(request)}', 10, 3600)
     if not allowed_ip:
         raise HTTPException(429, f"Too many reset requests from this network. Try again in {max(1, retry // 60)} minutes.")
-    if not hit(f'pwreset:email:{_email_key(email)}', 3, 3600)[0]:
+    # Keyed by the canonical address: Gmail dot and +tag aliases reach the same
+    # inbox (and the same account), so they share one quota.
+    if not hit(f'pwreset:email:{_email_key(canonical_email(email))}', 3, 3600)[0]:
         return generic          # same answer: do not reveal whether the address exists
     user = find_account(db, email)
     if user:

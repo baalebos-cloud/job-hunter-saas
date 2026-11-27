@@ -287,3 +287,14 @@ def test_reset_requests_are_rate_limited_without_revealing_accounts(client, monk
                for _ in range(4)}
     unknown = client.post('/api/v1/auth/forgot-password', json={'email': 'nobody@example.com'}).json()['message']
     assert len(sent) == 3 and answers == {unknown}
+
+
+def test_reset_quota_is_shared_by_gmail_aliases_of_one_inbox(client, db, monkeypatch):
+    db.add(User(email='jane.doe@gmail.com', email_canonical='janedoe@gmail.com', full_name='Jane', hashed_password=hash_password(PASSWORD), is_verified=True))
+    db.commit()
+    sent = []
+    monkeypatch.setattr('backend.app.utils.email.send_password_reset_email', lambda **kw: sent.append(kw) or True)
+    for alias in ('jane.doe@gmail.com', 'janedoe@gmail.com', 'Jane.Doe+a@gmail.com', 'j.a.n.e.doe+b@googlemail.com',
+                  'janedoe+c@gmail.com'):
+        assert client.post('/api/v1/auth/forgot-password', json={'email': alias}).status_code == 200
+    assert len(sent) == 3
