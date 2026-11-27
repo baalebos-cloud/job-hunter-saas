@@ -215,7 +215,7 @@ def force_password_reset(user_id: int, request: Request, background_tasks: Backg
                          db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     from datetime import timedelta
     from backend.app.services.auth_service import new_opaque_token, revoke_all_sessions
-    from backend.app.utils.email import send_password_reset_email
+    from backend.app.services.password_reset import deliver_reset_link
     user = _target(db, user_id, admin)
     raw, digest = new_opaque_token()
     user.reset_token = digest
@@ -223,7 +223,7 @@ def force_password_reset(user_id: int, request: Request, background_tasks: Backg
     user.force_password_reset = True
     revoke_all_sessions(db, user)
     db.commit()
-    background_tasks.add_task(send_password_reset_email, to_email=user.email, token=raw, full_name=user.full_name or "")
+    background_tasks.add_task(deliver_reset_link, user.id, user.email, raw, user.full_name or "", 24, True)
     security_events.record('admin.password_reset_forced', request, user=admin,
                            details={'target_user_id': user.id, 'target_email': user.email})
     return {'message': f'{user.email} must set a new password; a reset link was emailed (valid 24 hours)'}
