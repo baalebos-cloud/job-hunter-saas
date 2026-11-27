@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Download, ExternalLink, Eye, FileText, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
+import { Download, ExternalLink, Eye, FileText, Loader2, PencilLine, RefreshCw, Trash2, X } from 'lucide-react';
 import { errorText, filenameFromDisposition } from '../../lib/session';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -130,6 +130,7 @@ export default function MyResumes() {
                   <button type="button" className={btn} disabled={!!busy} onClick={() => fetchFile(item, 'preview')}><Eye size={14} />Preview</button>
                   <button type="button" className={btn} disabled={!!busy} onClick={() => fetchFile(item, 'pdf')}><Download size={14} />PDF</button>
                   <button type="button" className={btn} disabled={!!busy} onClick={() => fetchFile(item, 'docx')}><Download size={14} />Word</button>
+                  <button type="button" className={btn} onClick={() => navigate(`/studio?from=${encodeURIComponent(item.task_id)}`)}><PencilLine size={14} />Studio</button>
                   <button type="button" className={btn} onClick={() => tailorAgain(item)}><RefreshCw size={14} />Tailor again</button>
                   <button type="button" className={`${btn} text-rose-700`} aria-label="Delete resume" onClick={() => setConfirmDelete(item.task_id)}><Trash2 size={14} /></button>
                 </div>)}

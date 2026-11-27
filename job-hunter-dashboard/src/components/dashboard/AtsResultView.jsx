@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Check, Download, ExternalLink, FileText, Loader2, Send, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, ExternalLink, FileText, Loader2, PencilLine, Send, Sparkles, X } from 'lucide-react';
 import { apiErrorMessage, filenameFromDisposition } from '../../lib/session';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -189,6 +189,11 @@ export default function AtsResultView({ data: initialData, jobId }) {
           <button type="button" onClick={() => download('docx')} disabled={!previewReady || !!downloading}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60">
             {downloading === 'docx' ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}Download Word (.docx)</button>
+          {resumeId && (
+            <a href={`/studio?from=${encodeURIComponent(resumeId)}`}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+              <PencilLine size={16} />Edit in Resume Studio</a>
+          )}
           {!previewReady && <p className="text-xs text-slate-500 text-center">Downloads unlock once the preview has loaded.</p>}
           {jobId && job && !job.url && (
             <a href={`/apply/${jobId}?resume=${encodeURIComponent(resumeId)}`}

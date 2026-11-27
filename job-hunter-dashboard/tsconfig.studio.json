@@ -8,7 +8,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": false,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
-  "include": ["src/studio/**/*.ts"]
+  "include": ["src/studio/**/*.ts", "src/studio/**/*.tsx"]
 }

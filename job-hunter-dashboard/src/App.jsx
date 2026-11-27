@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import axios from 'axios'
@@ -34,6 +34,8 @@ import AboutPage from './components/site/AboutPage'
 import ContactPage from './components/site/ContactPage'
 import LegalPage from './components/site/LegalPage'
 import LandingPage from './components/site/LandingPage'
+// Studio (and pdf-lib) load only when the Studio is opened.
+const StudioPage = lazy(() => import('./studio/ui/StudioPage'))
 import { captureFirstTouch } from './lib/attribution'
 import TeamSettings from './components/team/TeamSettings'
 import ApiKeys from './components/developers/ApiKeys'
@@ -435,6 +437,9 @@ function App() {
         } />
         <Route path="/resumes" element={
           <RequireAuth><DashboardLayout><MyResumes /></DashboardLayout></RequireAuth>
+        } />
+        <Route path="/studio" element={
+          <RequireAuth><DashboardLayout><Suspense fallback={<p className="p-6 text-sm text-slate-500">Loading Resume Studio…</p>}><StudioPage /></Suspense></DashboardLayout></RequireAuth>
         } />
         <Route path="/jobs" element={
           <RequireAuth><DashboardLayout><JobsPage /></DashboardLayout></RequireAuth>
