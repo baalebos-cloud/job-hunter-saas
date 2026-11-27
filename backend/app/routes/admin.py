@@ -252,6 +252,72 @@ def dismiss_duplicate(payload: DuplicateDismiss, request: Request, db: Session =
     return {'message': 'Marked as not duplicates'}
 
 
+# ── Sign-up rules: extra blocked email domains and trusted networks ──────────
+class SignupRuleIn(BaseModel):
+    kind: str                      # blocked_domain | allowed_network
+    value: str
+    note: Optional[str] = None
+
+
+def _rule_value(kind: str, value: str) -> str:
+    import ipaddress, re as _re
+    value = (value or '').strip().lower()
+    if kind == 'blocked_domain':
+        value = value.lstrip('@')
+        if not _re.fullmatch(r'(?=.{3,253}$)([a-z0-9-]{1,63}\.)+[a-z]{2,63}', value):
+            raise HTTPException(422, 'Enter a domain such as example.com.')
+        from backend.app.services.account_integrity import FREE_EMAIL_DOMAINS
+        if value in FREE_EMAIL_DOMAINS:
+            raise HTTPException(422, f'{value} is a major email provider; blocking it would block real users.')
+        return value
+    if kind == 'allowed_network':
+        try:
+            network = ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            raise HTTPException(422, 'Enter an IP address or range, e.g. 102.89.33.17 or 102.89.33.0/24.') from None
+        # Never trust half the internet by mistake: at most a /20 (4,096 IPv4 addresses) or an IPv6 /48.
+        if network.prefixlen < (20 if network.version == 4 else 48):
+            raise HTTPException(422, 'That range is too wide. Use /20 or narrower (IPv6: /48 or narrower).')
+        return str(network)
+    raise HTTPException(422, 'Kind must be blocked_domain or allowed_network.')
+
+
+@router.get("/signup-rules")
+def list_signup_rules(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from backend.app.models.security import SignupRule
+    from backend.app.services.account_integrity import ONE_ACCOUNT_DAYS, _bundled_blocklist
+    rules = db.query(SignupRule).order_by(SignupRule.kind, SignupRule.value).all()
+    return {'rules': [{'id': r.id, 'kind': r.kind, 'value': r.value, 'note': r.note,
+                       'created_at': r.created_at.isoformat() + 'Z'} for r in rules],
+            'bundled_blocked_domains': len(_bundled_blocklist()), 'one_account_days': ONE_ACCOUNT_DAYS}
+
+
+@router.post("/signup-rules", status_code=201)
+def add_signup_rule(payload: SignupRuleIn, request: Request, db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    from backend.app.models.security import SignupRule
+    value = _rule_value(payload.kind, payload.value)
+    if db.query(SignupRule).filter(SignupRule.kind == payload.kind, SignupRule.value == value).first():
+        raise HTTPException(409, 'That rule already exists.')
+    rule = SignupRule(kind=payload.kind, value=value, note=(payload.note or '').strip()[:255] or None, created_by=admin.id)
+    db.add(rule); db.commit()
+    security_events.record('admin.signup_rule_added', request, user=admin, details={'kind': rule.kind, 'value': value})
+    return {'id': rule.id, 'kind': rule.kind, 'value': value}
+
+
+@router.delete("/signup-rules/{rule_id}")
+def delete_signup_rule(rule_id: int, request: Request, db: Session = Depends(get_db),
+                       admin: User = Depends(require_admin)):
+    from backend.app.models.security import SignupRule
+    rule = db.get(SignupRule, rule_id)
+    if not rule:
+        raise HTTPException(404, 'Rule not found.')
+    details = {'kind': rule.kind, 'value': rule.value}
+    db.delete(rule); db.commit()
+    security_events.record('admin.signup_rule_removed', request, user=admin, details=details)
+    return {'message': 'Rule removed'}
+
+
 class DuplicateReject(BaseModel):
     user_ids: List[int]
     action: str = 'suspend'          # suspend (reversible) | delete

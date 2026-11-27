@@ -32,6 +32,8 @@ EVENTS = {
     'admin.user_unsuspended': 'Admin restored an account',
     'admin.sessions_revoked': 'Admin signed a user out everywhere',
     'admin.password_reset_forced': 'Admin forced a password reset',
+    'admin.signup_rule_added': 'Admin added a sign-up rule',
+    'admin.signup_rule_removed': 'Admin removed a sign-up rule',
     'admin.ip_blocked': 'Admin blocked an IP address',
     'admin.ip_unblocked': 'Admin unblocked an IP address',
     'admin.duplicate_dismissed': 'Admin marked accounts as not duplicates',

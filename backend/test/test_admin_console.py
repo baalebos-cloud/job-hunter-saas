@@ -410,3 +410,110 @@ def test_refresh_is_refused_for_an_unverified_account(env):
     env.client.cookies.set(settings.REFRESH_COOKIE_NAME, raw)
     r = env.client.post('/api/v1/auth/refresh')
     assert r.status_code == 401 and r.json()['detail']['code'] == 'email_not_verified'
+
+
+# ── One account per network / device; temporary email domains ────────────────
+NG_IP = '102.89.33.17'          # a public address: private and test-net addresses are never grouped
+
+
+def signup(env, email, ip=NG_IP, device=None, **extra):
+    headers = {'X-Forwarded-For': ip}
+    if device:
+        headers['X-Device-Id'] = device
+    return env.client.post('/api/v1/auth/signup', json={'email': email, 'password': PASSWORD, 'full_name': 'P', **extra},
+                           headers=headers)
+
+
+def test_second_account_from_the_same_network_is_refused_for_30_days(env):
+    assert signup(env, 'first@example.org').status_code == 201
+    r = signup(env, 'second@example.org')
+    assert r.status_code == 409 and 'from this network' in r.json()['detail'] and 'support@' in r.json()['detail']
+    assert events(env, 'signup.rejected')[-1].details['reason'] == 'duplicate_network'
+    first = env.db.query(User).filter_by(email='first@example.org').one()
+    assert first.signup_network == NG_IP
+    first.created_at = datetime.utcnow() - timedelta(days=31); env.db.commit()
+    assert signup(env, 'second@example.org').status_code == 201
+
+
+def test_ipv6_addresses_in_one_64_count_as_one_network(env):
+    assert signup(env, 'a@example.org', ip='2c0f:2a80:1:2::10').status_code == 201
+    assert signup(env, 'b@example.org', ip='2c0f:2a80:1:2:ffff::1').status_code == 409
+    assert signup(env, 'c@example.org', ip='2c0f:2a80:1:3::1').status_code == 201
+
+
+def test_same_device_on_another_network_is_refused_and_the_raw_id_is_not_stored(env):
+    device = 'dev_' + secrets.token_hex(12)
+    assert signup(env, 'home@example.org', device=device).status_code == 201
+    r = signup(env, 'office@example.org', ip='41.58.10.20', device=device)
+    assert r.status_code == 409 and 'from this device' in r.json()['detail']
+    stored = env.db.query(User).filter_by(email='home@example.org').one().signup_device
+    assert stored and device not in stored and len(stored) == 64
+
+
+def test_trusted_network_allows_several_accounts(env):
+    r = env.client.post('/api/v1/admin/signup-rules', headers=owner(env),
+                        json={'kind': 'allowed_network', 'value': '102.89.33.0/24', 'note': 'University of Lagos lab'})
+    assert r.status_code == 201
+    for name in ('s1', 's2', 's3'):
+        assert signup(env, f'{name}@example.org').status_code == 201
+
+
+@pytest.mark.parametrize('value, ok', [('0.0.0.0/0', False), ('102.0.0.0/8', False), ('102.89.32.0/20', True),
+                                       ('not-an-ip', False), ('2c0f:2a80::/32', False), ('2c0f:2a80:1::/48', True)])
+def test_trusted_networks_cannot_be_too_wide(env, value, ok):
+    r = env.client.post('/api/v1/admin/signup-rules', headers=owner(env), json={'kind': 'allowed_network', 'value': value})
+    assert (r.status_code == 201) is ok
+
+
+def test_owner_blocked_domain_and_bundled_list(env):
+    assert len(account_integrity._bundled_blocklist()) > 5000
+    assert signup(env, 'x@sub.yopmail.com', ip='41.0.0.1').status_code == 400      # subdomain of a listed one
+    assert env.client.post('/api/v1/admin/signup-rules', headers=owner(env),
+                           json={'kind': 'blocked_domain', 'value': 'gmail.com'}).status_code == 422
+    assert env.client.post('/api/v1/admin/signup-rules', headers=owner(env),
+                           json={'kind': 'blocked_domain', 'value': '@NewTempBox.io'}).status_code == 201
+    r = signup(env, 'x@newtempbox.io', ip='41.0.0.2')
+    assert r.status_code == 400 and 'disposable' in r.json()['detail'].lower()
+    rules = env.client.get('/api/v1/admin/signup-rules', headers=owner(env)).json()
+    assert rules['rules'][0]['value'] == 'newtempbox.io' and rules['one_account_days'] == 30
+
+
+def test_employers_are_not_limited_by_the_one_account_rule(env):
+    assert signup(env, 'cand@example.org').status_code == 201
+    r = env.client.post('/api/v1/hr-auth/signup', headers={'X-Forwarded-For': NG_IP},
+                        json={'full_name': 'T', 'email': 'talent@acme-hiring.example', 'password': PASSWORD, 'company_name': 'Acme'})
+    assert r.status_code != 409
+
+
+@pytest.mark.parametrize('records, expected', [
+    ({'MX': ['10 mx.yopmail.com.']}, 'disposable_mail_server'),     # unlisted domain, throwaway mail server
+    ({'MX': ['0 .'], 'A': ['93.184.216.34']}, 'no_mail_server'),     # null MX: accepts no mail
+    ({'MX': [], 'A': []}, 'no_mail_server'),                         # domain does not exist
+    ({'MX': [], 'A': ['93.184.216.34']}, None),                      # mail to the A record is allowed
+    ({'MX': ['10 aspmx.l.google.com.']}, None),                      # company on Google Workspace
+])
+def test_mail_server_checks(records, expected):
+    assert account_integrity.mail_domain_problem('newcompany.example', lambda d, r: records.get(r, [])) == expected
+
+
+def test_dns_failure_never_blocks_a_real_person():
+    def broken(domain, record): raise TimeoutError('dns down')
+    assert account_integrity.mail_domain_problem('newcompany.example', broken) is None
+
+
+def test_free_scans_are_shared_between_accounts_from_one_device(env):
+    from backend.app.dependencies.plan_guard import remaining_scans
+    from backend.app.models.subscription import Subscription
+    device = 'dev_' + secrets.token_hex(12)
+    assert signup(env, 'one@example.org', device=device).status_code == 201
+    one = env.db.query(User).filter_by(email='one@example.org').one()
+    # An account from the same device created before this rule existed (or after the 30 days):
+    two = User(email='two@example.org', hashed_password='x', is_verified=True, signup_device=one.signup_device,
+               created_at=datetime.utcnow() - timedelta(days=40))
+    env.db.add(two); env.db.flush()
+    env.db.add_all([Subscription(user_id=one.id, plan='free', scans_this_month=2, reset_date=datetime.utcnow()),
+                    Subscription(user_id=two.id, plan='free', scans_this_month=0, reset_date=datetime.utcnow())])
+    env.db.commit()
+    assert remaining_scans(two.id, env.db) == 1          # 3 free scans per device, 2 already used by "one"
+    env.db.query(Subscription).filter_by(user_id=one.id).update({'plan': 'pro'}); env.db.commit()
+    assert remaining_scans(two.id, env.db) == 3          # a paid account never eats into anyone's free scans

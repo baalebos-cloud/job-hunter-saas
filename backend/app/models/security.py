@@ -61,3 +61,17 @@ class DismissedDuplicate(Base):
     group_key = Column(String(160), unique=True, nullable=False)
     dismissed_by = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SignupRule(Base):
+    """Owner-managed sign-up rules: an extra blocked email domain, or a trusted
+    network (office, school) where several people may create accounts."""
+    __tablename__ = "signup_rules"
+    __table_args__ = (UniqueConstraint("kind", "value", name="uq_signup_rule"),)
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(20), nullable=False)          # blocked_domain | allowed_network
+    value = Column(String(255), nullable=False)        # domain, or IP / CIDR
+    note = Column(String(255), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

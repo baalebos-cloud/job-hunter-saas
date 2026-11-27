@@ -145,11 +145,11 @@ def signup(user: UserCreate, request: Request, response: Response, background_ta
     the account can sign in only after the email address is verified."""
     if len(user.password) < MIN_PASSWORD:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-    from backend.app.services.account_integrity import check_new_signup
+    from backend.app.services.account_integrity import check_new_signup, signup_fingerprint
     canonical = check_new_signup(db, request, user.email, 'login')
     raw_token, token_digest = new_opaque_token()
     new_user = User(email=user.email.lower().strip(), full_name=user.full_name.strip(),
-                    email_canonical=canonical, signup_ip=client_ip(request),
+                    email_canonical=canonical, signup_ip=client_ip(request), **signup_fingerprint(request),
                     hashed_password=hash_password(user.password), career_track=user.career_track,
                     country=user.country, is_hr=False, company_name=user.company_name,
                     is_verified=False, verification_token=token_digest, **_attribution(user))
