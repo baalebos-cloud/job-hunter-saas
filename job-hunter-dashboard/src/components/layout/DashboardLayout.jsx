@@ -1,11 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, FileText, Briefcase, ListChecks, Gift, UserRound, Settings, ShieldCheck, Building2, Menu, X, LogOut, CreditCard, Activity, LifeBuoy, Files } from 'lucide-react';
+import { LayoutDashboard, FileText, Briefcase, ListChecks, Gift, UserRound, Settings, ShieldCheck, Building2, Menu, X, LogOut, CreditCard, Activity, LifeBuoy, Files, PenLine } from 'lucide-react';
 import HelpWidget from '../support/HelpWidget';
 import axios from 'axios';
 import { assetUrl, signOut } from '../../lib/session';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-const links = [['Dashboard','/',LayoutDashboard],['Resume workspace','/optimizer',FileText],['My resumes','/resumes',Files],['Jobs','/jobs',Briefcase],['Applications','/applications',ListChecks],['Referrals','/referral',Gift],['My profile','/profile',UserRound],['Plans','/pricing',CreditCard],['Settings','/settings',Settings],['Help & support','/help',LifeBuoy]];
+const links = [['Dashboard','/',LayoutDashboard],['Resume workspace','/optimizer',FileText],['My resumes','/resumes',Files],['Resume Studio','/studio',PenLine],['Jobs','/jobs',Briefcase],['Applications','/applications',ListChecks],['Referrals','/referral',Gift],['My profile','/profile',UserRound],['Plans','/pricing',CreditCard],['Settings','/settings',Settings],['Help & support','/help',LifeBuoy]];
 export default function DashboardLayout({children}) {
   const {pathname}=useLocation(); const [open,setOpen]=useState(false); const [profile,setProfile]=useState(null);
   useEffect(()=>{setOpen(false)},[pathname]);

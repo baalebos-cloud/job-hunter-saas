@@ -1,6 +1,6 @@
 // Per-user browser state that must never leak to the next person who signs in
 // on the same browser (e.g. the last tailored resume used for applications).
-const USER_SCOPED_KEYS = ['lastTaskId'];
+const USER_SCOPED_KEYS = ['lastTaskId', 'studioDraft:v1'];
 
 export function clearUserState() {
   for (const key of USER_SCOPED_KEYS) localStorage.removeItem(key);
