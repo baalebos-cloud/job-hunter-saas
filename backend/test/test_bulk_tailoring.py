@@ -85,6 +85,7 @@ def test_async_mode_queues_every_job_with_priority(client, db, pipeline, monkeyp
     enterprise(db)
     ids = jobs(db, 3)
     monkeypatch.setattr(settings, 'RESUME_PROCESSING_MODE', 'async')
+    monkeypatch.setattr('backend.app.services.processing_gate.async_workers_available', lambda: True)
     sent = []
     monkeypatch.setattr(resume_tasks.process_resume_upload, 'apply_async', lambda **kw: sent.append(kw))
     batch = bulk(client, job_ids=','.join(map(str, ids))).json()['batch_id']

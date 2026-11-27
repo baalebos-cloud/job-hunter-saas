@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 
 from backend.app.database import Base, engine, get_db
 from backend.app.routes import jobs, resume, auth, application, dashboard
@@ -32,7 +31,6 @@ from backend.app.routes import public_api as public_api_router
 from backend.app.routes import branding as branding_router
 from backend.app.routes import console as console_router
 from backend.app.routes import governance as governance_router
-from backend.app.services.ai_service import ai_engine
 
 from backend.app.models.user import User, OutreachMessage  # noqa: F401
 from backend.app.models.job import Job                     # noqa: F401
@@ -253,11 +251,6 @@ def prometheus_metrics(request: Request, db: Session = Depends(get_db)):
     return RawResponse(render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
-# --- SCHEMAS ---
-class AnalysisRequest(BaseModel):
-    resume_text: str
-    job_description: str
-
 # --- CORS SETUP ---
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")  # Set in Railway: https://baalebo.xyz
 
@@ -323,17 +316,6 @@ from backend.app.core.telemetry import init_tracing  # noqa: E402
 init_tracing(app)
 
 # Admin login is under /api/v1/auth/admin/login (already in auth router)
-
-# --- AI ANALYZE ENDPOINT ---
-@app.post("/api/v1/ai/analyze", tags=["AI Engine"])
-async def analyze_resume_against_job(payload: AnalysisRequest, current_user=Depends(auth.get_current_user)):
-    try:
-        return await ai_engine.analyze_resume(payload.resume_text, payload.job_description)
-    except Exception as exc:
-        # Never echo exception text: it can contain provider or candidate data.
-        trace_id = _trace_id()
-        logger.error('ai_analyze_failed trace_id=%s error_type=%s', trace_id, type(exc).__name__)
-        raise HTTPException(status_code=500, detail=f"Analysis failed. Reference: {trace_id}")
 
 @app.get("/")
 @app.get("/health")

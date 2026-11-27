@@ -152,6 +152,7 @@ def test_database_fallback_without_bucket(client, db, pipeline, monkeypatch):
 @pytest.fixture
 def async_mode(monkeypatch):
     monkeypatch.setattr(settings, 'RESUME_PROCESSING_MODE', 'async')
+    monkeypatch.setattr('backend.app.services.processing_gate.async_workers_available', lambda: True)
     queued = []
     from backend.app.tasks import resume_tasks
     monkeypatch.setattr(resume_tasks.process_resume_upload, 'apply_async', lambda args, task_id, **kw: queued.append(args))
@@ -202,6 +203,7 @@ def test_stuck_jobs_expire_and_in_flight_jobs_count_against_quota(client, db, pi
 
 def test_queue_outage_fails_fast(client, db, pipeline, monkeypatch):
     monkeypatch.setattr(settings, 'RESUME_PROCESSING_MODE', 'async')
+    monkeypatch.setattr('backend.app.services.processing_gate.async_workers_available', lambda: True)
     from backend.app.tasks import resume_tasks
     monkeypatch.setattr(resume_tasks.process_resume_upload, 'apply_async',
                         lambda **kw: (_ for _ in ()).throw(ConnectionError('redis down')))

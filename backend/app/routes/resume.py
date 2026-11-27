@@ -20,6 +20,12 @@ from backend.app.models.resume import Resume
 from backend.app.services.resume_pipeline import (PipelineFailure, complete_record, export_strict,
                                                   provider_diagnostics, run_pipeline)  # noqa: F401 (re-export)
 
+
+def _use_async_queue() -> bool:
+    from backend.app.services.processing_gate import use_async_queue
+    return use_async_queue()
+
+
 router = APIRouter(tags=['Resume'])
 logger = logging.getLogger(__name__)
 
@@ -126,7 +132,7 @@ async def upload_resume(file: Optional[UploadFile]=File(None), job_description: 
     from backend.app.services.processing_gate import has_priority, processing_slot
     priority = has_priority(db, current_user)
     job_meta = _job_meta(db, job_id)
-    if settings.RESUME_PROCESSING_MODE == 'async':
+    if _use_async_queue():
         return _enqueue(db, current_user, task_id, content, filename, job_description, job_title, resolved_region,
                         priority, job_meta)
 
@@ -436,7 +442,7 @@ async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), j
         items.append({**target, 'task_id': task_id})
     db.add(ResumeBatch(id=batch_id, owner_id=current_user.id, task_ids=[i['task_id'] for i in items]))
     db.commit()
-    if settings.RESUME_PROCESSING_MODE == 'async':
+    if _use_async_queue():
         from backend.app.tasks.resume_tasks import process_resume_upload
         encoded = base64.b64encode(content).decode('ascii')
         for item in items:

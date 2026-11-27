@@ -208,13 +208,23 @@ def test_resume_link_requires_public_https(client, monkeypatch):
 
 
 def test_errors_are_opaque_with_trace_id(client, monkeypatch):
-    from backend.app.services.ai_service import ai_engine
-    async def boom(*a, **k):
+    # Any unexpected failure answers with a trace ID only: no exception text, secrets or candidate data.
+    from fastapi.testclient import TestClient
+    from backend.app.main import app as main_app
+    from backend.app.services import processing_gate
+
+    def boom(*a, **k):
         raise RuntimeError('db password=hunter2 candidate@example.com')
-    monkeypatch.setattr(ai_engine, 'analyze_resume', boom)
-    res = client.post('/api/v1/ai/analyze', json={'resume_text': 'x', 'job_description': 'y'}, headers=bearer('user@example.com'))
-    assert res.status_code == 500 and 'Reference:' in res.json()['detail']
+    monkeypatch.setattr(processing_gate, 'has_priority', boom)
+    res = TestClient(main_app, raise_server_exceptions=False).get('/api/v1/resume/history', headers=bearer('user@example.com'))
+    assert res.status_code == 500 and res.json()['trace_id'] and res.headers['X-Trace-Id'] == res.json()['trace_id']
     assert 'hunter2' not in res.text and 'candidate@example.com' not in res.text
+
+
+def test_mock_ai_analyze_endpoint_is_gone(client):
+    # It returned a fixed score and invented skills when no AI key was set.
+    assert client.post('/api/v1/ai/analyze', json={'resume_text': 'x', 'job_description': 'y'},
+                       headers=bearer('user@example.com')).status_code in (404, 405)
 
 
 # ── RBAC ─────────────────────────────────────────────────────────────────────

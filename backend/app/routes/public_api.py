@@ -35,6 +35,12 @@ from backend.app.services.audit import record_event
 from backend.app.services.auth_service import hash_token
 
 keys_router = APIRouter(tags=['API keys'])
+
+def _use_async_queue() -> bool:
+    from backend.app.services.processing_gate import use_async_queue
+    return use_async_queue()
+
+
 router = APIRouter(tags=['Integrations API'])
 
 MAX_IN_FLIGHT = 10            # resumes being prepared at once through the API
@@ -217,7 +223,7 @@ async def tailor(background: BackgroundTasks, file: UploadFile = File(...), job_
                   analysis_data={'task_id': task_id, 'resume_id': task_id, 'job_title': title, 'status': 'processing',
                                  **meta}))
     db.commit()
-    if settings.RESUME_PROCESSING_MODE == 'async':
+    if _use_async_queue():
         from backend.app.tasks.resume_tasks import process_resume_upload
         try:
             process_resume_upload.apply_async(
