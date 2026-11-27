@@ -38,6 +38,7 @@ EVENTS = {
     'admin.role_invite_cancelled': 'Admin cancelled a staff invitation',
     'staff.invite_accepted': 'Staff invitation accepted',
     'staff.invite_declined': 'Staff invitation declined',
+    'legal.published': 'Legal document published',
     'admin.ip_blocked': 'Admin blocked an IP address',
     'admin.ip_unblocked': 'Admin unblocked an IP address',
     'admin.duplicate_dismissed': 'Admin marked accounts as not duplicates',
