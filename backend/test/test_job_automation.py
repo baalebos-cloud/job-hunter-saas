@@ -129,7 +129,7 @@ def test_employer_post_is_matched_and_application_immediately_notifies_job_owner
     assert service.queue_job_digests(db,datetime.utcnow()+timedelta(seconds=1)) == 1
     db.add(Resume(owner_id=2,filename="optimized_internal.pdf",content=b"%PDF",analysis_data={"job_description":vacancy.description}))
     db.commit()
-    response = client.post(f"/api/v1/jobs/{vacancy.id}/apply",headers=headers(),json={"resume_id":"internal"})
+    response = client.post(f"/api/v1/jobs/{vacancy.id}/apply",headers=headers(),json={"resume_id":"internal",'details':{'full_name':'Candidate','phone':'+234 801 555 0101','country':'Nigeria'},'consent':True})
     assert response.status_code == 200 and response.json()["status"] == "submitted_internal"
     assert len(transport) == 1
     payload = transport[0][1]["json"]
@@ -147,7 +147,7 @@ def test_revoked_employer_cancels_pending_application_alert(client, db, monkeypa
     db.add(vacancy); db.flush()
     db.add(Resume(owner_id=2,filename="optimized_revoked.pdf",content=b"%PDF",analysis_data={"job_description":vacancy.description}))
     db.commit()
-    response = client.post(f"/api/v1/jobs/{vacancy.id}/apply",headers=headers(),json={"resume_id":"revoked"})
+    response = client.post(f"/api/v1/jobs/{vacancy.id}/apply",headers=headers(),json={"resume_id":"revoked",'details':{'full_name':'Candidate','phone':'+234 801 555 0101','country':'Nigeria'},'consent':True})
     assert response.status_code == 200
     db.get(User,3).hr_approved = False; db.commit()
     result = service.dispatch_pending(db,now=datetime.utcnow()+timedelta(seconds=1))

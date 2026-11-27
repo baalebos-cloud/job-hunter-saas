@@ -152,7 +152,7 @@ def test_internal_requires_correct_resume_and_preserves_attachment(client,db):
     db.add(job);db.commit()
     db.add(Resume(owner_id=2,filename='optimized_exact.pdf',content=b'%PDF-example',analysis_data={'job_description':job.description,'overall_score':50}));db.commit()
     assert client.post(f'/api/v1/jobs/{job.id}/apply',json={},headers=headers()).status_code==422
-    res=client.post(f'/api/v1/jobs/{job.id}/apply',json={'resume_id':'exact'},headers=headers())
+    res=client.post(f'/api/v1/jobs/{job.id}/apply',json={'resume_id':'exact','details':{'full_name':'Candidate','phone':'+234 801 555 0101','country':'Nigeria'},'consent':True},headers=headers())
     assert res.status_code==200 and res.json()['status']=='submitted_internal'
     assert db.query(Application).first().resume_id is not None
     application_id = db.query(Application).first().id
@@ -171,7 +171,7 @@ def test_application_automation_only_first_internal_submission(client, db, monke
     db.add(Resume(owner_id=2, filename='optimized_alert.pdf', content=b'%PDF', analysis_data={'job_description':job.description}))
     db.commit()
     for _ in range(2):
-        response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert', 'employer_email':'attacker@example.com'}, headers=headers())
+        response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert', 'employer_email':'attacker@example.com','details':{'full_name':'Candidate','phone':'+234 801 555 0101','country':'Nigeria'},'consent':True}, headers=headers())
         assert response.status_code == 200
     events = db.query(AutomationEvent).all()
     assert len(events) == int(approved)
@@ -202,7 +202,7 @@ def test_notification_failure_does_not_undo_application(client, db, monkeypatch)
     db.add(job); db.commit()
     db.add(Resume(owner_id=2, filename='optimized_alert.pdf', content=b'%PDF', analysis_data={'job_description':job.description}))
     db.commit()
-    response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert'}, headers=headers())
+    response = client.post(f'/api/v1/jobs/{job.id}/apply', json={'resume_id':'alert','details':{'full_name':'Candidate','phone':'+234 801 555 0101','country':'Nigeria'},'consent':True}, headers=headers())
     assert response.status_code == 200
     assert db.query(Application).first().status == 'submitted_internal'
     assert db.query(AutomationEvent).first().status == 'pending'

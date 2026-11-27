@@ -178,7 +178,21 @@ def my_resumes_for_job(job_id: int, db: Session = Depends(get_db), current_user:
     job = db.query(Job).filter(Job.id == job_id, Job.is_active == True).first()  # noqa: E712
     if not job:
         raise HTTPException(404, "Active job not found")
-    rows = (db.query(Resume).filter(Resume.owner_id == current_user.id, Resume.status == 'completed',
+    return {'items': _tailored_items(db, current_user, job), 'internal': bool(job.posted_by_hr and not job.url)}
+
+
+# ── FIX 1 & 2: Apply endpoint — real ATS score + returns job URL ──────────────
+class ApplicationRequest(BaseModel):
+    resume_id: Optional[str] = None
+    # Jobs posted on Baalebos: the employer's application form.
+    details: Optional[dict] = None
+    answers: Optional[dict] = None
+    consent: bool = False
+    save_to_profile: bool = False
+
+
+def _tailored_items(db, user, job):
+    rows = (db.query(Resume).filter(Resume.owner_id == user.id, Resume.status == 'completed',
                                     Resume.filename.like('optimized_%'))
             .order_by(Resume.created_at.desc(), Resume.id.desc()).limit(100).all())
     items = []
@@ -191,12 +205,26 @@ def my_resumes_for_job(job_id: int, db: Session = Depends(get_db), current_user:
                       'job_title': analysis.get('job_title') or job.title,
                       'created_at': record.created_at.isoformat() + 'Z' if record.created_at else None,
                       'score': scores.get('after', analysis.get('overall_score'))})
-    return {'items': items[:10], 'internal': bool(job.posted_by_hr and not job.url)}
+    return items[:10]
 
 
-# ── FIX 1 & 2: Apply endpoint — real ATS score + returns job URL ──────────────
-class ApplicationRequest(BaseModel):
-    resume_id: Optional[str] = None
+@router.get("/{job_id}/application-form")
+def application_form(job_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Everything the candidate needs to apply on Baalebos: the employer's questions,
+    their profile details to start from, and the resumes tailored for this job."""
+    from backend.app.services.application_form import fields_for, form_of, prefill
+    job = db.query(Job).filter(Job.id == job_id, Job.is_active == True).first()  # noqa: E712
+    if not job:
+        raise HTTPException(404, "Active job not found")
+    existing = db.query(Application).filter(Application.user_id == current_user.id, Application.job_id == job_id).first()
+    internal = bool(job.posted_by_hr and not job.url)
+    return {'job': {'id': job.id, 'title': job.title, 'company': job.company, 'location': job.location,
+                    'work_type': job.work_type, 'url': job.url},
+            'internal': internal,
+            'fields': fields_for(form_of(job)) if internal else [],
+            'profile': prefill(current_user),
+            'resumes': _tailored_items(db, current_user, job),
+            'already_applied': existing.status if existing and existing.status not in ('pending', 'external_started') else None}
 
 
 @router.post("/{job_id}/apply")
@@ -216,6 +244,22 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
     internal = bool(job.posted_by_hr and not job.url)
     if internal and not selected:
         raise HTTPException(422, "Select a resume tailored to this vacancy before submitting.")
+    details = snapshot = None
+    if internal:
+        from backend.app.services.application_form import FormError, form_of, validate_answers, validate_details
+        errors = {}
+        try:
+            details = validate_details(payload.details, current_user.email)
+        except FormError as exc:
+            errors.update(exc.fields)
+        try:
+            snapshot = validate_answers(form_of(job), payload.answers)
+        except FormError as exc:
+            errors.update(exc.fields)
+        if not payload.consent:
+            errors['consent'] = f"Agree to share these details with {job.company or 'the employer'} to apply."
+        if errors:
+            raise HTTPException(422, {"message": "Some answers need attention before you can apply.", "fields": errors})
     if not internal and (not job.url or not job.url.startswith(('https://','http://'))):
         raise HTTPException(422, "No valid employer application link is available.")
     # Serialize this user's apply requests on PostgreSQL so rapid/repeated
@@ -233,6 +277,11 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
         app.job_snapshot = {"title":job.title,"company":job.company,"description":job.description,"url":job.url}
         app.submission_method = 'baalebos' if internal else 'external_handoff'
         app.ats_score = _compute_ats_score(selected,job)
+        if internal:
+            app.applicant_details, app.answers = details, snapshot
+            if payload.save_to_profile:
+                from backend.app.services.application_form import save_to_profile
+                save_to_profile(current_user, details, snapshot)
     db.flush()
     if new_internal_submission:
         employer = db.query(User).filter(User.id == job.hr_user_id).first()
@@ -246,8 +295,18 @@ def apply_for_job(job_id: int, payload: ApplicationRequest, background_tasks: Ba
     db.commit(); db.refresh(app)
     if new_internal_submission:
         background_tasks.add_task(dispatch_pending, limit=1, only_event_id=f"baalebos-application-{app.id}")
+        background_tasks.add_task(_confirm_to_candidate, details, job.title, job.company, snapshot)
     return {"application_id": app.id, "status": app.status, "job_url":job.url,
             "message": "Received by the employer on Baalebos." if internal else "Open the employer form to complete your application. Employer receipt is not yet confirmed."}
+
+
+def _confirm_to_candidate(details, title, company, snapshot):
+    """Email the candidate a copy of what the employer received. Never raises."""
+    from types import SimpleNamespace
+    from backend.app.services.application_form import confirmation_email
+    from backend.app.services.support import _deliver
+    subject, body = confirmation_email(details, SimpleNamespace(title=title, company=company), snapshot or [])
+    _deliver(details['email'], subject, body)
 
 
 @router.patch("/{job_id}/application-status")

@@ -32,5 +32,7 @@ class Job(Base):
     skills = Column(JSON, nullable=True)                         # canonical skill names found in the posting
     employment_type = Column(String(32), nullable=True)          # Full-time | Part-time | Contract | Internship
     company_logo = Column(String(500), nullable=True)            # https URL from the source, when provided
+    # Jobs posted on Baalebos: what the employer asks applicants (see services/application_form.py).
+    application_form = Column(JSON, nullable=True)
 
     applications = relationship("Application", back_populates="job")

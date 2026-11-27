@@ -17,6 +17,10 @@ class Application(Base):
     resume_id = Column(Integer, ForeignKey("resumes.id"), nullable=True)
     job_snapshot = Column(JSON, nullable=True)
     submission_method = Column(String, nullable=True)
+    # Snapshot of what the candidate sent with an application on Baalebos (labels included,
+    # so later edits to the job's form never change an application already sent).
+    applicant_details = Column(JSON, nullable=True)
+    answers = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="applications")
     job = relationship("Job", back_populates="applications")
