@@ -187,3 +187,38 @@ def test_unsupported_skills_become_questions_not_claims():
     result = merge_rewrite(base, out, SOURCE)
     assert 'Azure' not in [s for values in result['skills'].values() for s in values]
     assert any('Azure' in q for q in out['confirmation_questions'])
+
+
+# ── The headline names the job being applied for ────────────────────────────
+
+from backend.app.utils.resume_quality import target_headline  # noqa: E402
+
+
+@pytest.mark.parametrize('job_title, expected', [
+    ('Staff System Architect -SNSPD Systems', 'System Architect'),     # no staff-level evidence: level dropped
+    ('Senior Platform Engineer (Remote)', 'Platform Engineer'),
+    ('Lead SRE - Payments', 'SRE'),
+    ('Cloud Engineer at Contoso', 'Cloud Engineer'),
+    ('DevOps Engineer | Lagos', 'DevOps Engineer'),
+    ('CI/CD Engineer', 'CI/CD Engineer'),
+    ('platform engineer', 'Platform engineer'),
+])
+def test_headline_is_the_job_role_without_unearned_seniority(job_title, expected):
+    assert target_headline(job_title, SOURCE, 'DevOps Engineer') == expected
+
+
+def test_seniority_is_kept_when_the_resume_shows_it():
+    senior = SOURCE.replace('DevOps Engineer, Contoso Ltd', 'Senior DevOps Engineer, Contoso Ltd')
+    assert target_headline('Senior Platform Engineer', senior) == 'Senior Platform Engineer'
+
+
+@pytest.mark.parametrize('job_title', ['', '  ', 'X', '— —'])
+def test_unusable_job_titles_keep_the_resume_title(job_title):
+    assert target_headline(job_title, SOURCE, 'DevOps Engineer') == 'DevOps Engineer'
+
+
+def test_summary_may_name_the_target_role_but_not_claim_it():
+    base, out = rewrite(summary='DevOps engineer focused on reliable cloud platforms, seeking a Platform Engineer role.')
+    assert merge_rewrite(base, out, SOURCE, 'Platform Engineer')['summary'].endswith('Platform Engineer role.')
+    base, out = rewrite(summary='Principal Platform Engineer focused on reliable cloud platforms.')
+    assert merge_rewrite(base, out, SOURCE, 'Platform Engineer')['summary'] == extracted()['summary']
