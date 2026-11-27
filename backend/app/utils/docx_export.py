@@ -57,8 +57,8 @@ def _para(doc, text="", *, size=SIZE, bold=False, italic=False, align=None, spac
     return p
 
 
-def _heading(doc, text):
-    p = _para(doc, text.upper(), size=11, bold=True, space_after=3, color=ACCENT)
+def _heading(doc, text, upper=True):
+    p = _para(doc, text.upper() if upper else text, size=11, bold=True, space_after=3, color=ACCENT)
     p.paragraph_format.space_before = Pt(8)
     p.paragraph_format.keep_with_next = True
     _rule(p)
@@ -98,38 +98,44 @@ def page_size_name(region: str | None, page_size: str | None = None) -> str:
     return "LETTER" if resolve_region(region) in LETTER_REGIONS else "A4"
 
 
-def build_docx(raw: dict, region: str | None = None, page_size: str | None = None) -> bytes:
+def build_docx(raw: dict, region: str | None = None, page_size: str | None = None, template: str | None = None) -> bytes:
     """``raw`` should be the content the PDF used (``ExportResult.content``) so both match."""
+    from backend.app.utils.pdf_generator import resolve_template
+    template = resolve_template(template)
     data = apply_region_rules(normalize_resume_data(raw), region or "OTHER")
     doc = Document()
     width, height = PAGE_SIZES[page_size_name(region, page_size)]
+    margin = Pt(24 if template == "compact" else 36)
     for section in doc.sections:
         section.page_width, section.page_height = width, height
-        section.top_margin = section.bottom_margin = Pt(36)
-        section.left_margin = section.right_margin = Pt(36)
+        section.top_margin = section.bottom_margin = margin
+        section.left_margin = section.right_margin = margin
     style = doc.styles["Normal"]
-    style.font.name, style.font.size = FONT, Pt(SIZE)
+    style.font.name, style.font.size = FONT, Pt(9.5 if template == "compact" else SIZE)
     style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
+    header = WD_ALIGN_PARAGRAPH.LEFT if template == "modern" else WD_ALIGN_PARAGRAPH.CENTER
+    upper = template != "modern"
+    heading = lambda doc, text: _heading(doc, text, upper)  # noqa: E731
 
     summary, skills, experience, projects, certifications, education, additional = HEADINGS
-    _para(doc, data["name"], size=18, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=1, color=ACCENT)
+    _para(doc, data["name"], size=18, bold=True, align=header, space_after=1, color=ACCENT)
     if data.get("title"):
-        _para(doc, data["title"], align=WD_ALIGN_PARAGRAPH.CENTER, space_after=1, color=MUTED)
+        _para(doc, data["title"], align=header, space_after=1, color=MUTED)
     if data.get("contact"):
-        _para(doc, data["contact"], align=WD_ALIGN_PARAGRAPH.CENTER, space_after=6, color=MUTED)
+        _para(doc, data["contact"], align=header, space_after=6, color=MUTED)
 
     if data.get("summary"):
-        _heading(doc, summary)
+        heading(doc, summary)
         _para(doc, data["summary"])
     if data.get("skills"):
-        _heading(doc, skills)
+        heading(doc, skills)
         for category, items in data["skills"].items():
             p = _para(doc, space_after=1)
             if not (category == "Skills" and len(data["skills"]) == 1):
                 _run(p, f"{category}: ", bold=True)
             _run(p, ", ".join(items))
     if data.get("experience"):
-        _heading(doc, experience)
+        heading(doc, experience)
         for job in data["experience"]:
             _entry(doc, job["role"], " · ".join(p for p in (job["company"], job.get("location")) if p), job["dates"])
             _bullets(doc, job["bullets"])
@@ -138,22 +144,22 @@ def build_docx(raw: dict, region: str | None = None, page_size: str | None = Non
                 _run(p, "Tools: ", bold=True)
                 _run(p, " · ".join(_split_skills(job["environment"])))
     if data.get("projects"):
-        _heading(doc, projects)
+        heading(doc, projects)
         for project in data["projects"]:
             _entry(doc, project["title"], project.get("subtitle", ""), "")
             if project.get("tech"):
                 _para(doc, " · ".join(_split_skills(project["tech"])), italic=True, color=MUTED, space_after=1)
             _bullets(doc, project["bullets"])
     if data.get("certifications"):
-        _heading(doc, certifications)
+        heading(doc, certifications)
         _bullets(doc, data["certifications"], labels=False)
     if data.get("education"):
-        _heading(doc, education)
+        heading(doc, education)
         for school in data["education"]:
             _entry(doc, school["degree"], " · ".join(p for p in (school["institution"], school.get("location")) if p),
                    school["year"])
     if data.get("additional_information"):
-        _heading(doc, additional)
+        heading(doc, additional)
         for line in data["additional_information"].splitlines():
             _para(doc, line)
 

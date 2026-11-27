@@ -228,11 +228,12 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
     confirmed = previous + [allowed.get(normalize(k), k) for k in requested if normalize(k) not in {normalize(p) for p in previous}]
     region = _region_for(current_user, body.region or analysis.get('document', {}).get('region'))
     pages = _pages_for(region, body.max_pages or analysis.get('document', {}).get('max_pages'))
+    template = analysis.get('document', {}).get('template')
     requirements = [{'phrase': r.get('requirement'), 'priority': r.get('priority')}
                     for r in analysis.get('requirements', []) if isinstance(r, dict)]
     try:
         updated = merge_confirmed_keywords(tailored, confirmed)
-        exported_resume = export_strict(updated, region, requirements, pages)
+        exported_resume = export_strict(updated, region, requirements, pages, template)
         rescored = score_requirements(extract_text(exported_resume.pdf, 'resume.pdf'),
                                       analysis.get('job_description', ''), requirements)
     except ResumeExportError as exc:
@@ -250,6 +251,104 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
     record.analysis_data = analysis
     _commit(db, record)
     return {'task_id': task_id, 'status': 'completed', 'result': analysis}
+
+
+class RoleEdit(BaseModel):
+    bullets: list[str] = Field(default_factory=list, max_length=15)
+
+
+class EditRequest(BaseModel):
+    """Changes a paid user makes before downloading. Employers, titles and dates
+    are not editable here: they always stay as in the uploaded resume."""
+    summary: Optional[str] = Field(None, max_length=1500)
+    experience: Optional[list[RoleEdit]] = Field(None, max_length=30)
+    max_pages: Optional[str] = None
+    template: Optional[str] = None
+
+
+@router.patch('/{task_id}/edit')
+def edit_resume(task_id: str, body: EditRequest, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """Pro/Enterprise: edit the summary and bullets, pick 1 or 2 pages and a layout, then re-render."""
+    from backend.app.services.processing_gate import has_priority
+    from backend.app.services.resume_storage import store_pdf
+    from backend.app.utils.ats_engine import extract_text
+    from backend.app.utils.pdf_generator import ResumeExportError, resolve_template
+    from backend.app.utils.resume_quality import score_requirements
+    from backend.app.utils.sanitize import clean_resume_strings
+    record = owned_resume(task_id, db, current_user)
+    if not has_priority(db, current_user):
+        raise HTTPException(403, {'error': 'pro_required', 'message': 'Editing before download is part of Pro and Enterprise.',
+                                  'upgrade_url': '/pricing'})
+    if record.status != 'completed':
+        raise HTTPException(409, 'This resume is not ready yet.')
+    analysis = dict(record.analysis_data or {})
+    document = analysis.get('document') or {}
+    try:
+        tailored = json.loads(record.parsed_data or '{}')
+    except (TypeError, ValueError):
+        tailored = {}
+    if not isinstance(tailored, dict) or not tailored:
+        raise HTTPException(409, 'This resume has no editable content. Please run the analysis again.')
+    updated = dict(tailored)
+    if body.summary is not None:
+        updated['summary'] = body.summary.strip()
+    if body.experience is not None:
+        roles = list(tailored.get('experience') or [])
+        if len(body.experience) != len(roles):
+            raise HTTPException(422, 'Send the bullets for every role, in the same order.')
+        for edit in body.experience:
+            if any(len(b) > 600 for b in edit.bullets):
+                raise HTTPException(422, 'Each bullet can be up to 600 characters.')
+        updated['experience'] = [{**role, 'bullets': [b.strip() for b in edit.bullets if b.strip()]}
+                                 for role, edit in zip(roles, body.experience)]
+    # Branding, watermarks and optimizer notes are stripped from every field.
+    updated = clean_resume_strings(updated)
+    region = document.get('region') or _region_for(current_user)
+    pages = _pages_for(region, body.max_pages or document.get('max_pages') or 1)
+    try:
+        template = resolve_template(body.template or document.get('template'))
+    except ResumeExportError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    requirements = [{'phrase': r.get('requirement'), 'priority': r.get('priority')}
+                    for r in analysis.get('requirements', []) if isinstance(r, dict)]
+    try:
+        exported = export_strict(updated, region, requirements, pages, template)
+        rescored = score_requirements(extract_text(exported.pdf, 'resume.pdf'), analysis.get('job_description', ''),
+                                      requirements) if requirements else {}
+    except ResumeExportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, 'The resume could not be re-rendered. Please retry.') from exc
+    if rescored:
+        analysis.update(rescored, scores={'before': analysis.get('original_score'), 'after': rescored['overall_score']})
+    analysis.update(document=exported.info(), edited_at=datetime.utcnow().isoformat() + 'Z', task_id=task_id,
+                    resume_id=task_id, status='success')
+    store_pdf(record, exported.pdf)
+    record.parsed_data = json.dumps(updated)
+    record.ats_score = analysis.get('overall_score', record.ats_score)
+    record.analysis_data = analysis
+    _commit(db, record)
+    return {'task_id': task_id, 'status': 'completed', 'result': analysis, 'resume': _editable(updated)}
+
+
+@router.get('/{task_id}/edit')
+def editable_resume(task_id: str, db: Session=Depends(get_db), current_user=Depends(get_current_user)):
+    """What the edit panel shows: summary and bullets per role (titles, employers and dates read-only)."""
+    record = owned_resume(task_id, db, current_user)
+    try:
+        tailored = json.loads(record.parsed_data or '{}')
+    except (TypeError, ValueError):
+        tailored = {}
+    document = (record.analysis_data or {}).get('document') or {}
+    return {'resume': _editable(tailored if isinstance(tailored, dict) else {}),
+            'max_pages': document.get('max_pages', 1), 'template': document.get('template', 'classic')}
+
+
+def _editable(data: dict) -> dict:
+    return {'summary': str(data.get('summary') or ''),
+            'experience': [{'role': str(e.get('role') or ''), 'company': str(e.get('company') or ''),
+                            'dates': str(e.get('dates') or ''), 'bullets': [str(b) for b in e.get('bullets') or []]}
+                           for e in data.get('experience') or [] if isinstance(e, dict)]}
 
 
 @router.get('/preview/{resume_id}')
@@ -297,11 +396,12 @@ def download_docx(task_id: str, branded: bool=False, db: Session=Depends(get_db)
     requirements = [r.get('requirement') for r in (record.analysis_data or {}).get('requirements', []) if isinstance(r, dict)]
     try:
         rendered = export_resume(tailored, region=region, page_size=document.get('page_size'),
-                                 priority_keywords=requirements, max_pages=document.get('max_pages', 1))
+                                 priority_keywords=requirements, max_pages=document.get('max_pages', 1),
+                                 template=document.get('template'))
         content = rendered.content
     except ResumeExportError:
         content = tailored
-    body = build_docx(content, region, document.get('page_size'))
+    body = build_docx(content, region, document.get('page_size'), document.get('template'))
     if branded:
         from backend.app.services.branding import brand_docx
         body = brand_docx(body, branding_or_error(db, current_user))
@@ -436,9 +536,9 @@ def run_bulk_batch(batch_id: str | None, owner_id: int, content: bytes, filename
 
 
 @router.post('/bulk', status_code=202)
-async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), job_ids: Optional[str]=Form(None),
+async def bulk_tailor(background: BackgroundTasks, file: Optional[UploadFile]=File(None), job_ids: Optional[str]=Form(None),
                       pasted_jobs: Optional[str]=Form(None), region: Optional[str]=Form(None),
-                      max_pages: Optional[str]=Form(None),
+                      max_pages: Optional[str]=Form(None), use_profile_resume: bool=Form(False),
                       db: Session=Depends(get_db), current_user=Depends(get_current_user)):
     """Enterprise: tailor one resume to up to 10 jobs at once, in the background."""
     from backend.app.models.resume import ResumeBatch
@@ -446,8 +546,17 @@ async def bulk_tailor(background: BackgroundTasks, file: UploadFile=File(...), j
     if not _has_enterprise(db, current_user):
         raise HTTPException(403, {'error': 'enterprise_required', 'message': 'Bulk tailoring is part of the Enterprise plan.',
                                   'upgrade_url': '/pricing'})
-    filename = file.filename or ''
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if use_profile_resume:
+        from backend.app.models.user import ProfileResume
+        kept = db.get(ProfileResume, current_user.id)
+        if kept is None:
+            raise HTTPException(400, 'There is no resume on your profile. Upload one here or on your profile.')
+        filename, content = kept.filename, kept.content
+    elif file is None:
+        raise HTTPException(400, 'Add your resume (PDF or Word).')
+    else:
+        filename = file.filename or ''
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
     try:
         await run_in_threadpool(validate_upload, filename, content)
     except UploadRejected as exc:

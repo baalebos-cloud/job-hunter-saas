@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Download, ExternalLink, Eye, FileText, Loader2, PencilLine, RefreshCw, Trash2, X } from 'lucide-react';
 import { errorText, filenameFromDisposition } from '../../lib/session';
+import PdfPreview from '../common/PdfPreview';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -150,7 +151,7 @@ export default function MyResumes() {
               <a href={preview.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"><ExternalLink size={14} />Open in new tab</a>
               <button type="button" onClick={() => setPreview(null)} aria-label="Close preview" className="p-1 rounded-lg hover:bg-slate-100"><X size={18} /></button>
             </div>
-            <iframe title="Tailored resume preview" src={`${preview.url}#toolbar=0&navpanes=0&view=FitH`} className="flex-1 w-full bg-slate-100" />
+            <div className="flex-1 overflow-y-auto bg-slate-100 p-3"><PdfPreview src={preview.url} title="Tailored resume preview" /></div>
           </div>
         </div>)}
     </div>

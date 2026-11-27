@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Check, Download, ExternalLink, FileText, Loader2, PencilLine, Send, Sparkles, X } from 'lucide-react';
 import { apiErrorMessage, filenameFromDisposition } from '../../lib/session';
+import PdfPreview from '../common/PdfPreview';
+import ResumeEditPanel from './ResumeEditPanel';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -22,7 +24,7 @@ function Ring({ score }) {
 }
 
 // The exact PDF that downloads, always visible next to the download buttons.
-function PdfPreview({ resumeId, version, onReady }) {
+function ResumePreview({ resumeId, version, onReady }) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -41,13 +43,7 @@ function PdfPreview({ resumeId, version, onReady }) {
   }, [resumeId, version, onReady]);
   if (error) return <div role="alert" className="h-[70vh] grid place-items-center text-sm text-rose-700 bg-rose-50 rounded-xl p-6 text-center">{error}</div>;
   if (!url) return <div role="status" className="h-[70vh] grid place-items-center bg-slate-50 rounded-xl"><Loader2 className="animate-spin text-emerald-600" /><span className="sr-only">Loading preview</span></div>;
-  return (
-    <div>
-      <iframe src={`${url}#toolbar=0&navpanes=0&view=FitH`} title="Tailored resume preview" className="w-full h-[70vh] min-h-[480px] rounded-xl border border-slate-200 bg-slate-100" />
-      <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900">
-        Open the preview full screen <ExternalLink size={12} /></a>
-    </div>
-  );
+  return <PdfPreview src={url} title="Tailored resume preview" className="rounded-xl bg-slate-100 p-2 sm:p-3" />;
 }
 
 export default function AtsResultView({ data: initialData, jobId }) {
@@ -62,6 +58,19 @@ export default function AtsResultView({ data: initialData, jobId }) {
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(null);
   const [job, setJob] = useState(null);   // the job this resume was tailored for, when started from one
+  const [plan, setPlan] = useState(null);
+  const [branding, setBranding] = useState(null);
+  const [branded, setBranded] = useState(() => { try { return localStorage.getItem('brandedDownloads') === '1'; } catch { return false; } });
+  useEffect(() => {
+    axios.get(`${API}/billing/status`, { headers: headers() }).then(r => setPlan(r.data)).catch(() => {});
+    axios.get(`${API}/branding`, { headers: headers() }).then(r => setBranding(r.data)).catch(() => {});
+  }, []);
+  const paid = !!plan && ['pro', 'enterprise'].includes(plan.plan) && plan.status === 'active';
+  const brandingReady = branding?.enabled && branding?.configured;    // Enterprise with branding set up
+  const toggleBranded = on => {
+    setBranded(on);
+    try { localStorage.setItem('brandedDownloads', on ? '1' : '0'); } catch { /* ignore */ }
+  };
   useEffect(() => {
     if (!jobId) return;
     axios.get(`${API}/jobs/detail/${jobId}`).then(r => setJob(r.data)).catch(() => {});
@@ -100,7 +109,8 @@ export default function AtsResultView({ data: initialData, jobId }) {
   const download = async (kind) => {
     setDownloading(kind); setNotice(null);
     try {
-      const path = kind === 'docx' ? `/resume/download/${resumeId}/docx` : `/resume/download/${resumeId}`;
+      const base = kind === 'docx' ? `/resume/download/${resumeId}/docx` : `/resume/download/${resumeId}`;
+      const path = brandingReady && branded ? `${base}?branded=true` : base;
       const res = await axios.get(`${API}${path}`, { headers: headers(), responseType: 'blob' });
       const url = URL.createObjectURL(res.data);
       const link = Object.assign(document.createElement('a'), {
@@ -135,7 +145,7 @@ export default function AtsResultView({ data: initialData, jobId }) {
             <p className="text-xs text-slate-500">This is exactly the file you will download · {pageSize} · {doc.pages || 1} page{doc.pages > 1 ? 's' : ''}{doc.condensed ? ' · some lower-priority bullets were shortened to fit' : ''}</p>
           </div>
         </div>
-        <PdfPreview resumeId={resumeId} version={version} onReady={setPreviewReady} />
+        <ResumePreview resumeId={resumeId} version={version} onReady={setPreviewReady} />
       </section>
 
       <div className="space-y-4">
@@ -189,6 +199,14 @@ export default function AtsResultView({ data: initialData, jobId }) {
           <button type="button" onClick={() => download('docx')} disabled={!previewReady || !!downloading}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60">
             {downloading === 'docx' ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}Download Word (.docx)</button>
+          {brandingReady && (
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer px-1">
+              <input type="checkbox" className="accent-emerald-600" checked={branded} onChange={e => toggleBranded(e.target.checked)} />
+              Add my company branding to downloads</label>)}
+          {resumeId && <ResumeEditPanel resumeId={resumeId} paid={paid} onSaved={result => {
+            setData(result); setVersion(v => v + 1);
+            setNotice({ ok: true, text: 'Saved. The preview shows your edited resume.' });
+          }} />}
           {resumeId && (
             <a href={`/studio?from=${encodeURIComponent(resumeId)}`}
               className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50">

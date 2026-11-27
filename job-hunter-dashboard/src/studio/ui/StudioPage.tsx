@@ -13,6 +13,7 @@ import type { TailoredSource } from './studioApi';
 import Editor, { EDITOR_TABS } from './Editor';
 import type { EditorTab } from './Editor';
 import PaperPreview from './PaperPreview';
+import PdfPreview from '../../components/common/PdfPreview';
 
 type View = 'split' | 'edit' | 'ats' | 'preview';
 const VIEWS: Array<[View, string, typeof Columns2]> = [
@@ -321,8 +322,8 @@ export default function StudioPage() {
           {pdfError ? <p className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{pdfError}</p>
             : pdfUrl ? (
               <>
-                <iframe title="Resume PDF" src={pdfUrl} className="w-full h-[80dvh] rounded-2xl border border-slate-200 bg-white" />
-                <p className="text-xs text-slate-500">This is the exact PDF you download. If it does not show here, <a href={pdfUrl} target="_blank" rel="noreferrer" className="font-semibold text-emerald-700 hover:underline">open it in a new tab</a>.</p>
+                <PdfPreview src={pdfUrl} title="Resume PDF" className="rounded-2xl bg-slate-100 p-2 sm:p-4" maxPages={4} />
+                <p className="text-xs text-slate-500">This is the exact PDF you download.</p>
               </>
             ) : <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-slate-400" /></div>}
         </div>
