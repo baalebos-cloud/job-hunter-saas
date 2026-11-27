@@ -23,6 +23,10 @@ OCR_MAX_DPI = 300
 OCR_MAX_PIXELS_PER_PAGE = 25_000_000  # ~A4 at 600 dpi; protects memory
 OCR_TIMEOUT_SECONDS = float(os.getenv('OCR_TIMEOUT_SECONDS', '12'))
 CID_PATTERN = re.compile(r'\(cid:\d+\)')
+# Latin-script languages are read together in one pass; other scripts are tried
+# only when that pass finds too little text. Languages not installed are skipped.
+OCR_LANGUAGES = os.getenv('OCR_LANGUAGES', 'eng+fra+deu+spa+por+ita')
+OCR_FALLBACK_LANGUAGES = os.getenv('OCR_FALLBACK_LANGUAGES', 'ara,hin')
 MIN_TEXT_CHARS = 40
 
 
@@ -75,12 +79,56 @@ def _safe_dpi(width_pt: float, height_pt: float, dpi: int) -> int:
     return max(50, min(dpi, limit))
 
 
+_installed: set[str] | None = None
+
+
+def _installed_languages(pytesseract) -> set[str]:
+    global _installed
+    if _installed is None:
+        try:
+            _installed = set(pytesseract.get_languages(config=''))
+        except Exception:
+            _installed = {'eng'}
+    return _installed
+
+
+def language_passes(installed: set[str]) -> list[str]:
+    """Tesseract ``lang`` values to try in order, using only installed packs."""
+    primary = [code for code in OCR_LANGUAGES.split('+') if code in installed] or ['eng']
+    passes = ['+'.join(primary)]
+    for code in (c.strip() for c in OCR_FALLBACK_LANGUAGES.split(',')):
+        if code and code in installed:
+            passes.append(f'{code}+eng' if 'eng' in installed else code)
+    return passes
+
+
 def _record(outcome: str):
     try:
         from backend.app.core.metrics import OCR_FALLBACKS
         OCR_FALLBACKS.labels(outcome=outcome).inc()
     except Exception:
         pass
+
+
+def _read_image(pytesseract, image, deadline: float) -> str:
+    """Latin languages first; other scripts only if that finds too little."""
+    best = ''
+    for lang in language_passes(_installed_languages(pytesseract)):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            if best:
+                break
+            raise TimeoutError('OCR deadline exceeded')
+        text = pytesseract.image_to_string(image, lang=lang, timeout=max(1, remaining))
+        if len(_letters(text)) > len(_letters(best)):
+            best = text
+        if len(_letters(best)) >= MIN_TEXT_CHARS:
+            break
+    return best
+
+
+def _letters(text: str) -> str:
+    return ''.join(ch for ch in (text or '') if ch.isalpha())
 
 
 def ocr_pdf(content: bytes, *, max_pages: int = OCR_MAX_PAGES, dpi: int = OCR_DPI,
@@ -121,7 +169,7 @@ def ocr_pdf(content: bytes, *, max_pages: int = OCR_MAX_PAGES, dpi: int = OCR_DP
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError('OCR deadline exceeded')
-                texts.append(pytesseract.image_to_string(image, timeout=max(1, remaining)))
+                texts.append(_read_image(pytesseract, image, deadline))
     except Exception as exc:  # timeout, poppler/tesseract failure, bad PDF
         breaker.failure()
         _record('failed')

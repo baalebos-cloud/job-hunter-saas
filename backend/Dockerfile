@@ -14,6 +14,13 @@ RUN set -eux; \
         curl \
         tesseract-ocr \
         tesseract-ocr-eng \
+        tesseract-ocr-fra \
+        tesseract-ocr-deu \
+        tesseract-ocr-spa \
+        tesseract-ocr-por \
+        tesseract-ocr-ita \
+        tesseract-ocr-ara \
+        tesseract-ocr-hin \
         poppler-utils \
         fonts-noto-core \
         fonts-wqy-zenhei \

@@ -17,15 +17,14 @@ logger = logging.getLogger(__name__)
 
 def extract_text(file_content: bytes, filename='resume.pdf'):
     ext = filename.rsplit('.', 1)[-1].lower()
+    from backend.app.utils.text_extraction import docx_text, pdf_page_text
     if ext == 'pdf':
+        # Two-column layouts are read column by column; one-column pages as before.
         with pdfplumber.open(io.BytesIO(file_content)) as pdf:
-            return '\n'.join(page.extract_text(x_tolerance=1) or '' for page in pdf.pages).strip()
+            return '\n'.join(pdf_page_text(page) for page in pdf.pages).strip()
     if ext == 'docx':
-        doc = Document(io.BytesIO(file_content))
-        # Traverse body elements so tables and paragraphs retain their order.
-        from docx.oxml.ns import qn
-        return '\n'.join(' '.join(t.text or '' for t in el.iter(qn('w:t')))
-                         for el in doc.element.body).strip()
+        # Headers and footers too: many templates put the name and contact details there.
+        return docx_text(Document(io.BytesIO(file_content)))
     raise ValueError('Use a text-based PDF or DOCX. Legacy DOC is not supported.')
 
 
