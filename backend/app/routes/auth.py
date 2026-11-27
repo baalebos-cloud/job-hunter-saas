@@ -150,7 +150,11 @@ def signup(user: UserCreate, request: Request, response: Response, background_ta
     raw_token, token_digest = new_opaque_token()
     new_user = User(email=user.email.lower().strip(), full_name=user.full_name.strip(),
                     email_canonical=canonical, signup_ip=client_ip(request), **signup_fingerprint(request),
-                    hashed_password=hash_password(user.password), career_track=user.career_track,
+                    hashed_password=hash_password(user.password),
+                    career_track=(user.career_tracks or [user.career_track])[0] if (user.career_tracks or user.career_track) else None,
+                    career_tracks=user.career_tracks or ([user.career_track] if user.career_track else None),
+                    work_types=user.work_types, work_countries=user.work_countries,
+                    job_alert_work_type=(user.work_types[0] if user.work_types and len(user.work_types) == 1 else 'all'),
                     country=user.country, is_hr=False, company_name=user.company_name,
                     is_verified=False, verification_token=token_digest, **_attribution(user))
     db.add(new_user)

@@ -44,6 +44,12 @@ export default function ResumeUpload({ onUploadSuccess }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [error, setError] = useState('');
   const [linkedJob, setLinkedJob] = useState(null);
+  const [kept, setKept] = useState(null);          // the resume kept on the profile, if any
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/profile/resume`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then(r => setKept(r.data.resume)).catch(() => {});
+  }, []);
+  const useKept = !file && !!kept;
   const inputRef = useRef(null);
   const dropRef = useRef(null);
 
@@ -89,12 +95,13 @@ export default function ResumeUpload({ onUploadSuccess }) {
     e.preventDefault();
     const token = localStorage.getItem('token');
     if (!token) { window.location.href = '/login'; return; }
-    if (!file || !jobTitle || !jobDesc) { setError('Add your resume, the job title and the job description.'); return; }
-    if (file.size > 10 * 1024 * 1024) { setError('Your resume must be 10 MB or smaller.'); return; }
+    if ((!file && !useKept) || !jobTitle || !jobDesc) { setError('Add your resume, the job title and the job description.'); return; }
+    if (file && file.size > 10 * 1024 * 1024) { setError('Your resume must be 10 MB or smaller.'); return; }
 
     setUploading(true); setError('');
     const formData = new FormData();
-    formData.append('file', file);
+    if (file) formData.append('file', file);
+    else formData.append('use_profile_resume', 'true');      // the resume kept on the profile
     formData.append('job_description', jobDesc);
     formData.append('job_title', jobTitle.trim());
     if (region) formData.append('region', region);
@@ -122,7 +129,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
   };
 
   const inputCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40';
-  const ready = file && jobTitle.trim() && jobDesc.trim();
+  const ready = (file || useKept) && jobTitle.trim() && jobDesc.trim();
 
   return (
     <form onSubmit={handleUpload} className="space-y-4" noValidate>
@@ -131,13 +138,17 @@ export default function ResumeUpload({ onUploadSuccess }) {
         <input type="file" id="resume-file" name="file" className="hidden" accept=".pdf,.docx"
           onChange={e => { setFile(e.target.files?.[0] || null); setError(''); }} />
         <label htmlFor="resume-file"
-          className={`mt-3 flex items-center gap-4 p-4 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${file ? 'border-emerald-400 bg-emerald-50/50' : 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30'}`}>
-          <span className={`w-11 h-11 rounded-xl grid place-items-center shrink-0 ${file ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}><FileUp size={20} /></span>
+          className={`mt-3 flex items-center gap-4 p-4 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${file || useKept ? 'border-emerald-400 bg-emerald-50/50' : 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30'}`}>
+          <span className={`w-11 h-11 rounded-xl grid place-items-center shrink-0 ${file || useKept ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}><FileUp size={20} /></span>
           <span className="min-w-0">
-            <span className="block font-medium text-sm text-slate-900 truncate">{file ? file.name : 'Choose your current resume'}</span>
-            <span className="block text-xs text-slate-500">{file ? `${(file.size / 1024).toFixed(0)} KB · click to change` : 'PDF or DOCX, up to 10 MB'}</span>
+            <span className="block font-medium text-sm text-slate-900 truncate">{file ? file.name : useKept ? kept.filename : 'Choose your current resume'}</span>
+            <span className="block text-xs text-slate-500">{file ? `${(file.size / 1024).toFixed(0)} KB · click to change`
+              : useKept ? 'The resume on your profile · click to use a different file' : 'PDF or DOCX, up to 10 MB'}</span>
           </span>
         </label>
+        {file && kept && <button type="button" onClick={() => { setFile(null); const el = document.getElementById('resume-file'); if (el) el.value = ''; }}
+          className="mt-2 text-xs font-semibold text-emerald-700 hover:underline">Use the resume on my profile instead ({kept.filename})</button>}
+        {!kept && <p className="mt-2 text-xs text-slate-500">Tip: <a href="/profile" className="font-semibold text-emerald-700 hover:underline">keep your resume on your profile</a> to skip this step next time.</p>}
         <div className="mt-4 grid sm:grid-cols-2 gap-4 items-start">
           <label className="block text-sm font-medium text-slate-700" htmlFor="resume-region">Resume convention
             <select id="resume-region" value={region} onChange={e => setRegion(e.target.value)} className={`${inputCls} mt-1.5`}>
@@ -193,7 +204,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
         {uploading && <Loader2 size={16} className="animate-spin" />}
         {uploading ? 'Matching your resume…' : 'Match and tailor my resume'}
       </button>
-      {!ready && <p className="text-xs text-slate-500">{!file ? 'Step 1: choose your resume.' : !jobTitle.trim() ? 'Step 2: add the job title.' : 'Step 2: paste the job description.'}</p>}
+      {!ready && <p className="text-xs text-slate-500">{!file && !useKept ? 'Step 1: choose your resume.' : !jobTitle.trim() ? 'Step 2: add the job title.' : 'Step 2: paste the job description.'}</p>}
     </form>
   );
 }

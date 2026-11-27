@@ -9,6 +9,7 @@ import { deviceHeaders } from '../../lib/device';
 import { errorText } from '../../lib/session';
 import VerifyEmailNotice from './VerifyEmailNotice';
 import PasswordInput from './PasswordInput';
+import ChipInput from './ChipInput';
 import { COUNTRIES, TECH_TRACKS, cleanTrack, matchCountry } from '../../lib/signupOptions';
 import { updatedAgo, useLiveStats } from '../../lib/liveStats';
 
@@ -18,7 +19,10 @@ const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-800 bg-sl
 const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-500 mb-2';
 
 export default function Signup() {
-  const [form, setForm]     = useState({ name: '', email: '', password: '', career_track: '', country: '' });
+  const [form, setForm]     = useState({ name: '', email: '', password: '', country: '' });
+  const [tracks, setTracks] = useState([]);              // up to 3, first = main track
+  const [workTypes, setWorkTypes] = useState([]);        // remote | hybrid | onsite
+  const [workCountries, setWorkCountries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const [refCode, setRefCode] = useState('');
@@ -36,8 +40,11 @@ export default function Signup() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const track = cleanTrack(form.career_track);
-    if (!track) { setError('Type or choose your career track.'); return; }
+    const pending = document.getElementById('signup-track')?.value?.trim();
+    const chosen = pending && tracks.length < 3 && !tracks.some(t => t.toLowerCase() === cleanTrack(pending).toLowerCase())
+      ? [...tracks, cleanTrack(pending)] : tracks;
+    if (!chosen.length) { setError('Type or choose at least one career track.'); return; }
+    const track = chosen[0];
     const country = form.country.trim() ? matchCountry(form.country) : null;
     if (form.country.trim() && !country) { setError('Choose your country from the list (start typing to see suggestions).'); return; }
     setLoading(true);
@@ -50,6 +57,9 @@ export default function Signup() {
         email:        form.email,
         password:     form.password,
         career_track: track,
+        career_tracks: chosen,
+        work_types:   workTypes.length ? workTypes : null,
+        work_countries: workCountries.length ? workCountries : null,
         country:      country,
         ref_code:     refCode || null,
         ...firstTouch(),
@@ -174,25 +184,42 @@ export default function Signup() {
                 className={inputCls} value={form.password} onChange={e => set('password', e.target.value)} />
             </div>
 
+            <div>
+              <label className={labelCls} htmlFor="signup-track">Career tracks <span className="normal-case tracking-normal font-semibold text-slate-600">(up to 3)</span></label>
+              <ChipInput id="signup-track" values={tracks} onChange={setTracks} suggestions={TECH_TRACKS} max={3}
+                placeholder="Type or pick, e.g. DevOps Engineer" normalize={v => cleanTrack(v) || null}
+                className={`${inputCls} cursor-text`} chipClass="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" />
+              <p className="mt-1.5 text-xs text-slate-500">Pick from the list or type your own. The first one is your main track.</p>
+            </div>
+
+            <div>
+              <span className={labelCls} id="signup-work-label">Work type you want</span>
+              <div role="group" aria-labelledby="signup-work-label" className="grid grid-cols-3 gap-2">
+                {[['remote', 'Remote'], ['hybrid', 'Hybrid'], ['onsite', 'On-site']].map(([id, label]) => {
+                  const on = workTypes.includes(id);
+                  return <button key={id} type="button" aria-pressed={on} onClick={() => setWorkTypes(w => (on ? w.filter(x => x !== id) : [...w, id]))}
+                    className={`rounded-2xl border-2 py-3 text-sm font-bold transition-all ${on ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 text-slate-400 hover:border-slate-700'}`}>
+                    {label}{on ? ' ✓' : ''}</button>;
+                })}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls} htmlFor="signup-track">Career Track</label>
-                <input id="signup-track" list="signup-track-options" required maxLength={80} autoComplete="off"
-                  placeholder="Type or pick, e.g. DevOps Engineer" className={inputCls}
-                  value={form.career_track} onChange={e => set('career_track', e.target.value)} />
-                <datalist id="signup-track-options">
-                  {TECH_TRACKS.map(t => <option key={t} value={t} />)}
-                </datalist>
-              </div>
-
-              <div>
-                <label className={labelCls} htmlFor="signup-country">Country</label>
+                <label className={labelCls} htmlFor="signup-country">Country you live in</label>
                 <input id="signup-country" list="signup-country-options" maxLength={60} autoComplete="country-name"
                   placeholder="Start typing, e.g. Nigeria" className={inputCls}
                   value={form.country} onChange={e => set('country', e.target.value)} />
                 <datalist id="signup-country-options">
                   {COUNTRIES.map(c => <option key={c} value={c} />)}
                 </datalist>
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="signup-work-countries">Also open to <span className="normal-case tracking-normal font-semibold text-slate-600">(optional)</span></label>
+                <ChipInput id="signup-work-countries" values={workCountries} onChange={setWorkCountries} suggestions={COUNTRIES} max={5}
+                  placeholder="Countries you can work in" normalize={v => matchCountry(v)}
+                  onInvalid={(raw, why) => setError(why === 'max' ? 'Choose up to 5 countries.' : `Choose "${raw}" from the country list.`)}
+                  className={`${inputCls} cursor-text`} chipClass="bg-slate-800 text-slate-200 border border-slate-700" />
               </div>
             </div>
 

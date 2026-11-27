@@ -63,6 +63,10 @@ class User(Base):
     # hash of the browser's device id: one new account per network/device per 30 days.
     signup_network       = Column(String(64), nullable=True, index=True)
     signup_device        = Column(String(64), nullable=True, index=True)
+    # Chosen at sign-up (several allowed). career_track/country stay the main ones.
+    career_tracks        = Column(JSON, nullable=True)      # up to 3, first = career_track
+    work_types           = Column(JSON, nullable=True)      # subset of remote | hybrid | onsite
+    work_countries       = Column(JSON, nullable=True)      # up to 5 countries open to working in
     # First-touch marketing attribution (UTM tags on the link that brought the visitor).
     signup_utm_source    = Column(String(80), nullable=True)
     signup_utm_medium    = Column(String(80), nullable=True)
@@ -176,3 +180,18 @@ class ProfilePhoto(Base):
     content      = Column(LargeBinary, nullable=False)
     content_type = Column(String(32), nullable=False, default="image/webp")
     updated_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProfileResume(Base):
+    """The resume a person keeps on their profile: reused for every tailoring
+    and read once to fill the profile. One per person; replaced on upload."""
+    __tablename__ = "profile_resumes"
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    filename     = Column(String(255), nullable=False)
+    content      = Column(LargeBinary, nullable=False)
+    size_bytes   = Column(Integer, nullable=False)
+    uploaded_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # What the last "fill my profile" read found (checked against the file);
+    # applying uses only this server-side copy, never values sent by the browser.
+    extracted    = Column(JSON, nullable=True)
+    extracted_at = Column(DateTime, nullable=True)

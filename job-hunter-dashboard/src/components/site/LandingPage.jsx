@@ -55,7 +55,7 @@ function HeroScene() {
 }
 
 const STEPS = [
-  ['Add your resume', 'Upload a PDF or Word file. Baalebos reads your experience, skills and education from it.', 'Read from your file: roles, dates, skills, education'],
+  ['Upload once', 'Your profile fills itself from your resume after you check it. You only type what is missing.', 'Found: experience, education, skills\nTo add yourself: languages'],
   ['Pick a job', 'Choose one from the job board, or paste any description from LinkedIn, Indeed or a careers page.', 'Cloud Engineer · 14 requirements found'],
   ['Check, then apply', 'Review what changed, confirm skills you really have, download PDF or Word, and apply.', 'Match before and after · PDF and Word ready'],
 ];

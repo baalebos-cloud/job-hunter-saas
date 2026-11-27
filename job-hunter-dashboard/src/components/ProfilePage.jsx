@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { assetUrl, clearSession, errorText } from '../lib/session';
 import PhotoCropper from './profile/PhotoCropper';
+import ProfileResume from './profile/ProfileResume';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const PROFICIENCIES = ['Basic', 'Intermediate', 'Advanced', 'Fluent', 'Native'];
@@ -299,12 +300,7 @@ export default function ProfilePage() {
             </dl>
           </Section>
 
-          <Section title="Resume">
-            {profile.resume_url
-              ? <a href={profile.resume_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 hover:bg-slate-50">
-                  <FileText size={18} className="text-slate-500" /><span className="flex-1 min-w-0 truncate text-sm font-medium">{profile.resume_filename || 'My resume'}</span><span className="text-xs font-semibold">View</span></a>
-              : <p className="text-sm text-slate-500">No resume linked yet. <a href="/optimizer" className="font-semibold text-emerald-700 hover:underline">Create a tailored resume →</a></p>}
-          </Section>
+          <ProfileResume card={card} onProfile={setProfile} notify={setToast} />
 
           <Section title="Languages" action={<AddButton onClick={() => { setError(''); setModal({ kind: 'language', data: { name: '', proficiency: 'Advanced' } }); }} />}>
             {profile.languages.length === 0 && <p className="text-sm text-slate-400">Add the languages you work in.</p>}

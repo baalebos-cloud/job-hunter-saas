@@ -61,23 +61,37 @@ def _words(value):
     return re.findall(r"[\w+#]+", (value or "").casefold())
 
 
+def _role_matches(track, job) -> bool:
+    role_words = set(_words(track)) - ROLE_STOP_WORDS
+    return bool(role_words) and role_words.issubset(set(_words(f"{job.title or ''} {job.category or ''}")))
+
+
+def _country_allows(country, location) -> bool:
+    country = " ".join(_words(country))
+    if not country or country in ("all", "worldwide", "global"):
+        return True
+    country_match = re.search(r"(?<!\w)" + re.escape(country) + r"(?!\w)", location)
+    excluded = re.search(r"(?:except|excluding|not)\s+" + re.escape(country) + r"(?!\w)", location)
+    # 'Remote' alone does not establish a country's eligibility.
+    return not excluded and bool(country_match or "worldwide" in _words(location) or "anywhere" in _words(location))
+
+
 def matches_preferences(job, user):
+    """Any of the person's career tracks; their work types; their home country or
+    any country they said they can work in."""
     if not job.is_active or not user.career_track:
         return False
-    role_words = set(_words(user.career_track)) - ROLE_STOP_WORDS
-    if not role_words or not role_words.issubset(set(_words(f"{job.title or ''} {job.category or ''}"))):
+    tracks = list(dict.fromkeys([user.career_track, *(getattr(user, 'career_tracks', None) or [])]))
+    if not any(_role_matches(track, job) for track in tracks):
         return False
-    if user.job_alert_work_type not in (None, "all") and job.work_type != user.job_alert_work_type:
-        return False
-    country = " ".join(_words(user.country))
-    location = " ".join(_words(job.location))
-    if country and country not in ("all", "worldwide", "global"):
-        country_match = re.search(r"(?<!\w)" + re.escape(country) + r"(?!\w)", location)
-        excluded = re.search(r"(?:except|excluding|not)\s+" + re.escape(country) + r"(?!\w)", location)
-        # 'Remote' alone does not establish a country's eligibility.
-        if excluded or not (country_match or "worldwide" in _words(location) or "anywhere" in _words(location)):
+    if user.job_alert_work_type not in (None, "all"):
+        if job.work_type != user.job_alert_work_type:
             return False
-    return True
+    elif getattr(user, 'work_types', None) and job.work_type not in user.work_types:
+        return False
+    location = " ".join(_words(job.location))
+    countries = [c for c in [user.country, *(getattr(user, 'work_countries', None) or [])] if c]
+    return not countries or any(_country_allows(c, location) for c in countries)
 
 
 def _owners(db):
