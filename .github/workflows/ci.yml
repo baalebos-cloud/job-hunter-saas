@@ -123,6 +123,10 @@ jobs:
           cache-dependency-path: job-hunter-dashboard/package-lock.json
 
       - run: npm ci
+      - name: Resume Studio type check
+        run: npm run typecheck:studio
+      - name: Resume Studio tests (ATS analyzer, PDF engine, presets)
+        run: npm run test:studio
 
       # `npm run lint` is not gated yet: the codebase has many pre-existing
       # react/prop-types errors.
