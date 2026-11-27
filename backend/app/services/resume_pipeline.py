@@ -62,7 +62,7 @@ def _run_pipeline(content, filename, job_description, job_title, region, task_id
         from backend.app.utils.ats_engine import (clean_job_description, extract_requirements, extract_resume_data,
                                                   extract_text, extract_text_with_ocr, prepare_resume_text,
                                                   rewrite_resume_for_job)
-        from backend.app.utils.resume_quality import merge_rewrite, score_requirements, verify_extraction
+        from backend.app.utils.resume_quality import merge_rewrite, score_requirements, target_headline, verify_extraction
         stage = 'extract_text'
         text = prepare_resume_text(extract_text_with_ocr(content, filename), filename)
         clean_jd = clean_job_description(job_description)
@@ -77,7 +77,10 @@ def _run_pipeline(content, filename, job_description, job_title, region, task_id
         stage = 'rewrite_resume'
         rewrite = rewrite_resume_for_job(resume_text=text, resume_data=original, job_description=clean_jd, job_title=job_title)
         stage = 'validate_rewrite'
-        tailored = merge_rewrite(original, rewrite, text)
+        headline = target_headline(job_title, text, original.get('title', ''))
+        tailored = merge_rewrite(original, rewrite, text, headline)
+        # The headline names the job being applied for, not the resume's old title.
+        tailored['title'] = headline or tailored.get('title', '')
         stage = 'export_pdf'
         exported_resume = export_strict(tailored, region, requirements)
         stage = 'score_exported_pdf'

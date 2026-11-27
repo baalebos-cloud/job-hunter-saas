@@ -1,7 +1,7 @@
 // =============================================================================
 // job-hunter-dashboard/src/components/auth/ForgotPassword.jsx  — NEW FILE
 // =============================================================================
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { errorText } from '../../lib/session';
 
@@ -14,17 +14,28 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent]       = useState(false);
   const [error, setError]     = useState('');
+  const [wait, setWait]       = useState(0);      // seconds before "Resend" unlocks
+  const [resent, setResent]   = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (wait <= 0) return undefined;
+    const t = setTimeout(() => setWait(w => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+
+  const request = async () => {
     setLoading(true); setError('');
     try {
-      await axios.post(`${API_BASE_URL}/auth/forgot-password`, { email });
-      setSent(true);
+      await axios.post(`${API_BASE_URL}/auth/forgot-password`, { email: email.trim() });
+      setSent(true); setWait(60);
+      return true;
     } catch (err) {
       setError(errorText(err, 'Something went wrong. Please try again.'));
+      return false;
     } finally { setLoading(false); }
   };
+  const handleSubmit = async (e) => { e.preventDefault(); await request(); };
+  const resend = async () => { if (await request()) setResent(true); };
 
   if (sent) return (
     <div className="app-canvas min-h-screen w-full flex items-center justify-center p-8"
@@ -33,7 +44,7 @@ export default function ForgotPassword() {
       <div className="app-canvas-grain" />
       <div className="max-w-md w-full relative z-10 text-center">
         <div className="w-20 h-20 bg-emerald-500/10 border-2 border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-6">
-          <span className="text-4xl">📬</span>
+          <svg className="w-9 h-9 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
         </div>
         <h1 className="text-3xl font-black text-white mb-3"
           style={{ fontFamily: "'Playfair Display', serif" }}>Check your inbox</h1>
@@ -44,16 +55,22 @@ export default function ForgotPassword() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-left mb-6">
           <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">What to do next</p>
           {[
-            ['📧', 'Open the email from Baalebos Cloud'],
-            ['🔗', 'Click the "Reset My Password" button'],
-            ['🔐', 'Set your new password — link expires in 1 hour'],
-          ].map(([icon, step]) => (
+            'Open the email from Baalebos (subject: "Reset your Baalebos password")',
+            'Not there after a minute? Check your spam or promotions folder',
+            'Choose a new password. The link expires in 1 hour and works once',
+          ].map((step, i) => (
             <div key={step} className="flex gap-3 mb-2 last:mb-0">
-              <span className="shrink-0">{icon}</span>
+              <span className="shrink-0 w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-400 text-xs font-bold flex items-center justify-center">{i + 1}</span>
               <p className="text-sm text-slate-300 font-medium">{step}</p>
             </div>
           ))}
         </div>
+        {error && <p role="alert" className="text-sm text-rose-400 mb-4">{error}</p>}
+        {resent && !error && <p role="status" className="text-sm text-emerald-400 mb-4">We sent a new link. Only the newest link works.</p>}
+        <button type="button" onClick={resend} disabled={wait > 0 || loading}
+          className="block w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold py-3.5 rounded-2xl text-sm mb-3 transition-all">
+          {loading ? 'Sending…' : wait > 0 ? `Didn't get it? Resend in ${wait}s` : "Didn't get it? Resend the link"}
+        </button>
         <a href="/login"
           className="block w-full border-2 border-slate-800 hover:border-emerald-500/50 text-slate-400 hover:text-white font-black py-4 rounded-2xl text-sm uppercase tracking-widest transition-all text-center">
           ← Back to Login
