@@ -13,6 +13,9 @@
 html {
   scroll-behavior: smooth;
 }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
 
 body {
   font-family: 'Inter', sans-serif;
@@ -45,10 +48,20 @@ input::placeholder, textarea::placeholder {
 html, body {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;   /* mobile: no jump when the address bar hides */
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  /* clip, not hidden: overflow-x:hidden turns <body> into a scroll container,
+     which breaks position:sticky (the sidebar scrolled away with the page) and
+     causes the nested-scroll "bounce" on iOS. */
+  overflow-x: clip;
+  overscroll-behavior-y: none;
 }
+@supports not (overflow-x: clip) {
+  html, body { overflow-x: hidden; }
+}
+/* Signed-in pages are light: match the canvas so an overscroll never flashes dark. */
+body:has(.talent-shell) { background-color: #f8fafc; color: #172033; }
 
 /* =============================================================================
    SIGNAL ROOM — premium layered background system

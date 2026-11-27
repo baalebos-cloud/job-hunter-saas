@@ -222,8 +222,22 @@ def resend_verification(current_user: User = Depends(get_current_user), db: Sess
 @router.post("/forgot-password")
 def forgot_password(payload: ForgotPasswordRequest, request: Request, background_tasks: BackgroundTasks,
                     db: Session = Depends(get_db)):
-    """Always returns the same response to prevent email enumeration."""
-    user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
+    """Always returns the same response to prevent email enumeration.
+
+    The account is found the way sign-up finds duplicates (any letter case,
+    Gmail dots and +tags), and requests are rate-limited per address and per
+    network so the endpoint cannot be used to flood someone's inbox."""
+    from backend.app.core.rate_limit import _email_key, hit
+    from backend.app.services.account_integrity import find_account
+    from backend.app.services.password_reset import deliver_reset_link
+    generic = {"message": "If that email is registered, a reset link is on its way. Check your inbox and spam folder."}
+    email = (payload.email or '').strip()
+    allowed_ip, retry = hit(f'pwreset:ip:{client_ip(request)}', 10, 3600)
+    if not allowed_ip:
+        raise HTTPException(429, f"Too many reset requests from this network. Try again in {max(1, retry // 60)} minutes.")
+    if not hit(f'pwreset:email:{_email_key(email)}', 3, 3600)[0]:
+        return generic          # same answer: do not reveal whether the address exists
+    user = find_account(db, email)
     if user:
         from backend.app.services import security_events
         security_events.record('password.reset_requested', request, user=user)
@@ -231,9 +245,8 @@ def forgot_password(payload: ForgotPasswordRequest, request: Request, background
         user.reset_token = token_digest
         user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
         db.commit()
-        background_tasks.add_task(send_password_reset_email, to_email=user.email, token=raw_token,
-                                  full_name=user.full_name or "")
-    return {"message": "If that email exists, a reset link has been sent."}
+        background_tasks.add_task(deliver_reset_link, user.id, user.email, raw_token, user.full_name or "")
+    return generic
 
 
 @router.post("/reset-password")
