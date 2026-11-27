@@ -49,12 +49,29 @@ def test_resend_key_loads_from_environment(monkeypatch):
     assert Settings(_env_file=None).RESEND_API_KEY == 'synthetic-env-key'
 
 
-@pytest.mark.parametrize('function', ['send_welcome_email', 'send_password_reset_email'])
-def test_non_verification_emails_do_not_use_resend(resend_settings, monkeypatch, function):
+@pytest.mark.parametrize('function', ['send_welcome_email', 'send_password_reset_email', 'send_verification_email'])
+def test_every_account_email_goes_through_resend_not_smtp(resend_settings, monkeypatch, function):
+    # Railway blocks outbound SMTP: an email that relies on it never arrives.
     calls = []
-    monkeypatch.setattr(email, '_send', lambda *args: calls.append(args) or True)
-    def forbidden(*args, **kwargs): raise AssertionError('Resend must not receive this flow')
-    monkeypatch.setattr(email.httpx, 'post', forbidden)
-    kwargs = {'token': 'synthetic-reset-token'} if function == 'send_password_reset_email' else {}
+    def post(url, **kwargs):
+        calls.append(kwargs['json'])
+        return httpx.Response(200, json={'id': 'synthetic-email-id'})
+    monkeypatch.setattr(email.httpx, 'post', post)
+    kwargs = {'token': 'synthetic-reset-token'} if function != 'send_welcome_email' else {}
     assert getattr(email, function)('candidate@example.invalid', **kwargs)
-    assert len(calls) == 1
+    assert len(calls) == 1 and calls[0]['to'] == ['candidate@example.invalid']
+
+
+def test_reset_email_link_and_expiry(resend_settings, monkeypatch):
+    calls = []
+    monkeypatch.setattr(email.httpx, 'post', lambda url, **k: calls.append(k['json']) or httpx.Response(200, json={'id': 'x'}))
+    assert email.send_password_reset_email('candidate@example.invalid', 'tok123', 'Ada Okafor', hours=24)
+    html = calls[0]['html']
+    assert 'https://www.baalebo.xyz/reset-password?token=tok123' in html and 'expires in 24 hours' in html
+    assert calls[0]['subject'] == 'Reset your Baalebos password'
+
+
+def test_no_transport_configured_fails_without_trying_smtp(monkeypatch):
+    monkeypatch.setattr(email, 'settings', Settings(_env_file=None, RESEND_API_KEY='', SMTP_HOST=''))
+    monkeypatch.setattr(email.smtplib, 'SMTP_SSL', lambda *a, **k: (_ for _ in ()).throw(AssertionError('no SMTP host')))
+    assert email.send_password_reset_email('candidate@example.invalid', 'tok') is False

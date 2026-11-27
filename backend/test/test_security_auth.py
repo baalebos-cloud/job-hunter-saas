@@ -100,7 +100,7 @@ def test_token_version_mismatch_and_logout_revocation(client, db):
 
 def test_password_reset_uses_json_body_hashed_tokens_and_revokes_sessions(client, db, monkeypatch):
     sent = {}
-    monkeypatch.setattr('backend.app.routes.auth.send_password_reset_email', lambda **kw: sent.update(kw))
+    monkeypatch.setattr('backend.app.utils.email.send_password_reset_email', lambda **kw: sent.update(kw) or True)
     old_token = login(client).json()['access_token']
     assert client.post('/api/v1/auth/forgot-password?email=user@example.com').status_code == 422
     assert client.post('/api/v1/auth/forgot-password', json={'email': 'user@example.com'}).status_code == 200
@@ -255,3 +255,35 @@ def test_last_super_admin_and_locked_permissions_are_protected(client, db):
     res = client.put('/api/v1/rbac/roles/viewer/permissions', json={'permissions': ['metrics:read', 'audit:read']}, headers=bearer('admin@example.com'))
     assert res.status_code == 200
     assert client.get('/api/v1/auth/me', headers=bearer('viewer@example.com')).json()['permissions'] == ['audit:read', 'metrics:read']
+
+
+@pytest.fixture
+def events_here(db, monkeypatch):
+    """Security events are written through their own session: point it at the test database."""
+    monkeypatch.setattr('backend.app.services.security_events._session', sessionmaker(bind=db.get_bind()))
+
+
+def test_reset_finds_the_account_in_any_letter_case_and_records_delivery(client, db, monkeypatch, events_here):
+    from backend.app.models.security_event import SecurityEvent
+    sent = []
+    monkeypatch.setattr('backend.app.utils.email.send_password_reset_email', lambda **kw: sent.append(kw) or True)
+    assert client.post('/api/v1/auth/forgot-password', json={'email': '  USER@Example.com '}).status_code == 200
+    assert len(sent) == 1 and sent[0]['to_email'] == 'user@example.com'
+    events = [e.event for e in db.query(SecurityEvent).order_by(SecurityEvent.id)]
+    assert events[-2:] == ['password.reset_requested', 'password.reset_email_sent']
+
+
+def test_failed_reset_delivery_is_recorded_for_the_owner(client, db, monkeypatch, events_here):
+    from backend.app.models.security_event import SecurityEvent
+    monkeypatch.setattr('backend.app.utils.email.send_password_reset_email', lambda **kw: False)
+    client.post('/api/v1/auth/forgot-password', json={'email': 'user@example.com'})
+    assert db.query(SecurityEvent).order_by(SecurityEvent.id.desc()).first().event == 'password.reset_email_failed'
+
+
+def test_reset_requests_are_rate_limited_without_revealing_accounts(client, monkeypatch):
+    sent = []
+    monkeypatch.setattr('backend.app.utils.email.send_password_reset_email', lambda **kw: sent.append(kw) or True)
+    answers = {client.post('/api/v1/auth/forgot-password', json={'email': 'user@example.com'}).json()['message']
+               for _ in range(4)}
+    unknown = client.post('/api/v1/auth/forgot-password', json={'email': 'nobody@example.com'}).json()['message']
+    assert len(sent) == 3 and answers == {unknown}
