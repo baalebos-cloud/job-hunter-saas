@@ -32,31 +32,32 @@ def provider_diagnostics(exc):
     return result
 
 
-def export_strict(tailored, region, requirements):
-    """Render the strictly one-page resume; candidate content only."""
+def export_strict(tailored, region, requirements, max_pages=None):
+    """Render the 1- or 2-page resume (see ``resolve_max_pages``); candidate content only."""
     from io import BytesIO
     from pypdf import PdfReader
-    from backend.app.utils.pdf_generator import ResumeExportError, export_resume
+    from backend.app.utils.pdf_generator import ResumeExportError, export_resume, resolve_max_pages
     keywords = [r.get('phrase') or r.get('requirement') for r in requirements or [] if isinstance(r, dict)]
-    result = export_resume(tailored, region=region, priority_keywords=keywords)
-    if len(PdfReader(BytesIO(result.pdf)).pages) != 1:  # hard invariant, checked before storing
-        raise ResumeExportError('The resume could not be fitted on one page.')
+    result = export_resume(tailored, region=region, priority_keywords=keywords, max_pages=max_pages)
+    limit = 1 if resolve_max_pages(region, max_pages) == 1 else 2
+    if len(PdfReader(BytesIO(result.pdf)).pages) > limit:  # hard invariant, checked before storing
+        raise ResumeExportError(f'The resume could not be fitted on {"one page" if limit == 1 else "two pages"}.')
     return result
 
 
 def run_pipeline(content: bytes, filename: str, job_description: str, job_title: str, region: str, task_id: str,
-                 priority: bool = False):
+                 priority: bool = False, max_pages=None):
     """Return (tailored, analysis, pdf). Raises PipelineFailure with a
     user-safe message; never logs candidate or provider text."""
     from backend.app.utils.ats_engine import PRIORITY_RUN
     token = PRIORITY_RUN.set(priority)
     try:
-        return _run_pipeline(content, filename, job_description, job_title, region, task_id)
+        return _run_pipeline(content, filename, job_description, job_title, region, task_id, max_pages)
     finally:
         PRIORITY_RUN.reset(token)
 
 
-def _run_pipeline(content, filename, job_description, job_title, region, task_id):
+def _run_pipeline(content, filename, job_description, job_title, region, task_id, max_pages=None):
     stage = 'load_pipeline'
     try:
         from backend.app.utils.ats_engine import (clean_job_description, extract_requirements, extract_resume_data,
@@ -82,7 +83,7 @@ def _run_pipeline(content, filename, job_description, job_title, region, task_id
         # The headline names the job being applied for, not the resume's old title.
         tailored['title'] = headline or tailored.get('title', '')
         stage = 'export_pdf'
-        exported_resume = export_strict(tailored, region, requirements)
+        exported_resume = export_strict(tailored, region, requirements, max_pages)
         stage = 'score_exported_pdf'
         analysis = score_requirements(extract_text(exported_resume.pdf, 'resume.pdf'), clean_jd, requirements)
     except ValueError as exc:

@@ -39,6 +39,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
   const [jobTitle, setJobTitle] = useState('');
   const [jobDesc, setJobDesc] = useState('');
   const [region, setRegion] = useState('');
+  const [pages, setPages] = useState('');     // '' = the convention's default (1 page US/Canada, otherwise auto)
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -105,6 +106,7 @@ export default function ResumeUpload({ onUploadSuccess }) {
     formData.append('job_description', jobDesc);
     formData.append('job_title', jobTitle.trim());
     if (region) formData.append('region', region);
+    if (pages) formData.append('max_pages', pages);
     if (linkedJob?.id) formData.append('job_id', String(linkedJob.id));   // shown in My resumes
 
     try {
@@ -161,7 +163,15 @@ export default function ResumeUpload({ onUploadSuccess }) {
               <option value="OTHER">Other / international (A4)</option>
             </select>
           </label>
-          <p className="text-xs text-slate-500 sm:mt-7">One page, no watermark. Employers, titles, dates, degrees and certifications are always kept.</p>
+          <label className="block text-sm font-medium text-slate-700" htmlFor="resume-pages">Length
+            <select id="resume-pages" value={pages} onChange={e => setPages(e.target.value)} className={`${inputCls} mt-1.5`}>
+              <option value="">Usual for the convention (1 page US/Canada, up to 2 elsewhere)</option>
+              <option value="1">1 page</option>
+              <option value="auto">1 page if it fits, otherwise 2</option>
+              <option value="2">Up to 2 pages</option>
+            </select>
+          </label>
+          <p className="sm:col-span-2 text-xs text-slate-500">No watermark. Employers, titles, dates, degrees and certifications are always kept; anything shortened to fit is listed with your result.</p>
         </div>
       </section>
 
