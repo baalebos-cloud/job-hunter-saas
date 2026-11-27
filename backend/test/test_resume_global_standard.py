@@ -394,3 +394,11 @@ def test_empty_extraction_returns_error_and_saves_nothing(client, db, pipeline, 
 def test_status_polling_is_not_rate_limited_below_30_per_minute(client, db, pipeline):
     task_id = upload(client).json()['task_id']
     assert all(client.get(f'/api/v1/resume/status/{task_id}', headers=auth()).status_code == 200 for _ in range(35))
+
+
+def test_tailored_pdf_headline_is_the_job_role(client, db, pipeline):
+    res = upload(client, job_title='Senior Platform Engineer - Payments')
+    assert res.status_code == 200, res.text
+    text = pdf_text(db.query(Resume).one().content)
+    # The job's role, without a seniority level the resume never shows.
+    assert 'Platform Engineer' in text and 'Senior Platform Engineer' not in text and 'Payments' not in text
