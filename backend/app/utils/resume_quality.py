@@ -257,7 +257,34 @@ def _introduces_claims(new_text, allowed_numbers, source_terms):
     return not _numbers(new_text) <= allowed_numbers or not set(find_terms(new_text)) <= source_terms
 
 
-def merge_rewrite(original, rewritten, source):
+# Seniority prefixes that would claim a level: kept in the headline only when
+# the resume already shows that level somewhere.
+_LEVEL_PREFIX = re.compile(r'^(?:(senior|sr\.?|staff|principal|lead|chief|distinguished|head of)\s+)+', re.I)
+_TITLE_NOISE = re.compile(r'\s+(?:[-–—|/(:@]|\bat\b).*$', re.I)
+
+
+def target_headline(job_title, source, fallback=''):
+    """The resume headline for a tailored resume: the job's own role title.
+
+    "Staff System Architect - SNSPD Systems" -> "System Architect" for a resume
+    that never shows staff-level work; "Senior DevOps Engineer (Remote)" stays
+    "Senior DevOps Engineer" when the resume already says Senior. Falls back to
+    the resume's own title when the job title is unusable."""
+    title = re.sub(r'\s+', ' ', str(job_title or '')).strip()
+    title = _TITLE_NOISE.sub('', title).strip(' -–—|,') if len(title) > 3 else title
+    words = normalize(source)
+    match = _LEVEL_PREFIX.match(title)
+    if match:
+        claimed = [w.lower().rstrip('.') for w in re.findall(r'senior|sr\.?|staff|principal|lead|chief|distinguished|head', match.group(0), re.I)]
+        claimed = ['senior' if w == 'sr' else w for w in claimed]
+        if any(not re.search(rf'\b{w}\b', words) for w in claimed):
+            title = title[match.end():].strip()
+    if not (3 <= len(title) <= 80) or not re.search(r'[A-Za-z]', title):
+        return fallback
+    return title[0].upper() + title[1:]
+
+
+def merge_rewrite(original, rewritten, source, target_title=''):
     """Keep history, omit unsupported skill additions, revert invented claims.
 
     A tailored summary or role that adds a number or a tool absent from the
@@ -319,9 +346,12 @@ def merge_rewrite(original, rewritten, source):
     summary = rewritten.get('optimized_summary', original.get('summary', ''))
     if not isinstance(summary, str):
         summary = original.get('summary', '')
+    # The summary may name the role being applied for ("seeking a System
+    # Architect role"); everything else must come from the resume.
+    summary_source = f'{source}\n{target_title}' if target_title else source
     if summary != original.get('summary', '') and (
-            _introduces_claims(summary, source_numbers, source_terms) or _new_names(summary, source)
-            or _unsupported_claims(summary, source, source)):
+            _introduces_claims(summary, source_numbers, source_terms) or _new_names(summary, summary_source)
+            or _unsupported_claims(summary, source, summary_source)):
         summary = original.get('summary', '')
         guard['summary_reverted'] = True
     rewritten['rewrite_guard'] = guard

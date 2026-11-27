@@ -20,6 +20,8 @@ EVENTS = {
     'hr.signup': 'Employer sign-up',
     'password.reset_requested': 'Password reset requested',
     'password.reset_completed': 'Password reset completed',
+    'password.reset_email_sent': 'Reset email sent',
+    'password.reset_email_failed': 'Reset email failed to send',
     'admin.hr_approved': 'Admin approved an employer',
     'admin.made_hr': 'Admin made a user an employer',
     'admin.made_admin': 'Admin granted admin rights',
@@ -56,8 +58,8 @@ CATEGORIES = {
     'signins': ('login.success', 'login.new_country'),
     'failures': ('login.failed', 'login.blocked', 'login.denied', 'signup.rejected'),
     'signups': ('signup', 'hr.signup', 'signup.rejected'),
-    'account': ('password.reset_requested', 'password.reset_completed', 'mfa.enabled', 'mfa.disabled',
-                'mfa.recovery_codes_reset', 'staff.invite_accepted', 'staff.invite_declined'),
+    'account': ('password.reset_requested', 'password.reset_email_sent', 'password.reset_email_failed', 'password.reset_completed',
+                'mfa.enabled', 'mfa.disabled', 'mfa.recovery_codes_reset', 'staff.invite_accepted', 'staff.invite_declined'),
 }
 FAILURE_EVENTS = ('login.failed', 'login.blocked', 'login.denied')
 SUSPICIOUS_FAILURES = 5          # failed sign-ins from one IP within the window

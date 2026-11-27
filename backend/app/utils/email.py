@@ -1,7 +1,7 @@
 # =============================================================================
 # backend/app/utils/email.py
-# Lark Suite SMTP over SSL (port 465)
-# Aligned with existing email.py SMTP pattern
+# Every message goes through Resend's HTTPS API when RESEND_API_KEY is set.
+# Railway blocks outbound SMTP, so SMTP is only a fallback for local setups.
 # =============================================================================
 import logging
 import httpx
@@ -16,10 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 def _send(to_email: str, subject: str, html_content: str, reply_to: str | None = None) -> bool:
-    """
-    Core send function — SMTP SSL.
-    Reused by all email functions below.
-    """
+    """Deliver one email. Resend (HTTPS) when configured, else SMTP over SSL.
+
+    Every flow (password reset, welcome, notifications) uses this, so no
+    message silently depends on SMTP on a host that blocks it."""
+    extra = {"reply_to": reply_to} if reply_to else {}
+    if settings.RESEND_API_KEY:
+        return _send_resend_verification(to_email, subject, html_content, **extra)
+    if not settings.SMTP_HOST:
+        logger.warning("email_delivery_failed provider=none reason=not_configured")
+        return False
+    return _send_smtp(to_email, subject, html_content, **extra)
+
+
+def _send_smtp(to_email: str, subject: str, html_content: str, reply_to: str | None = None) -> bool:
+    """SMTP over SSL (local development and hosts that allow outbound SMTP)."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"]    = f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>"
@@ -167,17 +178,8 @@ def send_verification_email(to_email: str, token: str, full_name: str = "") -> b
 
 
 def send_account_message(to_email: str, subject: str, html_content: str, reply_to: str | None = None) -> bool:
-    """Deliver an account-access message: email verification (candidate and
-    HR) and the employer approval lifecycle (admin alert, approval notice).
-
-    Uses Resend's HTTPS API when RESEND_API_KEY is set: Railway Hobby blocks
-    outbound SMTP, so SMTP-only mail never arrives there. Other flows
-    (welcome, password reset, notifications) intentionally stay on ``_send``.
-    """
-    extra = {"reply_to": reply_to} if reply_to else {}
-    if settings.RESEND_API_KEY:
-        return _send_resend_verification(to_email, subject, html_content, **extra)
-    return _send(to_email, subject, html_content, **extra)
+    """Account-access messages (verification, employer approval). Same transport as every other email."""
+    return _send(to_email, subject, html_content, reply_to=reply_to)
 
 
 def send_welcome_email(to_email: str, full_name: str = "") -> bool:
@@ -186,7 +188,7 @@ def send_welcome_email(to_email: str, full_name: str = "") -> bool:
     Gives the user onboarding steps and a CTA to the dashboard.
     """
     name    = full_name or to_email.split("@")[0]
-    subject = "🎉 You're verified — Welcome to Baalebos Cloud!"
+    subject = "You're verified: welcome to Baalebos"
 
     html_content = f"""
     <!DOCTYPE html>
@@ -201,7 +203,7 @@ def send_welcome_email(to_email: str, full_name: str = "") -> bool:
         </div>
 
         <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e2e8f0;">
-          <h2 style="color:#0f172a;font-size:20px;font-weight:800;margin:0 0 12px;">You're verified! 🚀</h2>
+          <h2 style="color:#0f172a;font-size:20px;font-weight:800;margin:0 0 12px;">You're verified</h2>
           <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">
             Hi <strong>{name}</strong>, your account is now fully active.
             Here's how to get started:
@@ -210,9 +212,9 @@ def send_welcome_email(to_email: str, full_name: str = "") -> bool:
           <!-- Steps -->
           {''.join([_step(n, t, d) for n, t, d in [
               ('1', 'Upload your resume',        'Get an instant ATS score and AI-optimized PDF'),
-              ('2', 'Browse 1,000+ global jobs', 'Filtered by your country and career track'),
+              ('2', 'Browse live tech jobs',     'Filtered by your country and career track'),
               ('3', 'Track your applications',   'See ATS match scores for every role you apply to'),
-              ('4', 'Refer friends and earn',    'Get $5–$12 for every friend who upgrades to Pro'),
+              ('4', 'Refer friends',             'Invite friends from the Referrals page'),
           ]])}
 
           <div style="text-align:center;margin-top:32px;">
@@ -235,64 +237,25 @@ def send_welcome_email(to_email: str, full_name: str = "") -> bool:
     return _send(to_email, subject, html_content)
 
 
-def send_password_reset_email(to_email: str, token: str, full_name: str = "") -> bool:
-    """
-    Password reset email — link valid for 1 hour.
-    Link: settings.FRONTEND_URL/reset-password?token=<token>
-    """
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-    name      = full_name or to_email.split("@")[0]
-    subject   = "🔐 Reset your Baalebos Cloud password"
-
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="utf-8"></head>
-    <body style="font-family:'Inter',Arial,sans-serif;background-color:#f8fafc;padding:40px 20px;">
-      <div style="max-width:600px;margin:0 auto;">
-
-        <div style="background:#0f172a;border-radius:16px;padding:32px;text-align:center;margin-bottom:24px;">
-          <h1 style="color:#10b981;font-size:22px;margin:0;letter-spacing:-0.5px;">BAALEBOS CLOUD</h1>
-          <p style="color:#94a3b8;font-size:11px;margin:6px 0 0;letter-spacing:2px;text-transform:uppercase;">AI Talent Infrastructure</p>
-        </div>
-
-        <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e2e8f0;">
-          <h2 style="color:#0f172a;font-size:20px;font-weight:800;margin:0 0 12px;">Password reset requested 🔐</h2>
-          <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">
-            Hi <strong>{name}</strong>, we received a request to reset your password.<br/>
-            Click the button below — this link expires in <strong>1 hour</strong>.
-          </p>
-
-          <div style="text-align:center;margin:32px 0;">
-            <a href="{reset_url}"
-              style="display:inline-block;background:#0f172a;color:#ffffff;font-weight:800;
-                     font-size:14px;padding:16px 36px;border-radius:12px;text-decoration:none;
-                     letter-spacing:1px;text-transform:uppercase;">
-              Reset My Password →
-            </a>
-          </div>
-
-          <p style="color:#94a3b8;font-size:12px;text-align:center;margin:0 0 20px;">
-            If you didn't request this, ignore this email — your password won't change.
-          </p>
-
-          <div style="background:#f8fafc;border-radius:12px;padding:16px;border:1px solid #e2e8f0;">
-            <p style="color:#64748b;font-size:11px;margin:0 0 6px;font-weight:700;">
-              If the button doesn't work, copy this link:
-            </p>
-            <a href="{reset_url}" style="color:#10b981;font-size:11px;word-break:break-all;">
-              {reset_url}
-            </a>
-          </div>
-        </div>
-
-        <p style="text-align:center;color:#cbd5e1;font-size:11px;margin-top:24px;">
-          © {datetime.now().year} Baalebos Cloud · Built for global engineers
-        </p>
-      </div>
-    </body>
-    </html>
-    """
+def send_password_reset_email(to_email: str, token: str, full_name: str = "", hours: int = 1) -> bool:
+    """Password reset link: settings.FRONTEND_URL/reset-password?token=<token>, valid for ``hours``."""
+    from html import escape
+    reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
+    name = escape((full_name or to_email.split("@")[0]).split()[0])
+    expiry = "1 hour" if hours == 1 else f"{hours} hours"
+    subject = "Reset your Baalebos password"
+    html_content = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:Inter,Arial,sans-serif;background:#f8fafc;padding:32px 16px;margin:0;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:32px;">
+    <div style="font-weight:800;color:#0f172a;font-size:18px;margin-bottom:20px;">baalebos<span style="color:#10b981;">.</span></div>
+    <h1 style="font-size:20px;color:#0f172a;margin:0 0 12px;">Reset your password</h1>
+    <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">Hi {name}, we received a request to reset the password for your Baalebos account. This link works once and expires in {expiry}.</p>
+    <p style="margin:0 0 24px;"><a href="{reset_url}" style="display:inline-block;background:#047857;color:#ffffff;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px;text-decoration:none;">Choose a new password</a></p>
+    <p style="color:#64748b;font-size:13px;line-height:1.6;margin:0 0 8px;">If the button doesn't work, copy this link into your browser:</p>
+    <p style="font-size:12px;word-break:break-all;margin:0 0 24px;"><a href="{reset_url}" style="color:#047857;">{reset_url}</a></p>
+    <p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;border-top:1px solid #f1f5f9;padding-top:16px;">If you didn't ask for this, you can ignore this email: your password stays the same. Questions? {settings.SUPPORT_EMAIL}</p>
+  </div>
+</body></html>"""
     return _send(to_email, subject, html_content)
 
 
