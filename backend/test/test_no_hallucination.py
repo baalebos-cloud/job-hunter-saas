@@ -137,22 +137,52 @@ def test_honest_rewording_is_kept():
     result = merge_rewrite(base, out, SOURCE)
     assert result['experience'][0]['bullets'][0].startswith('Ran production workloads on Kubernetes')
     assert 'Kubernetes' in result['summary']
-    assert out['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 0}
+    assert out['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 0, 'bullets_reverted': 0, 'reverted': []}
 
 
-@pytest.mark.parametrize('bullets, why', [
-    (['Built CI/CD pipelines with GitHub Actions that cut release time by 60%.'], 'changed number'),
-    (['Wrote Python tooling for CI/CD pipelines with GitHub Actions.'], 'tool from another part of the resume'),
-    (['Built CI/CD pipelines with GitHub Actions and Datadog alerting.'], 'tool not in the resume'),
-    (['Built CI/CD pipelines for Fortune 500 clients with GitHub Actions.'], 'invented client name'),
-    (['Led a team that built CI/CD pipelines with GitHub Actions.'], 'invented leadership'),
-    (['Built CI/CD pipelines with GitHub Actions on Zorbix Cloud.'], 'unknown product name'),
+@pytest.mark.parametrize('bullets, why, reason', [
+    (['Built CI/CD pipelines with GitHub Actions that cut release time by 60%.'], 'changed number', 'a number'),
+    (['Wrote Python tooling for CI/CD pipelines with GitHub Actions.'], 'tool from another part of the resume', 'a tool'),
+    (['Built CI/CD pipelines with GitHub Actions and Datadog alerting.'], 'tool not in the resume', 'a tool'),
+    (['Built CI/CD pipelines for Fortune 500 clients with GitHub Actions.'], 'invented client name', 'a number'),
+    (['Led a team that built CI/CD pipelines with GitHub Actions.'], 'invented leadership', 'leadership'),
+    (['Built CI/CD pipelines with GitHub Actions on Zorbix Cloud.'], 'unknown product name', 'named something'),
 ])
-def test_invented_claims_in_a_role_are_reverted_to_the_original(bullets, why):
+def test_invented_claims_in_a_role_are_reverted_to_the_original(bullets, why, reason):
+    # Only the offending bullet goes back to its own source bullet, word for word.
     base, out = rewrite(role0=bullets)
     result = merge_rewrite(base, out, SOURCE)
-    assert result['experience'][0]['bullets'] == extracted()['experience'][0]['bullets'], why
-    assert out['rewrite_guard']['roles_reverted'] == 1
+    original = extracted()['experience'][0]['bullets']
+    assert result['experience'][0]['bullets'] == [original[0]], why
+    guard = out['rewrite_guard']
+    assert guard['roles_reverted'] == 1 and guard['bullets_reverted'] == 1
+    assert reason in guard['reverted'][0]['reason'] and guard['reverted'][0]['kept'] == original[0]
+
+
+def test_only_the_invented_bullet_is_reverted():
+    honest = 'Ran production workloads on Kubernetes and Terraform across three AWS accounts.'
+    base, out = rewrite(role0=[honest, 'Built GitHub Actions CI/CD pipelines that cut release time by 75%.'])
+    result = merge_rewrite(base, out, SOURCE)
+    original = extracted()['experience'][0]['bullets']
+    assert result['experience'][0]['bullets'] == [honest, original[0]]
+    assert out['rewrite_guard']['bullets_reverted'] == 1 and '75%' in out['rewrite_guard']['reverted'][0]['reason']
+
+
+@pytest.mark.parametrize('field, value', [('company', 'Contoso  Ltd'), ('company', 'Contoso Ltd.'),
+                                          ('dates', None)])
+def test_formatting_differences_in_employer_or_dates_are_not_a_change(field, value):
+    base, out = rewrite()
+    old = base['experience'][0][field]
+    out['optimized_experience'][0][field] = value or old.replace('-', '\u2013').replace('  ', ' ')
+    result = merge_rewrite(base, out, SOURCE)
+    assert result['experience'][0][field] == old          # the source text is what is kept
+
+
+def test_ampersand_and_and_are_the_same_employer():
+    from backend.app.utils.resume_quality import _identity
+    assert _identity('Procter & Gamble') == _identity('Procter and Gamble')
+    assert _identity('Jan 2020 – Present') == _identity('Jan 2020 - Present') == _identity('Jan 2020-Present')
+    assert _identity('Contoso Ltd') != _identity('Contoso Global')
 
 
 def test_a_tool_is_not_moved_from_one_job_to_another():

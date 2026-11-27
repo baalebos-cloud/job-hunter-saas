@@ -310,7 +310,7 @@ def test_rewrite_preserves_history_filters_new_skills_and_rejects_metrics():
     # An invented metric reverts the summary instead of failing the whole upload.
     invented = {**rewrite, 'optimized_summary': 'Improved output by 90%'}
     assert merge_rewrite(base, invented, source)['summary'] == base['summary']
-    assert invented['rewrite_guard'] == {'summary_reverted': True, 'roles_reverted': 0}
+    assert invented['rewrite_guard'] == {'summary_reverted': True, 'roles_reverted': 0, 'bullets_reverted': 0, 'reverted': []}
 
 
 def test_rewrite_guard_reverts_roles_with_invented_metrics_or_tools():
@@ -322,7 +322,9 @@ def test_rewrite_guard_reverts_roles_with_invented_metrics_or_tools():
         {**base['experience'][1], 'bullets': ['Cut cloud costs by 35%.']}]}              # invented metric
     merged = merge_rewrite(base, rewrite, source)
     assert [e['bullets'] for e in merged['experience']] == [['Built Python tools.'], ['Cut costs by 20%.']]
-    assert rewrite['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 2}
+    guard = rewrite['rewrite_guard']
+    assert (guard['summary_reverted'], guard['roles_reverted'], guard['bullets_reverted']) == (False, 2, 2)
+    assert [r['kept'] for r in guard['reverted']] == ['Built Python tools.', 'Cut costs by 20%.']
     # A metric may not move to a different employer either.
     moved = {**rewrite, 'optimized_experience': [
         {**base['experience'][0], 'bullets': ['Built Python tools, cutting costs by 20%.']}, base['experience'][1]]}

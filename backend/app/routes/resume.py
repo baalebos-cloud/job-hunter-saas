@@ -205,7 +205,8 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
         tailored = json.loads(record.parsed_data or '{}')
     except ValueError:
         tailored = {}
-    allowed = {normalize(k): k for k in analysis.get('suggested_skills') or analysis.get('missing_list') or []}
+    from backend.app.utils.resume_quality import split_missing
+    allowed = {normalize(k): k for k in analysis.get('suggested_skills') or split_missing(analysis.get('missing_list'))[0]}
     previous = list(analysis.get('confirmed_keywords') or [])
     requested = [k.strip() for k in body.confirmed_keywords if isinstance(k, str) and k.strip()]
     unknown = [k for k in requested if normalize(k) not in allowed and normalize(k) not in {normalize(p) for p in previous}]
@@ -225,7 +226,8 @@ def regenerate(task_id: str, body: RegenerateRequest, db: Session=Depends(get_db
     except ValueError as exc:
         raise HTTPException(422, 'The resume could not be regenerated. Please retry.') from exc
     confirmed_keys = {normalize(k) for k in confirmed}
-    analysis.update(rescored, suggested_skills=[k for k in rescored.get('missing_list', []) if normalize(k) not in confirmed_keys],
+    analysis.update(rescored, suggested_skills=[k for k in split_missing(rescored.get('missing_list', []))[0]
+                                                if normalize(k) not in confirmed_keys],
                     confirmed_keywords=confirmed, document=exported_resume.info(),
                     scores={'before': analysis.get('original_score'), 'after': rescored['overall_score']},
                     task_id=task_id, resume_id=task_id, status='success')

@@ -89,17 +89,21 @@ def _run_pipeline(content, filename, job_description, job_title, region, task_id
         raise PipelineFailure(422, str(exc)) from exc
     except Exception as exc:
         raise PipelineFailure(503, _provider_message(exc, task_id, stage)) from exc
+    from backend.app.utils.resume_quality import split_missing
+    # Only short skills/tools/certifications are offered as tick boxes; conditions such as
+    # "5+ years of..." or "must be authorised to work..." become questions instead.
+    missing_skills, missing_questions = split_missing(analysis.get('missing_list', []))
     analysis.update(
         original_score=before['overall_score'],
         scores={'before': before['overall_score'], 'after': analysis['overall_score']},
-        confirmation_questions=rewrite.get('confirmation_questions', []),
+        confirmation_questions=list(rewrite.get('confirmation_questions', [])) + missing_questions,
         suggestions_applied=rewrite.get('suggestions_applied', []),
         # What the guard reverted to source wording (invented numbers or tools).
         rewrite_guard=rewrite.get('rewrite_guard', {}), extraction_guard=extraction_guard, job_title=job_title,
         job_description=clean_jd, task_id=task_id, resume_id=task_id, status='success',
         # Missing requirements are suggestions only; they enter the resume
         # solely through /regenerate with explicit confirmation.
-        suggested_skills=list(analysis.get('missing_list', [])), confirmed_keywords=[],
+        suggested_skills=missing_skills, confirmed_keywords=[],
         document=exported_resume.info())
     return tailored, analysis, exported_resume.pdf
 

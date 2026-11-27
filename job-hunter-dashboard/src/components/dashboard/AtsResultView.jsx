@@ -80,7 +80,10 @@ export default function AtsResultView({ data: initialData, jobId }) {
   }, [requirements]);
   const suggested = (data?.suggested_skills ?? data?.missing_list ?? []).filter(k => typeof k === 'string').slice(0, 12);
   const changes = (data?.suggestions_applied || []).map(String).filter(Boolean).slice(0, 6);
-  const reverted = Object.values(data?.rewrite_guard || {}).reduce((n, v) => n + (Array.isArray(v) ? v.length : Number(v) || 0), 0);
+  const guard = data?.rewrite_guard || {};
+  // Each bullet kept as written (newer results), else whole roles (older results), plus the summary.
+  const reverted = (Number(guard.bullets_reverted ?? guard.roles_reverted) || 0) + (guard.summary_reverted ? 1 : 0);
+  const revertedDetails = (Array.isArray(guard.reverted) ? guard.reverted : []).filter(r => r && typeof r === 'object').slice(0, 8);
   const leftOut = Number(data?.extraction_guard?.total_removed) || 0;   // items the AI read that are not in the file
   const doc = data?.document || {};
   const pageSize = typeof doc.page_size === 'string' ? doc.page_size : doc.region && ['US', 'CA'].includes(doc.region) ? 'Letter' : 'A4';
@@ -178,6 +181,11 @@ export default function AtsResultView({ data: initialData, jobId }) {
             {(changes.length ? changes : ['Summary and bullets re-ordered around the job’s main requirements',
               'Skills grouped to mirror the job’s wording']).map(c => <li key={c} className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />{c}</li>)}
             <li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />Nothing invented: every claim comes from your original resume{reverted ? ` (${reverted} unsupported edit${reverted > 1 ? 's' : ''} reverted)` : ''}</li>
+            {revertedDetails.length > 0 && (
+              <li><details className="ml-6 text-xs text-slate-500"><summary className="cursor-pointer font-semibold text-slate-600">Why some lines were kept as written</summary>
+                <ul className="mt-1.5 space-y-1.5">{revertedDetails.map((r, i) => (
+                  <li key={i}><span className="font-medium text-slate-700">{[r.role, r.company].filter(Boolean).join(' · ')}</span>: the tailored line was not used because {String(r.reason || 'it could not be confirmed from your resume')}.{r.kept ? ` Your original line was kept: “${String(r.kept)}”` : ''}</li>))}</ul>
+              </details></li>)}
             {leftOut > 0 && <li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-emerald-600" />{leftOut} item{leftOut > 1 ? 's' : ''} that could not be found in your file {leftOut > 1 ? 'were' : 'was'} left out. Check the preview and add anything missing to your original resume.</li>}
           </ul>
         </section>
@@ -235,7 +243,7 @@ export default function AtsResultView({ data: initialData, jobId }) {
                   <li key={i} className="py-2.5">
                     <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-slate-800">{r.requirement || r.phrase}</span>
                       {r.priority && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{r.priority}</span>}
-                      <span className={`text-[11px] font-semibold ${r.matched ? 'text-emerald-700' : 'text-rose-700'}`}>{r.matched ? 'Evidence found' : 'Not found'}</span></div>
+                      <span className={`text-[11px] font-semibold ${r.matched ? 'text-emerald-700' : 'text-rose-700'}`}>{r.match === 'equivalent' ? 'Met by an equivalent' : r.matched ? 'Evidence found' : 'Not found'}</span></div>
                     {r.evidence && <p className="mt-1 text-slate-500">{r.evidence}</p>}
                   </li>))}
               </ul>
