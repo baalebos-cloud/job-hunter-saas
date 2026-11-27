@@ -31,6 +31,10 @@ import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 import TeamJoin from './components/team/TeamJoin'
 import StaffInvite from './components/team/StaffInvite'
+import AboutPage from './components/site/AboutPage'
+import ContactPage from './components/site/ContactPage'
+import LegalPage from './components/site/LegalPage'
+import SiteFooter from './components/site/SiteFooter'
 import { captureFirstTouch } from './lib/attribution'
 import TeamSettings from './components/team/TeamSettings'
 import ApiKeys from './components/developers/ApiKeys'
@@ -71,7 +75,7 @@ function RequireRole({ role, children }) {
   )
 
   const GOVERNANCE = ['metrics:read', 'audit:read', 'users:read', 'reports:read']
-  const CONSOLE = ['admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read', 'support:manage', 'users:manage_roles']
+  const CONSOLE = ['admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read', 'support:manage', 'users:manage_roles', 'legal:manage']
   const hasAccess = role === 'admin' ? (profile?.is_admin || (profile?.permissions || []).some(p => CONSOLE.includes(p)))
     : role === 'governance' ? (profile?.permissions || []).some(p => GOVERNANCE.includes(p))
     : (profile?.is_admin || profile?.is_hr)
@@ -327,11 +331,6 @@ function JobsPage() {
 
 // ── Landing page (public) ─────────────────────────────────────────────────────
 function LandingPage() {
-  const LinkedInIcon = () => (
-    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-    </svg>
-  )
   return (
     <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
       <SEO path="/" description="AI-powered resume optimizer and job matching for global tech talent. Upload your resume, get an instant ATS score, and get matched to live remote jobs — from Nigeria to Silicon Valley." />
@@ -436,19 +435,7 @@ function LandingPage() {
         </div>
       </section>
 
-      <footer className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 py-12 border-t border-slate-800 mt-20 flex flex-col md:flex-row items-center justify-between gap-6">
-        <p className="text-slate-600 text-sm">© {new Date().getFullYear()} Baalebos Cloud · AI Talent Infrastructure</p>
-        <div className="flex gap-4">
-          <a href="https://www.linkedin.com/in/oluwadare-jayeola-6874591b4/" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#004182] text-white font-bold text-sm transition-all">
-            <LinkedInIcon /> LinkedIn
-          </a>
-          <a href="https://github.com/baalebos-cloud" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm border border-slate-700 transition-all">
-            GitHub
-          </a>
-        </div>
-      </footer>
+      <div className="relative z-10 mt-20"><SiteFooter /></div>
     </div>
   )
 }
@@ -543,6 +530,9 @@ function App() {
         <Route path="/unsubscribe"     element={<UnsubscribePage />} />
         <Route path="/team/join"       element={<TeamJoin />} />
         <Route path="/staff-invite"    element={<StaffInvite />} />
+        <Route path="/about"           element={<AboutPage />} />
+        <Route path="/contact"         element={<ContactPage />} />
+        <Route path="/legal/:slug"     element={<LegalPage />} />
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/signup"       element={<HRSignup />} />
         <Route path="/hr/verify"       element={<VerifyEmail />} />

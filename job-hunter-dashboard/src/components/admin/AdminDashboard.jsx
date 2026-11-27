@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Briefcase, Building2, Cpu, Crown, Database, Hash, LayoutDashboard, LifeBuoy, Megaphone, Play, RefreshCw, ScrollText, ShieldAlert, TrendingUp, UserCog, Users } from 'lucide-react';
+import { Activity, Briefcase, Building2, Cpu, Crown, Database, Hash, LayoutDashboard, LifeBuoy, Megaphone, Play, RefreshCw, Scale, ScrollText, ShieldAlert, TrendingUp, UserCog, Users } from 'lucide-react';
 import { adminGet, adminPost, ago, message, needsMfaEnrollment } from './adminApi';
 import MfaSetup from './MfaSetup';
 import { Banner, Button, ConfirmDialog, Spinner } from './ui';
@@ -16,6 +16,7 @@ import AnalyticsTab from './tabs/AnalyticsTab';
 import GrowthTab from './tabs/GrowthTab';
 import ContentTab from './tabs/ContentTab';
 import AccessTab from './tabs/AccessTab';
+import LegalTab from './tabs/LegalTab';
 
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || '';
 const TAB_ALIASES = { hr: 'employers', stats: 'overview', apps: 'jobs', automation: 'ops', ai: 'ops' };
@@ -34,10 +35,11 @@ const TABS = [
   ['ops', 'Operations', Cpu, p => has(p, 'admin:access')],
   ['audit', 'Audit log', ScrollText, p => has(p, 'admin:access')],
   ['access', 'Access control', UserCog, p => has(p, 'users:manage_roles')],
+  ['legal', 'Legal', Scale, p => has(p, 'legal:manage')],
 ];
-const ROLE_LABELS = { super_admin: 'Admin', product_manager: 'Product manager', social_media_manager: 'Social media manager' };
+const ROLE_LABELS = { super_admin: 'Admin', product_manager: 'Product manager', social_media_manager: 'Social media manager', legal_counsel: 'Legal counsel' };
 // One cheap call per first tab to learn whether two-step verification is still needed.
-const PROBE = { overview: '/console/analytics', growth: '/console/campaigns', content: '/console/content', support: '/support/admin/slack', slack: '/support/admin/slack' };
+const PROBE = { overview: '/console/analytics', growth: '/console/campaigns', content: '/console/content', support: '/support/admin/slack', slack: '/support/admin/slack', legal: '/console/legal' };
 
 function initialTab(allowed) {
   const requested = new URLSearchParams(window.location.search).get('tab') || '';
@@ -189,6 +191,7 @@ export default function AdminDashboard() {
         {tab === 'growth' && <GrowthTab permissions={perms} />}
         {tab === 'content' && <ContentTab />}
         {tab === 'access' && <AccessTab notify={setToast} confirm={setDialog} />}
+        {tab === 'legal' && <LegalTab notify={setToast} confirm={setDialog} />}
       </main>
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
     </div>
@@ -225,6 +228,7 @@ function TeamConsole({ profile, tabs, tab, goTo, toast, setToast, staffError, di
         {tab === 'content' && <ContentTab />}
         {tab === 'support' && <SupportTab notify={setToast} />}
         {tab === 'slack' && <SlackTab notify={setToast} />}
+        {tab === 'legal' && <LegalTab notify={setToast} confirm={setDialog} />}
       </main>
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
     </div>
