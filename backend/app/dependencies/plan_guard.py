@@ -77,6 +77,29 @@ def _get_or_create_sub(user_id: int, db: Session) -> Subscription:
     return sub
 
 
+def shared_free_scans(db: Session, user) -> int:
+    """Free scans already used this month by other free accounts created from the
+    same network or device. A second account does not bring a second free allowance;
+    paid accounts and trusted (allow-listed) networks are never counted."""
+    if user is None:
+        return 0
+    from backend.app.services.account_integrity import linked_accounts
+    now = datetime.utcnow()
+    used = 0
+    for other in linked_accounts(db, user):
+        if _unlimited(db, other) or own_plan(db, other) != "free":
+            continue
+        sub = db.query(Subscription).filter(Subscription.user_id == other.id).first()
+        if sub and sub.reset_date and (sub.reset_date.year, sub.reset_date.month) == (now.year, now.month):
+            used += sub.scans_this_month or 0
+    return used
+
+
+def _free_limit_reached(db: Session, user, sub, limit: int) -> tuple[bool, int]:
+    used = (sub.scans_this_month or 0) + (shared_free_scans(db, user) if limit != -1 and own_plan(db, user) == "free" else 0)
+    return limit != -1 and used >= limit, used
+
+
 def require_scan_quota(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -105,14 +128,18 @@ def require_scan_quota(
 
     limit = plan_info["scans_per_month"]
 
-    # -1 means unlimited (Pro/Enterprise)
-    if limit != -1 and sub.scans_this_month >= limit:
+    # -1 means unlimited (Pro/Enterprise). Free scans are shared with other free
+    # accounts created from the same network or device.
+    reached, used = _free_limit_reached(db, current_user, sub, limit)
+    if reached:
+        shared = used > (sub.scans_this_month or 0)
         raise HTTPException(
             status_code=403,
             detail={
                 "error":        "scan_limit_reached",
-                "message":      f"You've used all {limit} free scan{'s' if limit != 1 else ''} this month.",
-                "scans_used":   sub.scans_this_month,
+                "message":      (f"The {limit} free scans for this month have been used on this network or device."
+                                 if shared else f"You've used all {limit} free scan{'s' if limit != 1 else ''} this month."),
+                "scans_used":   used,
                 "scans_limit":  limit,
                 "plan":         sub.plan,
                 "upgrade_url":  "/pricing",
@@ -154,7 +181,7 @@ def consume_scan(user_id, db):
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).with_for_update().first()
     if not sub: raise HTTPException(409, "Subscription not initialized")
     limit = PLANS.get(sub.plan if sub.status == 'active' else 'free', PLANS['free'])['scans_per_month']
-    if limit != -1 and sub.scans_this_month >= limit:
+    if _free_limit_reached(db, db.get(User, user_id), sub, limit)[0]:
         raise HTTPException(403, "Monthly scan limit reached")
     sub.scans_this_month += 1
 
@@ -167,4 +194,4 @@ def remaining_scans(user_id, db):
     if not sub:
         return None
     limit = PLANS.get(sub.plan if sub.status == 'active' else 'free', PLANS['free'])['scans_per_month']
-    return None if limit == -1 else max(limit - (sub.scans_this_month or 0), 0)
+    return None if limit == -1 else max(limit - _free_limit_reached(db, db.get(User, user_id), sub, limit)[1], 0)

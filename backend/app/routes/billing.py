@@ -64,14 +64,18 @@ def get_billing_status(
         plan_info = PLANS["enterprise"]
     unlimited = exempt or via_team
     scans_limit = -1 if unlimited else plan_info["scans_per_month"]
-    scans_left  = max(0, scans_limit - sub.scans_this_month) if scans_limit != -1 else -1
+    # Free scans are shared with other free accounts from the same network or device.
+    from backend.app.dependencies.plan_guard import shared_free_scans
+    shared = shared_free_scans(db, current_user) if scans_limit != -1 and sub.plan == "free" else 0
+    scans_left  = max(0, scans_limit - sub.scans_this_month - shared) if scans_limit != -1 else -1
 
     return {
         "plan":             "enterprise" if unlimited else sub.plan,
         "plan_name":        plan_info["name"],
         "status":           "active" if unlimited else sub.status,
         "lifetime":         exempt,         # never billed, never expires
-        "scans_this_month": sub.scans_this_month,
+        "scans_this_month": sub.scans_this_month + shared,
+        "scans_shared":     shared,         # used by other accounts on this network/device
         "scans_limit":      scans_limit,    # -1 = unlimited
         "scans_left":       scans_left,     # -1 = unlimited
         "is_pro":           unlimited or sub.plan in ("pro", "enterprise"),

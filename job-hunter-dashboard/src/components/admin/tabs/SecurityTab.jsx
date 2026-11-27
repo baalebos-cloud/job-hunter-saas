@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Ban, CheckCircle2, Download, Search } from 'lucide-react';
 import { adminDelete, adminGet, adminPost, ago, device, downloadCsv, eventTone, message, num, when } from '../adminApi';
 import MfaSetup from '../MfaSetup';
+import SignupRules from '../SignupRules';
 import { Banner, Button, Chip, Empty, SectionHeader, Segmented, Stat, Td, Th, card } from '../ui';
 
 const CATEGORIES = [['', 'All'], ['signins', 'Sign-ins'], ['failures', 'Failures'], ['signups', 'Sign-ups'],
@@ -145,6 +146,8 @@ export default function SecurityTab({ summary, reload, notify, confirm, focus })
           </div>
         </div>
       </div>
+
+      <SignupRules notify={notify} confirm={confirm} />
 
       <div className={`${card} overflow-hidden`}>
         <SectionHeader title="Event log" subtitle={`Visible to admins only · every view is recorded · kept ${summary.retention_days} days`}>

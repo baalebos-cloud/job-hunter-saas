@@ -226,7 +226,7 @@ def hr_signup(
 
     # 2. Duplicate, disposable and per-IP checks (same rules as candidates)
     from backend.app.core.client_ip import client_ip
-    from backend.app.services.account_integrity import check_new_signup
+    from backend.app.services.account_integrity import check_new_signup, signup_fingerprint
     canonical = check_new_signup(db, request, payload.email, 'hr')
 
     if len(payload.password) < 8:
@@ -245,6 +245,7 @@ def hr_signup(
         country=payload.country or None,
         email_canonical=canonical,
         signup_ip=client_ip(request),
+        **signup_fingerprint(request),
         company_url=(payload.company_url or '').strip()[:255] or None,
         linkedin_url=(payload.linkedin_url or '').strip() or None,
         hr_job_title=(payload.job_title or '').strip()[:128] or None,

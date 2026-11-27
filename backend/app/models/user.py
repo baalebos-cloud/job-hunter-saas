@@ -59,6 +59,10 @@ class User(Base):
     # reject duplicate sign-ups such as j.doe+2@gmail.com vs jdoe@gmail.com.
     email_canonical      = Column(String(255), nullable=True, index=True)
     signup_ip            = Column(String(64), nullable=True)
+    # Network the account was created from (IPv4 address or IPv6 /64) and a keyed
+    # hash of the browser's device id: one new account per network/device per 30 days.
+    signup_network       = Column(String(64), nullable=True, index=True)
+    signup_device        = Column(String(64), nullable=True, index=True)
     # First-touch marketing attribution (UTM tags on the link that brought the visitor).
     signup_utm_source    = Column(String(80), nullable=True)
     signup_utm_medium    = Column(String(80), nullable=True)

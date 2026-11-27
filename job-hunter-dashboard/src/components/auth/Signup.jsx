@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { clearFirstTouch, firstTouch } from '../../lib/attribution';
+import { deviceHeaders } from '../../lib/device';
 import { errorText } from '../../lib/session';
 import VerifyEmailNotice from './VerifyEmailNotice';
 import PasswordInput from './PasswordInput';
@@ -52,7 +53,7 @@ export default function Signup() {
         country:      country,
         ref_code:     refCode || null,
         ...firstTouch(),
-      });
+      }, { headers: deviceHeaders() });
       if (refCode) localStorage.removeItem('ref_code');
       clearFirstTouch();
       setSentTo(res.data?.email || form.email);
