@@ -36,6 +36,7 @@ const PLANS = [
       'Unlimited AI resume scans',
       'Full ATS score + keyword gap analysis',
       'AI-optimized PDF resume download',
+      'Edit wording, length (1–2 pages) and layout before download',
       'Priority AI processing',
       'Resume history (last 30 scans)',
       'Email support',
