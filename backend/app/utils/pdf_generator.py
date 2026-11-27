@@ -379,12 +379,34 @@ def merge_confirmed_keywords(data: dict, keywords) -> dict:
     confirmed = [k for k in _unique(_lines(keywords)) if k.casefold() not in existing]
     if not confirmed:
         return data
-    skills = dict(data['skills'])
+    skills = {category: list(values) for category, values in data['skills'].items()}
     if list(skills) == ['Skills'] or not skills:
         skills['Skills'] = skills.get('Skills', []) + confirmed
-    else:
-        skills['Additional Skills'] = skills.get('Additional Skills', []) + confirmed
+        return {**data, 'skills': skills}
+    for keyword in confirmed:
+        skills.setdefault(_category_for(keyword, skills), []).append(keyword)
     return {**data, 'skills': skills}
+
+
+def _category_for(keyword: str, skills: dict) -> str:
+    """The resume's own skill group a confirmed keyword belongs in.
+
+    The keyword's taxonomy category (Cloud, CI/CD, Finance & Accounting...) is
+    matched to the resume group that already holds skills of that category, or
+    to a group with that name; otherwise a group named after the category is
+    added. Keywords the taxonomy does not know go to "Additional Skills"."""
+    from backend.app.utils.skill_terms import SKILL_CATEGORIES, find_terms
+    terms = find_terms(keyword)
+    category = SKILL_CATEGORIES.get(terms[0]) if terms else None
+    if not category:
+        return 'Additional Skills'
+    for group, values in skills.items():
+        if group.casefold() == category.casefold():
+            return group
+    for group, values in skills.items():
+        if any(SKILL_CATEGORIES.get(term) == category for value in values for term in find_terms(value)):
+            return group
+    return category
 
 
 # ── Rendering ─────────────────────────────────────────────────────────────────

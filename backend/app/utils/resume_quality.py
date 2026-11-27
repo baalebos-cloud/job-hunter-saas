@@ -20,6 +20,16 @@ SYNONYM_GROUPS = [
     {'mongodb', 'mongo'}, {'elasticsearch', 'elastic search'}, {'github actions', 'gh actions'},
     {'infrastructure as code', 'iac'}, {'site reliability engineering', 'sre'}, {'amazon s3', 's3'},
     {'amazon ec2', 'ec2'}, {'microsoft sql server', 'sql server', 'mssql'}, {'scikit-learn', 'sklearn'},
+    # Beyond engineering: data, product, finance, healthcare, sales/marketing, operations and HR.
+    {'power bi', 'powerbi'}, {'microsoft excel', 'ms excel', 'excel'}, {'project management professional', 'pmp'},
+    {'objectives and key results', 'okrs', 'okr'}, {'key performance indicators', 'kpis', 'kpi'},
+    {'international financial reporting standards', 'ifrs'}, {'generally accepted accounting principles', 'gaap'},
+    {'certified public accountant', 'cpa'}, {'chartered financial analyst', 'cfa'},
+    {'financial modeling', 'financial modelling'}, {'electronic health records', 'electronic health record', 'ehr'},
+    {'electronic medical records', 'emr'}, {'basic life support', 'bls'}, {'advanced cardiovascular life support', 'acls'},
+    {'search engine optimization', 'search engine optimisation', 'seo'}, {'search engine marketing', 'sem'},
+    {'customer relationship management', 'crm'}, {'google analytics', 'ga4'}, {'google ads', 'adwords'},
+    {'human resources', 'hr'}, {'lean six sigma', 'six sigma'},
 ]
 _SYNONYMS = {}
 for _group in SYNONYM_GROUPS:
@@ -284,13 +294,79 @@ def target_headline(job_title, source, fallback=''):
     return title[0].upper() + title[1:]
 
 
+_DASHES = re.compile(r'\s*[\u2010-\u2015\u2212-]\s*')
+
+
+def _identity(value) -> str:
+    """Role, company or dates compared without formatting: "&"/"and", dash styles,
+    spacing and trailing punctuation do not count as a change."""
+    text = _fold(value).replace('&', ' and ')
+    text = _DASHES.sub('-', text)
+    text = re.sub(r'[.,;:]+(?=\s|$)', '', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _bullet_problem(bullet, role_text, role_numbers, role_terms, name_source):
+    """Why a rewritten bullet cannot be used, in words a candidate understands; None if it can."""
+    extra_numbers = _numbers(bullet) - role_numbers
+    if extra_numbers:
+        return f'it added a number this role does not mention ({", ".join(sorted(extra_numbers)[:3])})'
+    extra_terms = set(find_terms(bullet)) - role_terms
+    if extra_terms:
+        return f'it named a tool or practice this role does not mention ({", ".join(sorted(extra_terms)[:3])})'
+    names = _new_names(bullet, name_source)
+    if names:
+        return f'it named something your resume does not mention ({", ".join(names[:3])})'
+    if _unsupported_claims(bullet, role_text, role_text):
+        return 'it claimed leadership or seniority this role does not show'
+    return None
+
+
+def _pair(new_bullets, old_bullets):
+    """Index of the source bullet each rewritten bullet came from (None when unknown).
+
+    Matched by shared words, not position, so reordered bullets pair correctly."""
+    pairs, used = [], set()
+    for bullet in new_bullets:
+        words = _content(bullet)
+        scored = [(len(words & _content(old)) / max(1, len(words | _content(old))), i)
+                  for i, old in enumerate(old_bullets) if i not in used]
+        best = max(scored, default=(0, None))
+        if best[1] is not None and best[0] > 0:
+            used.add(best[1])
+            pairs.append(best[1])
+        else:
+            pairs.append(None)
+    return pairs
+
+
+def _guard_bullets(old, new_bullets, check):
+    """Keep each rewritten bullet that passes ``check``; put back the source bullet for one that fails.
+
+    Returns (bullets, [(reason, kept_text_or_None)])."""
+    sources = list(old.get('bullets', []))
+    result, reverted, used = [], [], set()
+    for bullet, index in zip(new_bullets, _pair(new_bullets, sources)):
+        reason = check(bullet)
+        if reason is None:
+            result.append(bullet)
+            continue
+        original = sources[index] if index is not None and index not in used else None
+        if original is not None:
+            used.add(index)
+            result.append(original)
+        reverted.append((reason, original))
+    return result, reverted
+
+
 def merge_rewrite(original, rewritten, source, target_title=''):
     """Keep history, omit unsupported skill additions, revert invented claims.
 
-    A tailored summary or role that adds a number or a tool absent from the
-    source falls back to the original text instead of failing the upload.
-    Removed skill additions become review questions; ``rewrite_guard`` in the
-    rewrite metadata records what was reverted.
+    A tailored bullet that adds a number, tool, name or leadership claim absent
+    from that role's source falls back to its own source bullet; the other
+    bullets of the role keep their tailoring. A summary that does the same falls
+    back to the original summary. Removed skill additions become review
+    questions; ``rewrite_guard`` records each reverted bullet and why.
     """
     result = dict(original)
     experiences = rewritten.get('optimized_experience')
@@ -298,11 +374,11 @@ def merge_rewrite(original, rewritten, source, target_title=''):
         raise ValueError('Rewrite omitted experience entries.')
     source_numbers = _numbers(source)
     source_terms = set(find_terms(source))
-    guard = {'summary_reverted': False, 'roles_reverted': 0}
+    guard = {'summary_reverted': False, 'roles_reverted': 0, 'bullets_reverted': 0, 'reverted': []}
     guarded = []
     for old, new in zip(original['experience'], experiences):
         for key in ('role', 'company', 'dates'):
-            if normalize(old.get(key)) != normalize(new.get(key)):
+            if _identity(old.get(key)) != _identity(new.get(key)):
                 raise ValueError(f'Rewrite changed an employment {key}.')
         if not isinstance(new.get('bullets'), list) or not new['bullets'] or \
                 any(not isinstance(b, str) for b in new['bullets']):
@@ -311,14 +387,13 @@ def merge_rewrite(original, rewritten, source, target_title=''):
         # numbers, tools and leadership claims stay with the employer they were
         # written for, and no new names (products, clients, acronyms) appear.
         role_text = ' '.join([str(old.get('role', '')), str(old.get('environment', '')), *old.get('bullets', [])])
-        new_text = ' '.join(new['bullets'])
-        if (_introduces_claims(new_text, _numbers(role_text), set(find_terms(role_text)))
-                or _new_names(new_text, role_text + ' ' + ' '.join(skill for values in original['skills'].values() for skill in values
-                                                                    if contains(role_text, skill)))
-                or _unsupported_claims(new_text, role_text, role_text)):
-            new = {**new, 'bullets': list(old.get('bullets', []))}
-            guard['roles_reverted'] += 1
-        guarded.append(new)
+        role_numbers, role_terms = _numbers(role_text), set(find_terms(role_text))
+        name_source = role_text + ' ' + ' '.join(skill for values in original['skills'].values() for skill in values
+                                                 if contains(role_text, skill))
+        bullets, reverted = _guard_bullets(
+            old, new['bullets'], lambda b: _bullet_problem(b, role_text, role_numbers, role_terms, name_source))
+        _record_reverted(guard, old, reverted)
+        guarded.append({**new, 'bullets': bullets})
     experiences = guarded
     skills = rewritten.get('optimized_skills', original['skills'])
     if not isinstance(skills, dict) or any(not isinstance(v, list) for v in skills.values()):
@@ -363,17 +438,109 @@ def merge_rewrite(original, rewritten, source, target_title=''):
         # An omitted skill must not survive as a claim in the summary or bullets.
         if any(contains(summary, skill) for skill in excluded):
             summary = original.get('summary', '')
-        experiences = [
-            {**new, 'bullets': list(old.get('bullets', []))}
-            if any(contains(' '.join(new['bullets']), skill) for skill in excluded) else new
-            for old, new in zip(original['experience'], experiences)
-        ]
+            guard['summary_reverted'] = True
+        checked = []
+        for old, new in zip(original['experience'], experiences):
+            def mentions_excluded(bullet):
+                found = [skill for skill in excluded if contains(bullet, skill) and not contains(' '.join(old.get('bullets', [])), skill)]
+                return f'it mentioned a skill your resume does not show ({", ".join(found[:3])})' if found else None
+            bullets, reverted = _guard_bullets(old, new['bullets'], mentions_excluded)
+            _record_reverted(guard, old, reverted)
+            checked.append({**new, 'bullets': bullets})
+        experiences = checked
     generated = str(summary) + ' ' + ' '.join(' '.join(e['bullets']) for e in experiences)
     for number in re.findall(r'\d+(?:[.,]\d+)*(?:\s*%)?', generated):
         if normalize(number) not in source_numbers:
             raise ValueError('Rewrite introduced an unsupported numeric achievement.')
     result.update(summary=summary, experience=[{**old, 'bullets': new['bullets']} for old,new in zip(original['experience'], experiences)], skills=skills)
     return validate_resume(result)
+
+
+def _record_reverted(guard, role, reverted):
+    if not reverted:
+        return
+    already = any(r['role'] == role.get('role') and r['company'] == role.get('company') for r in guard['reverted'])
+    guard['roles_reverted'] += 0 if already else 1
+    guard['bullets_reverted'] += len(reverted)
+    for reason, kept in reverted:
+        guard['reverted'].append({'role': role.get('role', ''), 'company': role.get('company', ''), 'reason': reason,
+                                  'kept': kept or ''})
+
+
+# ── Requirements: skills to confirm vs. other conditions ─────────────────────
+_NON_SKILL = re.compile(
+    r"\b(years?|yrs|degree|bachelor'?s?|master'?s?|ph\.?d|doctorate|diploma|graduate|authori[sz]ed|authori[sz]ation|"
+    r"eligib\w*|visa|sponsor\w*|clearance|citizen\w*|relocat\w*|travel|willing|able to|ability to|must|should|"
+    r"required|preferred|proficien\w*|knowledge of|understanding of|familiar\w*|strong|excellent|fluent|native|"
+    r"background check|driver'?s licen[cs]e|experience (?:in|with|of)|hands-on|track record)\b", re.I)
+
+
+def is_skill_phrase(phrase) -> bool:
+    """A short skill, tool or certification a candidate can tick, not a condition or sentence."""
+    text = str(phrase or '').strip()
+    if not text or len(text) > 40 or len(text.split()) > 5 or text.endswith('.'):
+        return False
+    return not _NON_SKILL.search(text)
+
+
+def split_missing(missing) -> tuple[list[str], list[str]]:
+    """Missing requirements as (skills to offer as tick boxes, questions for everything else)."""
+    skills, questions = [], []
+    for phrase in missing or []:
+        if not isinstance(phrase, str) or not phrase.strip():
+            continue
+        if is_skill_phrase(phrase):
+            skills.append(phrase.strip())
+        else:
+            questions.append(f'The job asks for: "{phrase.strip()}". If that is true for you, add it to your resume '
+                             'in your own words; it was not added for you.')
+    return skills, questions
+
+
+# ── Scoring ──────────────────────────────────────────────────────────────────
+_YEARS = re.compile(r'(\d{1,2})\s*\+?\s*(?:years?|yrs)\b', re.I)
+# Degree levels: a higher level satisfies a lower one. HND and B.Eng/B.Tech count as bachelor-level.
+_DEGREE_LEVELS = (
+    (3, re.compile(r"\b(ph\.?\s?d|doctorate|doctoral|d\.?phil)\b", re.I)),
+    (2, re.compile(r"\b(master'?s?|m\.?\s?sc|m\.?\s?eng|m\.?\s?tech|mba|m\.?a\.|m\.?s\.|msc|meng|mphil)\b", re.I)),
+    (1, re.compile(r"\b(bachelor'?s?|b\.?\s?sc|b\.?\s?eng|b\.?\s?tech|b\.?a\.|b\.?s\.|bsc|beng|btech|hnd|"
+                   r"higher national diploma|undergraduate degree|university degree)\b", re.I)),
+)
+_YEARS_FILLER = {'years', 'year', 'yrs', 'experience', 'minimum', 'least', 'plus', 'professional', 'relevant',
+                 'work', 'working', 'hands', 'on', 'proven', 'industry', 'demonstrated', 'over', 'more'}
+_DEGREE_FILLER = {'degree', 'bachelor', "bachelor's", 'bachelors', 'master', "master's", 'masters', 'equivalent',
+                  'related', 'field', 'similar', 'discipline', 'relevant', 'university', 'phd', 'or', 'bsc', 'msc',
+                  'ba', 'bs', 'ms', 'technical', 'quantitative', 'preferred', 'required'}
+
+
+def _degree_level(text) -> int:
+    return max((level for level, pattern in _DEGREE_LEVELS if pattern.search(str(text or ''))), default=0)
+
+
+def _field_matches(phrase, line, filler) -> bool:
+    """The requirement names no field, says "related field", or the line shares a field word."""
+    words = {w for w in _content(phrase) if not w.isdigit()} - filler
+    if not words or re.search(r'\b(related|equivalent|similar)\b', phrase, re.I):
+        return True
+    return bool(words & _tokens(line))
+
+
+def _equivalent_evidence(phrase, resume_text) -> str:
+    """A resume line that meets the requirement by a recognised equivalence, or ''."""
+    lines = [line.strip() for line in str(resume_text or '').splitlines() if line.strip()]
+    needed = _YEARS.search(phrase)
+    if needed:
+        for line in lines:
+            if any(int(y) >= int(needed.group(1)) for y in _YEARS.findall(line)) and _field_matches(phrase, line, _YEARS_FILLER):
+                return line
+        return ''
+    level = _degree_level(phrase)
+    if level or re.search(r'\bdegree\b', phrase, re.I):
+        level = level or 1
+        for line in lines:
+            if _degree_level(line) >= level and _field_matches(phrase, line, _DEGREE_FILLER):
+                return line
+    return ''
 
 
 def score_requirements(resume_text, job_description, requirements):
@@ -388,10 +555,14 @@ def score_requirements(resume_text, job_description, requirements):
             continue
         seen.add(key)
         required = item.get('priority') != 'preferred'
-        matched = contains(resume_text, phrase)
+        evidence = next((line.strip() for line in resume_text.splitlines() if contains(line, phrase)), '')
+        match = 'exact' if contains(resume_text, phrase) else None
+        if not match:
+            evidence = _equivalent_evidence(phrase, resume_text)
+            match = 'equivalent' if evidence else None
         details.append({'requirement': phrase, 'priority': 'required' if required else 'preferred',
-                        'matched': matched, 'weight': 2 if required else 1,
-                        'evidence': next((line.strip() for line in resume_text.splitlines() if contains(line, phrase)), '')[:500]})
+                        'matched': bool(match), 'match': match, 'weight': 2 if required else 1,
+                        'evidence': evidence[:500]})
     if not details:
         raise ValueError('No verifiable job requirements could be extracted.')
     weight = sum(d['weight'] for d in details)
@@ -399,7 +570,13 @@ def score_requirements(resume_text, job_description, requirements):
     score = round(100 * sum(d['weight'] for d in matched) / weight, 1)
     return {'overall_score': score, 'keywords_matched': len(matched), 'keywords_missing': len(details)-len(matched),
             'total_keywords': len(details), 'missing_list': [d['requirement'] for d in details if not d['matched']],
-            'requirements': details, 'breakdown': {},
-            'scoring_method': 'Weighted requirement phrase coverage v1: required=2, preferred=1. Exact phrase evidence; paraphrases may be missed.',
+            'requirements': details,
+            'breakdown': {'exact': sum(1 for d in details if d['match'] == 'exact'),
+                          'equivalent': sum(1 for d in details if d['match'] == 'equivalent'),
+                          'missing': len(details) - len(matched)},
+            'scoring_method': ('Weighted requirement coverage v2: required=2, preferred=1. A requirement counts when the '
+                               'resume states it (exact) or meets it by a recognised equivalent (e.g. 7 years for '
+                               '"5+ years", an MSc for a bachelor\'s degree, B.Eng/B.Sc/HND for a bachelor\'s); '
+                               'other paraphrases may be missed.'),
             'score_notice': 'Baalebos assessment of documented coverage, not an employer ATS score or interview guarantee.',
             'suggestions': ['Confirm relevant missing qualifications before adding them.', 'Use only achievements and metrics you can substantiate.']}

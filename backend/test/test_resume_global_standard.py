@@ -330,7 +330,8 @@ def test_upload_confirm_regenerate_and_download_flow(client, db, pipeline):
     task_id = res.json()['task_id']
     assert result['task_id'] == task_id and result['suggested_skills'] == ['Terraform']
     assert result['document']['page_size'] == 'A4' and result['document']['region'] == 'NG'
-    assert result['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 0}
+    assert result['rewrite_guard'] == {'summary_reverted': False, 'roles_reverted': 0,
+                                                   'bullets_reverted': 0, 'reverted': []}
     assert result['document']['font'] in ('Carlito', 'DejaVuSans')
     record = db.query(Resume).one()
     assert 'Terraform' not in pdf_text(record.content)

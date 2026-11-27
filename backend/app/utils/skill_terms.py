@@ -99,6 +99,58 @@ Tools & Practices | Jira |
 Tools & Practices | SRE | site reliability, site reliability engineering
 Tools & Practices | Incident Response | incident management, on-call
 Tools & Practices | Automation | automated, automate, automating, automations
+Data & ML | Snowflake |
+Data & ML | BigQuery | google bigquery
+Data & ML | dbt |
+Data & ML | Looker |
+Data & ML | Microsoft Excel | !Excel, advanced excel, ms excel
+Data & ML | SPSS |
+Data & ML | Stata |
+Project & Product Management | Confluence |
+Project & Product Management | Asana |
+Project & Product Management | Trello |
+Project & Product Management | Figma |
+Project & Product Management | PMP | project management professional
+Project & Product Management | PRINCE2 | prince 2
+Project & Product Management | Certified ScrumMaster | certified scrum master
+Project & Product Management | Kanban |
+Project & Product Management | OKRs | okr, objectives and key results
+Finance & Accounting | IFRS | international financial reporting standards
+Finance & Accounting | GAAP | us gaap, generally accepted accounting principles
+Finance & Accounting | SAP | !SAP S/4HANA, sap erp
+Finance & Accounting | QuickBooks |
+Finance & Accounting | Xero |
+Finance & Accounting | ACCA |
+Finance & Accounting | ICAN |
+Finance & Accounting | CPA | certified public accountant
+Finance & Accounting | CFA | chartered financial analyst
+Finance & Accounting | Financial Modeling | financial modelling
+Finance & Accounting | Bloomberg Terminal |
+Healthcare | EHR | emr, electronic health records, electronic medical records, electronic health record
+Healthcare | Epic EHR | !Epic Systems
+Healthcare | Cerner |
+Healthcare | HIPAA |
+Healthcare | BLS | basic life support
+Healthcare | ACLS | advanced cardiovascular life support
+Healthcare | ICD-10 | icd10
+Sales & Marketing | Salesforce | sfdc
+Sales & Marketing | HubSpot |
+Sales & Marketing | Google Analytics | ga4
+Sales & Marketing | SEO | search engine optimisation, search engine optimization
+Sales & Marketing | SEM | search engine marketing
+Sales & Marketing | Google Ads | adwords
+Sales & Marketing | Meta Ads | facebook ads
+Sales & Marketing | Mailchimp |
+Sales & Marketing | CRM | customer relationship management
+Operations & HR | Workday HCM | !Workday
+Operations & HR | SAP SuccessFactors | successfactors
+Operations & HR | BambooHR |
+Operations & HR | Six Sigma | lean six sigma
+Operations & HR | ISO 9001 | iso9001
+Operations & HR | CIPD |
+Operations & HR | SHRM |
+Operations & HR | ITIL |
+Compliance | GDPR |
 """
 
 SKILL_CATEGORIES: dict[str, str] = {}
