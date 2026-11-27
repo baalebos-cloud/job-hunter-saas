@@ -1,8 +1,13 @@
 name: 🚀 Baalebos AI Production Pipeline
 
+# Production runs on Railway (API, migrations as pre-deploy) and Vercel (dashboard),
+# both deployed from main by their own integrations. This AWS ECR/EC2 pipeline is
+# retired: it ran on every push and failed at the first step because the stored
+# AWS access key is no longer valid (since 22 July 2026). It now runs only when
+# started by hand from the Actions tab; to use it again, provide valid AWS
+# credentials (preferably an OIDC role) and an EC2 host first.
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   ECR_REGISTRY_URL: 251561352331.dkr.ecr.us-east-1.amazonaws.com
