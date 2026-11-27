@@ -30,6 +30,7 @@ import ProfilePage from './components/ProfilePage'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 import TeamJoin from './components/team/TeamJoin'
+import StaffInvite from './components/team/StaffInvite'
 import { captureFirstTouch } from './lib/attribution'
 import TeamSettings from './components/team/TeamSettings'
 import ApiKeys from './components/developers/ApiKeys'
@@ -541,6 +542,7 @@ function App() {
         <Route path="/verify-email"    element={<VerifyEmail />} />
         <Route path="/unsubscribe"     element={<UnsubscribePage />} />
         <Route path="/team/join"       element={<TeamJoin />} />
+        <Route path="/staff-invite"    element={<StaffInvite />} />
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/signup"       element={<HRSignup />} />
         <Route path="/hr/verify"       element={<VerifyEmail />} />

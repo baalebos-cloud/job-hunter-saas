@@ -32,11 +32,12 @@ PERMISSIONS = {
     'campaigns:read': 'Campaign results: sign-ups by source and partner link clicks (counts only)',
     'content:read': 'Job insights and ready-to-copy social posts built from live jobs',
     'support:manage': 'Read and answer Help & support requests and Slack requests (contains personal data)',
+    'legal:manage': 'Edit and publish the legal documents: Terms, Privacy, Cookie, Refund and Acceptable Use',
 }
 
 # Any of these opens the Owner console; each tab still checks its own permission.
 CONSOLE_PERMISSIONS = ('admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read',
-                       'support:manage', 'users:manage_roles')
+                       'support:manage', 'users:manage_roles', 'legal:manage')
 
 DEFAULT_MATRIX = {
     'super_admin': ('Full platform administration', sorted(PERMISSIONS)),
@@ -52,6 +53,8 @@ DEFAULT_MATRIX = {
                          'reports:read', 'metrics:read']),
     'social_media_manager': ('Social media: content insights and campaign results (no personal data)',
                              ['analytics:read', 'campaigns:read', 'content:read']),
+    'legal_counsel': ('Legal: policies, data-protection requests and the audit trail',
+                      ['legal:manage', 'privacy:manage', 'audit:read', 'users:read']),
 }
 ROLES = tuple(DEFAULT_MATRIX)
 # super_admin must always be able to administer roles (no lock-out).
