@@ -22,6 +22,8 @@ from backend.app.routes import hr_auth as hr_auth_router
 from backend.app.routes import profile as profile_router
 from backend.app.routes import automation as automation_router
 from backend.app.routes import rbac as rbac_router
+from backend.app.routes import legal as legal_router
+from backend.app.routes import staff_invites as staff_invites_router
 from backend.app.routes import privacy as privacy_router
 from backend.app.routes import support as support_router
 from backend.app.routes import team as team_router
@@ -302,6 +304,9 @@ app.include_router(profile_router.router,  prefix="/api/v1/profile",   tags=["Pr
 app.include_router(automation_router.router, prefix="/api/v1/automation", tags=["Automation"])
 app.include_router(automation_router.alerts_router, prefix="/api/v1/alerts", tags=["Job alerts"])
 app.include_router(rbac_router.router, prefix="/api/v1/rbac", tags=["RBAC"])
+app.include_router(legal_router.router, prefix="/api/v1/legal", tags=["Legal"])
+app.include_router(legal_router.console_router, prefix="/api/v1/console/legal", tags=["Legal console"])
+app.include_router(staff_invites_router.router, prefix="/api/v1/staff-invites", tags=["Staff invitations"])
 app.include_router(privacy_router.router, prefix="/api/v1/privacy", tags=["Privacy"])
 app.include_router(governance_router.router, prefix="/api/v1/governance", tags=["Governance"])
 app.include_router(support_router.router, prefix="/api/v1/support", tags=["Support"])

@@ -235,11 +235,16 @@ def test_rbac_permission_boundaries(client, db):
     assert client.put(f'/api/v1/rbac/users/{target}/role', json={'role': 'viewer'}, headers=bearer('auditor@example.com')).status_code == 403
 
 
-def test_role_assignment_takes_effect_and_revokes_tokens(client, db):
+def test_role_assignment_takes_effect_on_acceptance_and_revokes_tokens(client, db, monkeypatch):
+    links = []
+    monkeypatch.setattr('backend.app.services.staff_invitations.send', lambda *a: links.append(a[-1]) or True)
     target = user_id(db, 'user@example.com')
     old = bearer('user@example.com')
     res = client.put(f'/api/v1/rbac/users/{target}/role', json={'role': 'compliance_officer'}, headers=bearer('admin@example.com'))
-    assert res.status_code == 200 and res.json()['role'] == 'compliance_officer'
+    assert res.status_code == 200 and res.json()['status'] == 'invited' and res.json()['role'] is None
+    assert client.get('/api/v1/auth/me', headers=old).json()['role'] is None          # nothing granted yet
+    assert client.post('/api/v1/staff-invites/accept', json={'token': links[0], 'confidentiality': True},
+                       headers=old).status_code == 200
     assert client.get('/api/v1/auth/me', headers=old).status_code == 401  # token_version bumped
     me = client.get('/api/v1/auth/me', headers=bearer('user@example.com', tv=1)).json()
     assert me['role'] == 'compliance_officer' and 'privacy:manage' in me['permissions']

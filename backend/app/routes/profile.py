@@ -91,6 +91,9 @@ def _serialize_profile(user: User) -> dict:
         "about":               user.about,
         "resume_url":          user.resume_url,
         "resume_filename":     user.resume_filename,
+        "career_tracks":       user.career_tracks or ([user.career_track] if user.career_track else []),
+        "work_types":          user.work_types or [],
+        "work_countries":      user.work_countries or [],
         "notice_period_days":  user.notice_period_days,
         "city":                user.city,
         "timezone":            user.timezone,
@@ -228,6 +231,113 @@ def get_profile_photo(token: str, db: Session = Depends(get_db)):
     return Response(photo.content, media_type=photo.content_type,
                     headers={"Cache-Control": "public, max-age=31536000, immutable",
                              "X-Content-Type-Options": "nosniff"})
+
+
+# ── Resume kept on the profile, and "fill my profile from it" ─────────────────
+def _resume_meta(record) -> dict | None:
+    if record is None:
+        return None
+    return {"filename": record.filename, "size_bytes": record.size_bytes,
+            "uploaded_at": record.uploaded_at.isoformat() + "Z",
+            "read_at": record.extracted_at.isoformat() + "Z" if record.extracted_at else None}
+
+
+def _profile_resume(db, user):
+    from backend.app.models.user import ProfileResume
+    return db.get(ProfileResume, user.id)
+
+
+@router.get("/resume")
+def get_profile_resume(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return {"resume": _resume_meta(_profile_resume(db, current_user))}
+
+
+@router.post("/resume")
+async def upload_profile_resume(file: UploadFile = File(...), current_user: User = Depends(get_current_user),
+                                db: Session = Depends(get_db)):
+    """Keep one resume on the profile (PDF or Word, up to 10 MB); replaces the previous one."""
+    from fastapi.concurrency import run_in_threadpool
+    from backend.app.models.user import ProfileResume
+    from backend.app.utils.upload_validation import MAX_UPLOAD_BYTES, UploadRejected, validate_upload
+    filename = os.path.basename(file.filename or "resume.pdf")[:255]
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        await run_in_threadpool(validate_upload, filename, content)
+    except UploadRejected as exc:
+        raise HTTPException(400, str(exc)) from exc
+    record = _profile_resume(db, current_user) or ProfileResume(user_id=current_user.id)
+    record.filename, record.content, record.size_bytes = filename, content, len(content)
+    record.uploaded_at, record.extracted, record.extracted_at = datetime.utcnow(), None, None
+    db.add(record)
+    db.commit()
+    return {"resume": _resume_meta(record)}
+
+
+@router.get("/resume/file")
+def download_profile_resume(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from urllib.parse import quote
+    record = _profile_resume(db, current_user)
+    if record is None:
+        raise HTTPException(404, "No resume on your profile.")
+    kind = ("application/pdf" if record.filename.lower().endswith(".pdf")
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    return Response(record.content, media_type=kind, headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(record.filename)}",
+        "Cache-Control": "private, no-store"})
+
+
+@router.delete("/resume")
+def delete_profile_resume(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    record = _profile_resume(db, current_user)
+    if record is not None:
+        db.delete(record)
+        db.commit()
+    return {"resume": None}
+
+
+@router.post("/resume/read")
+def read_profile_resume(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Read the profile resume and list what it would add. Does not use a resume scan."""
+    from backend.app.core.rate_limit import hit
+    from backend.app.services import profile_autofill
+    record = _profile_resume(db, current_user)
+    if record is None:
+        raise HTTPException(404, "Upload your resume first.")
+    if record.extracted is None:
+        allowed, retry = hit(f"autofill:user:{current_user.id}", profile_autofill.READS_PER_DAY, 86400)
+        if not allowed:
+            raise HTTPException(429, f"Your resume can be read {profile_autofill.READS_PER_DAY} times a day. "
+                                     f"Try again in {max(1, retry // 3600)} hours, or fill your profile in by hand.")
+        try:
+            found = profile_autofill.extract(record.content, record.filename)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, "Your resume could not be read right now. Please retry in a few minutes.") from exc
+        profile_autofill.stamp(record, found)
+        db.commit()
+    rows = profile_autofill.review_rows(current_user, record.extracted)
+    return {"filename": record.filename, "rows": rows,
+            "found": sum(r["status"] in ("new", "keep", "same") for r in rows),
+            "missing": sum(r["status"] == "missing" for r in rows)}
+
+
+class AutofillApply(BaseModel):
+    keys: List[str]
+
+
+@router.post("/resume/apply")
+def apply_profile_resume(payload: AutofillApply, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    """Save the ticked items, using the server's own copy of what the resume says."""
+    from backend.app.services import profile_autofill
+    record = _profile_resume(db, current_user)
+    if record is None or record.extracted is None:
+        raise HTTPException(409, "Read your resume first.")
+    applied = profile_autofill.apply(db, current_user, record.extracted, payload.keys)
+    db.commit()
+    db.refresh(current_user)
+    return {"applied": applied, "profile": _serialize_profile(current_user)}
 
 
 # ── POST /profile/resume-link ─────────────────────────────────────────────────

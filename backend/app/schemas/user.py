@@ -12,6 +12,20 @@ def _tidy(value: Optional[str], limit: int) -> Optional[str]:
     return value or None
 
 
+def _tidy_list(values, limit: int, length: int, what: str):
+    """Trim, drop blanks and repeats (any letter case), keep order; at most ``limit``."""
+    if not values:
+        return None
+    out, seen = [], set()
+    for value in values:
+        text = _tidy(value, length)
+        if text and text.lower() not in seen:
+            seen.add(text.lower()); out.append(text)
+    if len(out) > limit:
+        raise ValueError(f'Choose up to {limit} {what}.')
+    return out or None
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
@@ -26,6 +40,31 @@ class UserCreate(BaseModel):
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
     referrer: Optional[str] = None
+    # Several choices at sign-up. The first track becomes career_track.
+    career_tracks: Optional[list[str]] = None      # up to 3
+    work_types: Optional[list[str]] = None         # remote | hybrid | onsite
+    work_countries: Optional[list[str]] = None     # up to 5 countries open to working in
+
+    @field_validator('career_tracks')
+    @classmethod
+    def _tracks(cls, value):
+        return _tidy_list(value, 3, 80, 'career tracks')
+
+    @field_validator('work_countries')
+    @classmethod
+    def _countries(cls, value):
+        return _tidy_list(value, 5, 60, 'countries')
+
+    @field_validator('work_types')
+    @classmethod
+    def _work_types(cls, value):
+        if not value:
+            return None
+        allowed = ('remote', 'hybrid', 'onsite')
+        picked = [w for w in allowed if w in {str(v).strip().lower() for v in value}]
+        if len(picked) != len({str(v).strip().lower() for v in value}):
+            raise ValueError('Work type must be remote, hybrid or onsite.')
+        return picked
 
     # Career track is typed freely (suggestions are offered); country comes from the list.
     @field_validator('career_track')

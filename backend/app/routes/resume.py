@@ -96,12 +96,23 @@ def _in_flight(db, user_id) -> int:
 
 
 @router.post('/upload')
-async def upload_resume(file: UploadFile=File(...), job_description: str=Form(...), job_title: str=Form(...),
+async def upload_resume(file: Optional[UploadFile]=File(None), job_description: str=Form(...), job_title: str=Form(...),
                         region: Optional[str]=Form(None), job_id: Optional[int]=Form(None),
+                        use_profile_resume: bool=Form(False),
                         db: Session=Depends(get_db), current_user=Depends(require_scan_quota)):
     from backend.app.utils.upload_validation import MAX_UPLOAD_BYTES, UploadRejected, validate_upload
-    filename = file.filename or ''
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if use_profile_resume:
+        # The resume kept on the profile: no need to upload it again for every job.
+        from backend.app.models.user import ProfileResume
+        kept = db.get(ProfileResume, current_user.id)
+        if kept is None:
+            raise HTTPException(400, 'There is no resume on your profile. Upload one here or on your profile.')
+        filename, content = kept.filename, kept.content
+    elif file is None:
+        raise HTTPException(400, 'Add your resume (PDF or Word).')
+    else:
+        filename = file.filename or ''
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
     try:
         # Magic bytes, page cap and zip-bomb checks before any parser runs.
         await run_in_threadpool(validate_upload, filename, content)

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import axios from 'axios'
-import SEO from './components/SEO'
 
 import DashboardLayout from './components/layout/DashboardLayout'
 import GovernanceDashboard from './components/governance/GovernanceDashboard'
@@ -30,6 +29,11 @@ import ProfilePage from './components/ProfilePage'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
 import TeamJoin from './components/team/TeamJoin'
+import StaffInvite from './components/team/StaffInvite'
+import AboutPage from './components/site/AboutPage'
+import ContactPage from './components/site/ContactPage'
+import LegalPage from './components/site/LegalPage'
+import LandingPage from './components/site/LandingPage'
 import { captureFirstTouch } from './lib/attribution'
 import TeamSettings from './components/team/TeamSettings'
 import ApiKeys from './components/developers/ApiKeys'
@@ -70,7 +74,7 @@ function RequireRole({ role, children }) {
   )
 
   const GOVERNANCE = ['metrics:read', 'audit:read', 'users:read', 'reports:read']
-  const CONSOLE = ['admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read', 'support:manage', 'users:manage_roles']
+  const CONSOLE = ['admin:access', 'analytics:read', 'growth:read', 'campaigns:read', 'content:read', 'support:manage', 'users:manage_roles', 'legal:manage']
   const hasAccess = role === 'admin' ? (profile?.is_admin || (profile?.permissions || []).some(p => CONSOLE.includes(p)))
     : role === 'governance' ? (profile?.permissions || []).some(p => GOVERNANCE.includes(p))
     : (profile?.is_admin || profile?.is_hr)
@@ -324,135 +328,6 @@ function JobsPage() {
   return <JobBoard onApply={handleApply} />
 }
 
-// ── Landing page (public) ─────────────────────────────────────────────────────
-function LandingPage() {
-  const LinkedInIcon = () => (
-    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-    </svg>
-  )
-  return (
-    <div className="app-canvas min-h-screen" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <SEO path="/" description="AI-powered resume optimizer and job matching for global tech talent. Upload your resume, get an instant ATS score, and get matched to live remote jobs — from Nigeria to Silicon Valley." />
-      <div className="app-canvas-mesh" />
-      <div className="app-canvas-grain" />
-      <nav className="relative z-10 sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
-            <div>
-              <span className="font-black text-white text-base tracking-tight">BAALEBOS CLOUD</span>
-              <span className="hidden md:block text-emerald-400 text-[9px] font-bold uppercase tracking-[0.2em] leading-none">AI Talent Infrastructure</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <a href="/pricing" className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2">Pricing</a>
-            <a href="/login"   className="text-sm font-bold text-slate-400 hover:text-white transition-colors px-4 py-2">Login</a>
-            <a href="/signup"  className="text-sm font-black text-white bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-600/20">Get Started →</a>
-          </div>
-        </div>
-      </nav>
-
-      <section className="relative overflow-hidden z-10">
-        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24">
-          <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
-
-            {/* ── Left: copy + CTAs ── */}
-            <div>
-              <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-2 mb-6">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">AI-assisted application preparation</span>
-              </div>
-              <h1 className="text-5xl md:text-6xl font-black text-white leading-[1.05] mb-6"
-                style={{ fontFamily: "'Playfair Display', serif" }}>
-                Tailor Your Resume<br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400">to Every Tech Job</span><br/>
-                You Apply For.
-              </h1>
-              <p className="text-slate-400 text-lg leading-relaxed mb-8 max-w-xl">
-                Upload your resume, get an instant ATS score, and receive an AI-optimized PDF tailored to the job description using your documented experience — from Nigeria to Silicon Valley.
-              </p>
-              <div className="flex flex-wrap gap-4 mb-12">
-                <a href="/signup" className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-600/25 text-sm uppercase tracking-widest active:scale-[0.98]">
-                  Start Free →
-                </a>
-                <a href="/pricing" className="inline-flex items-center gap-2 border-2 border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-white font-bold px-8 py-4 rounded-2xl transition-all text-sm">
-                  View Pricing
-                </a>
-              </div>
-              <div className="flex flex-wrap gap-8">
-                {[['Tailored','Resume preparation'],['Tracked','Applications'],['Clear','Requirement evidence'],['Free','Starter plan']].map(([v,l]) => (
-                  <div key={l}><div className="text-2xl font-black text-white">{v}</div><div className="text-xs text-slate-500 font-semibold mt-0.5">{l}</div></div>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Right: live visual — fills the dead space, doubles as social proof ── */}
-            <div className="relative hidden lg:block">
-              <div className="absolute -inset-8 bg-gradient-to-br from-emerald-500/10 via-transparent to-blue-500/10 rounded-[3rem] blur-2xl" />
-
-              {/* ATS score card */}
-              <div className="relative bg-slate-900/90 backdrop-blur border border-slate-800 rounded-3xl p-6 shadow-2xl mb-4 ml-auto max-w-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="w-3 h-3 rounded-full bg-rose-500"/>
-                  <span className="w-3 h-3 rounded-full bg-amber-500"/>
-                  <span className="w-3 h-3 rounded-full bg-emerald-500"/>
-                  <span className="text-slate-500 text-xs font-mono ml-2">ats_result.json</span>
-                  <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-violet-300 bg-violet-500/15 rounded px-1.5 py-0.5">Example</span>
-                </div>
-                <div className="text-xs font-mono space-y-1">
-                  <div className="text-slate-400">{'{'}</div>
-                  <div className="pl-4"><span className="text-blue-400">"ats_score"</span><span className="text-slate-500">: </span><span className="text-emerald-400">82</span><span className="text-slate-500">,</span></div>
-                  <div className="pl-4"><span className="text-blue-400">"keywords_matched"</span><span className="text-slate-500">: </span><span className="text-emerald-400">12/15</span><span className="text-slate-500">,</span></div>
-                  <div className="pl-4"><span className="text-blue-400">"status"</span><span className="text-slate-500">: </span><span className="text-amber-400">"review_required"</span></div>
-                  <div className="text-slate-400">{'}'}</div>
-                </div>
-              </div>
-
-              {/* Match engine card */}
-              <div className="relative bg-slate-900/90 backdrop-blur border border-blue-500/20 rounded-3xl p-6 shadow-2xl mr-8 max-w-xs">
-                <div className="text-slate-500 text-xs font-mono mb-3 flex items-center gap-3">// Match engine <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-violet-300 bg-violet-500/15 rounded px-1.5 py-0.5">Example</span></div>
-                <div className="text-xs font-mono space-y-1 mb-4">
-                  <div><span className="text-purple-400">const</span> <span className="text-blue-300">match</span> <span className="text-slate-500">= </span><span className="text-emerald-400">86</span><span className="text-slate-500">%</span></div>
-                  <div><span className="text-purple-400">const</span> <span className="text-blue-300">role</span> <span className="text-slate-500">= </span><span className="text-amber-400">"DevOps Eng."</span></div>
-                </div>
-                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full w-[86%] bg-gradient-to-r from-emerald-500 to-blue-400 rounded-full" />
-                </div>
-              </div>
-
-              {/* Floating badge */}
-              <div className="absolute -top-6 -right-4 bg-emerald-500 text-white text-xs font-black px-4 py-2 rounded-full shadow-xl shadow-emerald-500/30 rotate-3">
-                Example results
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      <footer className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 py-12 border-t border-slate-800 mt-20 flex flex-col md:flex-row items-center justify-between gap-6">
-        <p className="text-slate-600 text-sm">© {new Date().getFullYear()} Baalebos Cloud · AI Talent Infrastructure</p>
-        <div className="flex gap-4">
-          <a href="https://www.linkedin.com/in/oluwadare-jayeola-6874591b4/" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#004182] text-white font-bold text-sm transition-all">
-            <LinkedInIcon /> LinkedIn
-          </a>
-          <a href="https://github.com/baalebos-cloud" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm border border-slate-700 transition-all">
-            GitHub
-          </a>
-        </div>
-      </footer>
-    </div>
-  )
-}
-
-
 // ── Applications page (/applications) ────────────────────────────────────────
 function ApplicationsPage() {
   const [apps, setApps]     = useState([])
@@ -541,6 +416,10 @@ function App() {
         <Route path="/verify-email"    element={<VerifyEmail />} />
         <Route path="/unsubscribe"     element={<UnsubscribePage />} />
         <Route path="/team/join"       element={<TeamJoin />} />
+        <Route path="/staff-invite"    element={<StaffInvite />} />
+        <Route path="/about"           element={<AboutPage />} />
+        <Route path="/contact"         element={<ContactPage />} />
+        <Route path="/legal/:slug"     element={<LegalPage />} />
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/signup"       element={<HRSignup />} />
         <Route path="/hr/verify"       element={<VerifyEmail />} />
