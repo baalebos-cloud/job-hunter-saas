@@ -264,6 +264,16 @@ def _migrate(url):
     return subprocess.run([sys.executable, '-m', 'backend.scripts.migrate'], cwd=ROOT, env=env, capture_output=True, text=True)
 
 
+def test_revision_ids_fit_alembic_version_column():
+    # PostgreSQL stores the id in alembic_version.version_num VARCHAR(32); SQLite does not
+    # enforce the length, so a longer id passes locally and fails on deploy.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    too_long = [r.revision for r in ScriptDirectory.from_config(Config(str(ROOT / 'backend/alembic.ini'))).walk_revisions()
+                if len(r.revision) > 32]
+    assert not too_long, too_long
+
+
 def test_migration_bootstrap_on_fresh_and_legacy_databases(tmp_path):
     from alembic.config import Config
     from alembic.script import ScriptDirectory
