@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types -- the project does not use the prop-types package */
 import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, MailCheck, ShieldCheck, UserCog } from 'lucide-react';
+import { Clock, KeyRound, MailCheck, RotateCw, ShieldCheck, UserCog, X } from 'lucide-react';
 import { adminGet, ago, message } from '../adminApi';
 import axios from 'axios';
 import { Banner, Button, Chip, SearchInput, SectionHeader, Spinner, card } from '../ui';
@@ -8,7 +8,7 @@ import { Banner, Button, Chip, SearchInput, SectionHeader, Spinner, card } from 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 const LABELS = {
-  super_admin: 'Super admin', product_manager: 'Product manager', social_media_manager: 'Social media manager',
+  super_admin: 'Super admin', product_manager: 'Product manager', social_media_manager: 'Social media manager', legal_counsel: 'Legal counsel',
   security_auditor: 'Security auditor', engineering_lead: 'Engineering lead', compliance_officer: 'Compliance officer', viewer: 'Viewer',
 };
 const label = (role) => LABELS[role] || role;
@@ -20,6 +20,10 @@ export default function AccessTab({ notify, confirm }) {
   const [people, setPeople] = useState(null);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState({});
+  const [invites, setInvites] = useState([]);
+  const loadInvites = useCallback(() => adminGet('/rbac/invitations').then(setInvites).catch(() => {}), []);
+  useEffect(() => { loadInvites(); }, [loadInvites]);
+  const pendingFor = (id) => invites.find(i => i.user_id === id);
 
   const search = useCallback(async (query) => {
     try { setPeople(await adminGet('/rbac/users', { q: query || undefined })); setError(''); }
@@ -33,20 +37,30 @@ export default function AccessTab({ notify, confirm }) {
   const assign = (person) => {
     const role = draft[person.id] ?? person.role ?? '';
     confirm({
-      title: role ? `Make ${person.full_name || person.email} a ${label(role)}?` : `Remove ${person.email}'s role?`,
-      body: role ? `${matrix.roles[role]?.description || ''}. They will be signed out everywhere and get the new access at their next sign-in. We email them right away with an overview of the role and what to do next.`
-        : 'They will lose console access and be signed out everywhere. We email them to let them know.',
-      confirmLabel: role ? 'Assign role' : 'Remove role',
+      title: role ? `Invite ${person.full_name || person.email} to be a ${label(role)}?` : `Remove ${person.email}'s role?`,
+      body: role ? `${matrix.roles[role]?.description || ''}. We email them an invitation with an overview of the role. Nothing changes until they accept, signed in to this account (the link expires in 7 days). Staff pages then open only after two-step verification is on.`
+        : 'They lose console access straight away and are signed out everywhere. We email them to let them know.',
+      confirmLabel: role ? 'Send invitation' : 'Remove role',
       tone: role ? undefined : 'red',
       errorText: (err) => message(err, 'The role could not be changed.'),
       onConfirm: async () => {
         await axios.put(`${API}/rbac/users/${person.id}/role`, { role: role || null }, { headers: headers() });
-        notify(role ? `${person.email} is now a ${label(role)}. We emailed them their role overview and next steps.`
+        notify(role ? `Invitation sent to ${person.email}. The ${label(role)} role starts when they accept.`
           : `${person.email} no longer has a staff role. We emailed them.`);
-        setDraft(d => ({ ...d, [person.id]: undefined })); search(q);
+        setDraft(d => ({ ...d, [person.id]: undefined })); search(q); loadInvites();
       },
     });
   };
+
+  const resend = async (i) => {
+    try { await axios.post(`${API}/rbac/invitations/${i.id}/resend`, {}, { headers: headers() }); notify(`A new invitation link was sent to ${i.email}.`); loadInvites(); }
+    catch (err) { setError(message(err, 'The invitation could not be resent.')); }
+  };
+  const cancel = (i) => confirm({
+    title: `Cancel the invitation for ${i.email}?`, body: 'The link stops working straight away. You can invite them again later.',
+    confirmLabel: 'Cancel invitation', tone: 'red', errorText: (err) => message(err, 'The invitation could not be cancelled.'),
+    onConfirm: async () => { await axios.delete(`${API}/rbac/invitations/${i.id}`, { headers: headers() }); notify(`Invitation for ${i.email} cancelled.`); loadInvites(); },
+  });
 
   if (!matrix) return error ? <Banner>{error}</Banner> : <Spinner />;
   const roles = Object.keys(matrix.roles);
@@ -69,6 +83,7 @@ export default function AccessTab({ notify, confirm }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-slate-900">{p.full_name || p.email.split('@')[0]}</span>
                       {p.role && <Chip tone="violet">{label(p.role)}</Chip>}
+                      {pendingFor(p.id) && <Chip tone="amber"><Clock size={11} />Invited: {label(pendingFor(p.id).role)}</Chip>}
                       {p.is_employer && <Chip tone="blue">Employer</Chip>}
                     </div>
                     <div className="text-xs text-slate-500 truncate">{p.email}{p.career_track ? ` · ${p.career_track}` : ''}</div>
@@ -86,20 +101,37 @@ export default function AccessTab({ notify, confirm }) {
                       <option value="">No staff role</option>
                       {roles.map(r => <option key={r} value={r}>{label(r)}</option>)}
                     </select>
-                    <Button variant="primary" size="sm" disabled={!changed} onClick={() => assign(p)}>Save</Button>
+                    <Button variant="primary" size="sm" disabled={!changed} onClick={() => assign(p)}>{value ? 'Invite' : 'Save'}</Button>
                   </div>
                 </li>);
             })}
           </ul>)}
+        {invites.length > 0 && (
+          <div className="border-t border-slate-100 px-5 py-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Pending invitations</h3>
+            <ul className="space-y-2 text-sm">
+              {invites.map(i => (
+                <li key={i.id} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-slate-900">{i.full_name || i.email}</span>
+                  <Chip tone="violet">{label(i.role)}</Chip>
+                  <span className={`text-xs ${i.status === 'expired' ? 'text-rose-700' : 'text-slate-500'}`}>
+                    {i.status === 'expired' ? 'Expired unanswered' : `Expires ${new Date(i.expires_at).toLocaleDateString()}`}</span>
+                  <span className="ml-auto flex gap-1">
+                    <Button size="sm" icon={RotateCw} onClick={() => resend(i)}>Resend</Button>
+                    <Button size="sm" icon={X} onClick={() => cancel(i)}>Cancel</Button>
+                  </span>
+                </li>))}
+            </ul>
+          </div>)}
       </section>
       <aside className={`${card} p-5 space-y-3`} aria-label="Roles">
         <h3 className="font-semibold text-slate-900 flex items-center gap-2"><UserCog size={16} />Roles</h3>
         <ul className="space-y-3 text-sm">
-          {['product_manager', 'social_media_manager', ...roles.filter(r => !['product_manager', 'social_media_manager'].includes(r))]
+          {['product_manager', 'social_media_manager', 'legal_counsel', ...roles.filter(r => !['product_manager', 'social_media_manager', 'legal_counsel'].includes(r))]
             .filter(r => matrix.roles[r]).map(r => (
               <li key={r}><div className="font-medium text-slate-900">{label(r)}</div><div className="text-xs text-slate-500">{matrix.roles[r].description}</div></li>))}
         </ul>
-        <p className="text-xs text-slate-500 flex gap-1.5"><ShieldCheck size={14} className="shrink-0" />Staff must verify their email and turn on two-step verification before the console opens for them.</p>
+        <p className="text-xs text-slate-500 flex gap-1.5"><ShieldCheck size={14} className="shrink-0" />A role starts only when the person accepts the emailed invitation. Staff must also turn on two-step verification before the console opens for them.</p>
       </aside>
     </div>
   );

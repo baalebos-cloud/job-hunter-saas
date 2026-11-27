@@ -75,3 +75,20 @@ class SignupRule(Base):
     note = Column(String(255), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+class StaffInvitation(Base):
+    """A staff role offered to an existing account. The role is granted only when
+    the person accepts through the emailed link (single use, expires); only a
+    SHA-256 hash of the link token is stored."""
+    __tablename__ = "staff_invitations"
+    __table_args__ = (Index("ix_staff_invitations_user_status", "user_id", "status"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(64), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False)
+    status = Column(String(16), nullable=False, default="pending")   # pending|accepted|declined|cancelled
+    invited_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    responded_at = Column(DateTime, nullable=True)
+    confidentiality_agreed = Column(Boolean, nullable=False, default=False)

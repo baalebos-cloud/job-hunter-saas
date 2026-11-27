@@ -13,8 +13,9 @@ export default function Login() {
   const location = useLocation();
   const requestedPath = location.state?.from;
   const pendingInvite = (() => { try { return !!localStorage.getItem('teamInvite'); } catch { return false; } })();
+  const staffInvite = (() => { try { return localStorage.getItem('staffInvite'); } catch { return null; } })();
   const destination = ['/admin', '/hr', '/optimizer', '/resumes', '/jobs', '/applications', '/profile', '/settings', '/referral', '/team/join'].includes(requestedPath)
-    ? requestedPath : (pendingInvite ? '/team/join' : '/');
+    ? requestedPath : staffInvite ? `/staff-invite?token=${encodeURIComponent(staffInvite)}` : (pendingInvite ? '/team/join' : '/');
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

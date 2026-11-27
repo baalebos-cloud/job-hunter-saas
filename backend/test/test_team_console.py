@@ -110,8 +110,10 @@ def test_owner_assigns_roles_after_seeing_the_profile(ctx):
     found = client.get('/api/v1/rbac/users', params={'q': 'seeker'}, headers=auth(OWNER)).json()
     assert found[0]['career_track'] == 'DevOps' and found[0]['two_step'] is False and found[0]['joined']
     user_id = found[0]['id']
-    assert client.put(f'/api/v1/rbac/users/{user_id}/role', json={'role': 'social_media_manager'},
-                      headers=auth(OWNER)).json()['role'] == 'social_media_manager'
+    invited = client.put(f'/api/v1/rbac/users/{user_id}/role', json={'role': 'social_media_manager'}, headers=auth(OWNER)).json()
+    assert invited['status'] == 'invited' and invited['invited_role'] == 'social_media_manager'
+    pending = client.get('/api/v1/rbac/invitations', headers=auth(OWNER)).json()
+    assert [(p['email'], p['role'], p['status']) for p in pending] == [(found[0]['email'], 'social_media_manager', 'pending')]
     matrix = client.get('/api/v1/rbac/matrix', headers=auth(OWNER)).json()['roles']
     assert set(matrix['product_manager']['permissions']) >= {'growth:read', 'support:manage'}
     assert 'support:manage' not in matrix['social_media_manager']['permissions']
@@ -248,7 +250,7 @@ def test_signup_accepts_a_typed_career_track_and_tidies_it(ctx):
     assert len(db.query(User).filter_by(email='long@example.com').one().career_track) == 80
 
 
-def test_assigning_a_role_emails_the_person_with_an_overview_and_next_steps(ctx, monkeypatch):
+def test_assigning_a_role_sends_an_invitation_and_accepting_sends_the_overview(ctx, monkeypatch):
     client, db = ctx
     sent = []
     monkeypatch.setattr('backend.app.utils.email.send_account_message',
@@ -256,27 +258,88 @@ def test_assigning_a_role_emails_the_person_with_an_overview_and_next_steps(ctx,
     person = db.query(User).filter_by(email=NOBODY).one()
     person.full_name = 'Tolu <b>Ade</b>'; db.commit()
     result = client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': 'product_manager'}, headers=auth(OWNER)).json()
-    assert result['notified'] is True
+    assert result['notified'] is True and result['status'] == 'invited'
     (to, subject, body, reply_to), = sent
-    assert to == NOBODY and subject == 'You are now a Product manager on Baalebos' and reply_to == 'support@baalebo.xyz'
-    assert 'Growth: funnel' in body and 'Support and Slack' in body                     # role overview
-    assert 'Sign in again' in body and 'Turn on two-step verification' in body           # next steps (2FA is off)
-    assert '/admin' in body and 'Open Team console' in body
-    assert '<b>Ade</b>' not in body and 'Tolu' in body                                   # names are escaped
+    assert to == NOBODY and subject == 'You are invited to join Baalebos as Product manager' and reply_to == 'support@baalebo.xyz'
+    assert 'Growth: funnel' in body and 'Nothing changes on your account until you accept' in body
+    assert '/staff-invite?token=' in body and '<b>Ade</b>' not in body and 'Tolu' in body
+    token = body.split('/staff-invite?token=')[1].split('"')[0]
 
-    sent.clear()                                                                         # same role again: no email
+    sent.clear()                                        # assigning again while pending replaces the invitation
     assert client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': 'product_manager'},
-                      headers=auth(OWNER)).json()['notified'] is False
-    assert sent == []
-
-    person = db.query(User).filter_by(email=NOBODY).one()
-    person.totp_enabled_at = datetime.utcnow(); db.commit()
-    client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': 'social_media_manager'}, headers=auth(OWNER))
-    (_, subject, body, _), = sent
-    assert subject == 'You are now a Social media manager on Baalebos'
-    assert 'No customer personal data' in body and 'Turn on two-step verification' not in body   # 2FA already on
+                      headers=auth(OWNER)).json()['status'] == 'invited'
+    assert client.get(f'/api/v1/staff-invites/{token}').status_code == 410   # the first link no longer works
+    token = sent[0][2].split('/staff-invite?token=')[1].split('"')[0]
 
     sent.clear()
-    client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': None}, headers=auth(OWNER))
+    assert client.post('/api/v1/staff-invites/accept', json={'token': token, 'confidentiality': True},
+                       headers=auth(NOBODY)).json()['two_step_required'] is True
     (_, subject, body, _), = sent
-    assert subject == 'Your Baalebos staff role was removed' and 'Social media manager' in body
+    assert subject == 'You are now a Product manager on Baalebos'
+    assert 'Sign in again' in body and 'Turn on two-step verification' in body and 'Open Team console' in body
+    assert db.query(User).filter_by(email=NOBODY).one().role == 'product_manager'
+
+
+
+
+# ── Legal counsel and staff invitations ──────────────────────────────────────
+
+def invite(client, db, monkeypatch, role='legal_counsel', email=NOBODY):
+    links = []
+    monkeypatch.setattr('backend.app.services.staff_invitations.send', lambda *a: links.append(a[-1]) or True)
+    person = db.query(User).filter_by(email=email).one()
+    res = client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': role}, headers=auth(OWNER)).json()
+    return person, res, links
+
+
+def test_legal_counsel_role_reaches_only_legal_privacy_and_audit(ctx):
+    client, _ = ctx
+    matrix = client.get('/api/v1/rbac/matrix', headers=auth(OWNER)).json()['roles']
+    assert set(matrix['legal_counsel']['permissions']) == {'legal:manage', 'privacy:manage', 'audit:read', 'users:read'}
+    assert 'legal:manage' in matrix['super_admin']['permissions']
+
+
+def test_invitation_link_details_hide_the_address_and_accept_needs_the_invited_account(ctx, monkeypatch):
+    client, db = ctx
+    person, res, links = invite(client, db, monkeypatch)
+    assert res['status'] == 'invited' and person.role is None
+    details = client.get(f'/api/v1/staff-invites/{links[0]}').json()
+    assert details['label'] == 'Legal counsel' and details['invited_email'].startswith('s') and '***' in details['invited_email']
+    assert 'Legal: edit and publish' in details['can'][0]
+    wrong = client.post('/api/v1/staff-invites/accept', json={'token': links[0], 'confidentiality': True}, headers=auth(PM))
+    assert wrong.status_code == 403 and 'Sign out' in wrong.json()['detail']
+    no_promise = client.post('/api/v1/staff-invites/accept', json={'token': links[0]}, headers=auth(NOBODY))
+    assert no_promise.status_code == 422
+    assert client.post('/api/v1/staff-invites/accept', json={'token': links[0], 'confidentiality': True},
+                       headers=auth(NOBODY)).json()['role'] == 'legal_counsel'
+    assert client.get(f'/api/v1/staff-invites/{links[0]}').status_code == 410     # single use
+    assert client.get('/api/v1/auth/me', headers=auth(NOBODY)).status_code == 401  # signed out: fresh sign-in for new access
+
+
+def test_declined_cancelled_and_expired_invitations_grant_nothing(ctx, monkeypatch):
+    from backend.app.models.security import StaffInvitation
+    client, db = ctx
+    person, _, links = invite(client, db, monkeypatch)
+    assert client.post('/api/v1/staff-invites/decline', json={'token': links[0]}).json()['status'] == 'declined'
+    _, _, links = invite(client, db, monkeypatch)
+    pending = client.get('/api/v1/rbac/invitations', headers=auth(OWNER)).json()
+    assert client.delete(f"/api/v1/rbac/invitations/{pending[0]['id']}", headers=auth(OWNER)).status_code == 200
+    assert client.get(f'/api/v1/staff-invites/{links[0]}').json()['detail'].startswith('This invitation was withdrawn')
+    _, _, links = invite(client, db, monkeypatch)
+    row = db.query(StaffInvitation).filter_by(status='pending').one()
+    row.expires_at = datetime.utcnow() - timedelta(minutes=1); db.commit()
+    assert client.post('/api/v1/staff-invites/accept', json={'token': links[0], 'confidentiality': True},
+                       headers=auth(NOBODY)).status_code == 410
+    assert db.query(User).filter_by(email=NOBODY).one().role is None
+
+
+def test_resend_issues_a_new_link_and_removal_is_immediate(ctx, monkeypatch):
+    client, db = ctx
+    person, _, links = invite(client, db, monkeypatch, role='product_manager')
+    pending = client.get('/api/v1/rbac/invitations', headers=auth(OWNER)).json()
+    assert client.post(f"/api/v1/rbac/invitations/{pending[0]['id']}/resend", headers=auth(OWNER)).status_code == 200
+    assert len(links) == 2 and client.get(f'/api/v1/staff-invites/{links[0]}').status_code == 404
+    client.post('/api/v1/staff-invites/accept', json={'token': links[1], 'confidentiality': True}, headers=auth(NOBODY))
+    assert db.query(User).filter_by(email=NOBODY).one().role == 'product_manager'
+    res = client.put(f'/api/v1/rbac/users/{person.id}/role', json={'role': None}, headers=auth(OWNER)).json()
+    assert res['status'] == 'removed' and db.query(User).filter_by(email=NOBODY).one().role is None

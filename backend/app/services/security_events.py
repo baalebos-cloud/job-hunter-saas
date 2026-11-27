@@ -34,6 +34,10 @@ EVENTS = {
     'admin.password_reset_forced': 'Admin forced a password reset',
     'admin.signup_rule_added': 'Admin added a sign-up rule',
     'admin.signup_rule_removed': 'Admin removed a sign-up rule',
+    'admin.role_invited': 'Admin invited someone to a staff role',
+    'admin.role_invite_cancelled': 'Admin cancelled a staff invitation',
+    'staff.invite_accepted': 'Staff invitation accepted',
+    'staff.invite_declined': 'Staff invitation declined',
     'admin.ip_blocked': 'Admin blocked an IP address',
     'admin.ip_unblocked': 'Admin unblocked an IP address',
     'admin.duplicate_dismissed': 'Admin marked accounts as not duplicates',
@@ -52,7 +56,7 @@ CATEGORIES = {
     'failures': ('login.failed', 'login.blocked', 'login.denied', 'signup.rejected'),
     'signups': ('signup', 'hr.signup', 'signup.rejected'),
     'account': ('password.reset_requested', 'password.reset_completed', 'mfa.enabled', 'mfa.disabled',
-                'mfa.recovery_codes_reset'),
+                'mfa.recovery_codes_reset', 'staff.invite_accepted', 'staff.invite_declined'),
 }
 FAILURE_EVENTS = ('login.failed', 'login.blocked', 'login.denied')
 SUSPICIOUS_FAILURES = 5          # failed sign-ins from one IP within the window

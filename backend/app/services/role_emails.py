@@ -31,6 +31,13 @@ ROLE_GUIDE = {
         'can': ['Overview: product totals and trends', 'Campaigns: sign-ups by tagged link and partner card clicks',
                 'Content: job insights and ready-to-copy posts with tracked links'],
     },
+    'legal_counsel': {
+        'label': 'Legal counsel', 'where': '/admin', 'place': 'Team console',
+        'summary': 'You look after Baalebos legal documents and data-protection requests.',
+        'can': ['Legal: edit and publish the Terms, Privacy, Cookie, Refund and Acceptable Use policies',
+                'Data-protection requests: export or erase a person\'s data', 'Read the audit trail',
+                'Look up user accounts (read only)'],
+    },
     'security_auditor': {
         'label': 'Security auditor', 'where': '/governance', 'place': 'Security & governance',
         'summary': 'Read-only review of security and the audit trail.',
