@@ -188,3 +188,16 @@ def test_outreach_empty_reply_uses_the_plain_template(monkeypatch):
     monkeypatch.setattr(outreach_service, 'OpenAI', lambda **kw: fake)
     monkeypatch.setattr(outreach_service.settings, 'GROQ_API_KEY', 'synthetic-test-key')
     assert 'Ada' in outreach_service.generate_message('DevOps', 'Acme', 'JD', 'Ada', 'resume')
+
+
+def test_a_backup_with_the_same_model_id_is_still_tried(monkeypatch):
+    """OPENROUTER_MODEL may name the same model as GROQ_MODEL; a Groq refusal must still reach OpenRouter."""
+    from openai import NotFoundError
+    calls = []
+    primary = _client([_refused(NotFoundError, 404, 'model_not_found')], calls)
+    backup = _client(['{"ok": 4}'], calls)
+    monkeypatch.setattr(ats_engine, 'get_client', lambda: (primary, 'openai/gpt-oss-20b'))
+    monkeypatch.setattr(ats_engine, 'provider_chain', lambda: [('groq', primary, 'openai/gpt-oss-20b'),
+                                                              ('openrouter', backup, 'openai/gpt-oss-20b')])
+    assert ats_engine._json('Return JSON.') == {'ok': 4}
+    assert calls == ['openai/gpt-oss-20b', 'openai/gpt-oss-20b']
