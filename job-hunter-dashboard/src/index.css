@@ -141,4 +141,9 @@ body:has(.talent-shell) { background-color: #f8fafc; color: #172033; }
 /* Account workspace uses a light document-first surface. */
 .talent-shell { color: #172033; font-family: Inter, Arial, sans-serif; }
 .talent-shell input, .talent-shell textarea, .talent-shell select { background-color: white; color: #172033; }
+/* Sign-in and sign-up pages (light): override the dark defaults above for form fields. */
+body:has(.auth-shell) { background-color: #fbfaf7; color: #0b1324; }
+.auth-shell input, .auth-shell textarea, .auth-shell select { background-color: white; color: #0b1324; }
+.auth-shell input::placeholder, .auth-shell textarea::placeholder { color: #9a968c; }
+.auth-shell input:-webkit-autofill { -webkit-text-fill-color: #0b1324; box-shadow: 0 0 0 1000px white inset; }
 .talent-shell button:focus-visible, .talent-shell a:focus-visible { outline: 2px solid #047857; outline-offset: 3px; }

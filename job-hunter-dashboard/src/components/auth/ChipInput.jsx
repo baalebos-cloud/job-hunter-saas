@@ -31,13 +31,13 @@ export default function ChipInput({ id, values, onChange, suggestions, max, plac
     <div className={className} onClick={() => document.getElementById(id)?.focus()}>
       <div className="flex flex-wrap items-center gap-1.5">
         {values.map(v => (
-          <span key={v} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${chipClass}`}>
+          <span key={v} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] font-medium ${chipClass}`}>
             {v}<button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter(x => x !== v))} className="opacity-70 hover:opacity-100">×</button>
           </span>))}
         <input id={id} list={`${id}-options`} value={text} disabled={full} autoComplete="off" maxLength={80}
           placeholder={full ? `Up to ${max}` : (values.length ? 'Add another' : placeholder)}
           onChange={e => onInput(e.target.value)} onKeyDown={onKeyDown} onBlur={() => text.trim() && add(text)}
-          className="flex-1 min-w-[8rem] bg-transparent outline-none text-sm font-semibold placeholder:text-slate-600 disabled:cursor-not-allowed" />
+          className="flex-1 min-w-[8rem] bg-transparent outline-none text-[15px] placeholder:text-[#9a968c] disabled:cursor-not-allowed" />
       </div>
       <datalist id={`${id}-options`}>{suggestions.map(s => <option key={s} value={s} />)}</datalist>
     </div>

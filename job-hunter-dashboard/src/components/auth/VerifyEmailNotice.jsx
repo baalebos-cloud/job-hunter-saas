@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { errorText } from '../../lib/session';
+import { buttonCls } from './authStyles';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -21,22 +22,20 @@ export default function VerifyEmailNotice({ email, title = 'Check your inbox', i
   };
 
   return (
-    <div className="p-6 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-sm" role="status">
-      <div className="text-3xl mb-3" aria-hidden="true">📬</div>
-      <h2 className="text-lg font-black text-white mb-2">{title}</h2>
-      <p className="text-slate-300 leading-relaxed">
-        {intro || 'We sent a verification link to'} <strong className="text-white [overflow-wrap:anywhere]">{email}</strong>.
+    <div className="rounded-md border border-[#e2ddd2] bg-white p-6 text-[15px]" role="status">
+      <h2 className="text-[19px] font-semibold tracking-tight">{title}</h2>
+      <p className="mt-2 leading-relaxed text-slate-600">
+        {intro || 'We sent a verification link to'} <strong className="font-semibold text-[#0b1324] [overflow-wrap:anywhere]">{email}</strong>.
         {' '}Open it to activate your account, then sign in. Check your spam folder if you don&apos;t see it within a few minutes.
       </p>
-      {note && <p className={`mt-3 font-semibold ${state === 'error' ? 'text-rose-400' : 'text-emerald-400'}`}>{note}</p>}
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button type="button" onClick={resend} disabled={state === 'sending' || state === 'sent'}
-          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-black px-5 py-3 rounded-xl text-xs uppercase tracking-widest">
+      {note && <p className={`mt-3 text-[14px] font-medium ${state === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>{note}</p>}
+      <div className="mt-5 space-y-3">
+        <button type="button" onClick={resend} disabled={state === 'sending' || state === 'sent'} className={buttonCls}>
           {state === 'sending' ? 'Sending…' : state === 'sent' ? 'Link sent' : 'Resend verification email'}
         </button>
         {onBack
-          ? <button type="button" onClick={onBack} className="text-slate-300 hover:text-white font-bold px-3 py-3 text-xs uppercase tracking-widest">Back to sign in</button>
-          : <a href="/login" className="text-slate-300 hover:text-white font-bold px-3 py-3 text-xs uppercase tracking-widest">Go to sign in →</a>}
+          ? <button type="button" onClick={onBack} className="w-full text-[14px] font-semibold text-slate-600 hover:text-slate-900">Back to sign in</button>
+          : <a href="/login" className="block text-center text-[14px] font-semibold text-slate-600 hover:text-slate-900">Go to sign in</a>}
       </div>
     </div>
   );
