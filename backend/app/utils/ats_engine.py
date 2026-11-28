@@ -127,8 +127,9 @@ def _json(prompt, contract=None, client_model=None):
                              getattr(exc, 'status_code', None), getattr(exc, 'code', None))
                 break
         if index == 0 and not explicit:
-            # Only now build the other providers; skip the one that just failed.
-            candidates += [c for c in provider_chain() if c[2] != model]
+            # Only now build the other providers. The first is the primary that just failed
+            # (get_client() returns it); a backup with the same model ID is still tried.
+            candidates += provider_chain()[1:]
         index += 1
         if index < len(candidates):
             logger.warning('resume_ai_provider_fallback from=%s to=%s', name, candidates[index][0])
