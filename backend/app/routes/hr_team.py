@@ -144,6 +144,9 @@ def invite(body: InviteBody, background: BackgroundTasks, request: Request, db: 
     address = body.email.strip().lower()
     if not EMAIL_RE.match(address):
         raise HTTPException(400, 'Enter a valid email address.')
+    from backend.app.routes.hr_auth import BLOCKED_DOMAINS
+    if address.split('@')[-1] in BLOCKED_DOMAINS:
+        raise HTTPException(400, 'Invite their company work email. Free email providers can’t be used for employer accounts.')
     if is_disposable(address, db):
         raise HTTPException(400, 'Temporary email addresses can’t be invited. Use a work email.')
     canon = canonical_email(address)

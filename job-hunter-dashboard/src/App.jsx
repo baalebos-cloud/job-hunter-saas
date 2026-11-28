@@ -25,6 +25,7 @@ import AdminDashboard from './components/admin/AdminDashboard'
 import HRPortal from './components/hr/HRPortal'
 import HRSignup from './components/hr/HRSignup'
 import HRLogin from './components/hr/HRLogin'
+import HRJoin from './components/hr/HRJoin'
 import ProfilePage from './components/ProfilePage'
 import PricingPage from './components/PricingPage'
 import ReferralDashboard from './components/ReferralDashboard'
@@ -424,6 +425,7 @@ function App() {
         <Route path="/legal/:slug"     element={<LegalPage />} />
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/signup"       element={<HRSignup />} />
+        <Route path="/hr/join"         element={<HRJoin />} />
         <Route path="/hr/verify"       element={<VerifyEmail />} />
 
         {/* ── Authenticated routes — wrapped in DashboardLayout ── */}

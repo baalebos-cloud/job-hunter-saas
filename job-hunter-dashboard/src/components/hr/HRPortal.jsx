@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   Briefcase, Users, CalendarCheck, Plus, MapPin, Wallet, Building2, Globe2, Trash2, Eye,
-  FileText, BadgeCheck, CheckCircle2, AlertCircle, X, ExternalLink, ChevronLeft, Inbox, ClipboardList, ChevronDown,
+  FileText, BadgeCheck, CheckCircle2, AlertCircle, X, ExternalLink, ChevronLeft, Inbox, ClipboardList, ChevronDown, UsersRound,
 } from 'lucide-react';
 import { errorText } from '../../lib/session';
 import ApplicationFormBuilder from './ApplicationFormBuilder';
+import TeamPanel from './TeamPanel';
+import HiringTeamDialog from './HiringTeamDialog';
 import { defaultApplicationForm, formProblems } from '../../lib/applicationForm';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -116,9 +118,15 @@ export default function HRPortal() {
   const [formEditor, setFormEditor] = useState(null);   // { job, value, saving, error }
   const [openAnswers, setOpenAnswers] = useState(null);
   const [answerFilter, setAnswerFilter] = useState('');   // "label||yes" or ''
+  const [workspace, setWorkspace] = useState(null);       // { company, role, role_label, permissions }
+  const [hiringTeamJob, setHiringTeamJob] = useState(null);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) { window.location.href = '/login'; return; }
+    axios.get(`${API}/hr/workspace`, { headers: h() })
+      .then(r => { setWorkspace(r.data); if (!r.data.permissions.post_jobs) setTab('my-jobs'); })
+      // If this fails the portal shows every action; the API still enforces the person's role.
+      .catch(() => setWorkspace({ permissions: { post_jobs: true, all_jobs: true, move_candidates: true, manage_team: false } }));
     axios.get(`${API}/hr/dashboard`, { headers: h() })
       .then(r => {
         setDashboard(r.data);
@@ -218,7 +226,7 @@ export default function HRPortal() {
   });
   const selectedJobInfo = myJobs.find(j => j.id === selectedJob);
 
-  if (loading) return (
+  if (loading || !workspace) return (
     <div className="p-6 md:p-9 space-y-6 animate-pulse" aria-busy="true">
       <div className="h-20 bg-white rounded-2xl border border-slate-200" />
       <div className="grid sm:grid-cols-3 gap-4">{[0, 1, 2].map(i => <div key={i} className="h-24 bg-white rounded-2xl border border-slate-200" />)}</div>
@@ -226,10 +234,13 @@ export default function HRPortal() {
     </div>
   );
 
+  // What this person's company role allows (hidden until known, so nothing flashes and then disappears).
+  const can = p => Boolean(workspace?.permissions?.[p]);
   const TABS = [
-    { id: 'post', label: 'Post a job', icon: Plus },
+    ...(can('post_jobs') ? [{ id: 'post', label: 'Post a job', icon: Plus }] : []),
     { id: 'my-jobs', label: 'Job postings', icon: Briefcase, count: myJobs.length },
     { id: 'applications', label: 'Applicants', icon: Users, count: selectedJob ? applications.length : undefined },
+    { id: 'team', label: 'Team', icon: UsersRound },
   ];
 
   return (
@@ -276,21 +287,31 @@ export default function HRPortal() {
         </div>
       )}
 
+      {hiringTeamJob && (
+        <HiringTeamDialog job={hiringTeamJob} onClose={() => setHiringTeamJob(null)}
+          onSaved={text => { setHiringTeamJob(null); setNotice({ type: 'success', text }); }} />
+      )}
+
       {/* Company bar */}
       <section className={`${card} p-6 flex flex-wrap items-center gap-4`}>
         <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center"><Building2 size={22} /></div>
         <div className="flex-1 min-w-[12rem]">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-lg font-semibold text-slate-900">{dashboard?.company || 'Your company'}</h2>
+            <h2 className="text-lg font-semibold text-slate-900">{workspace?.company?.name || dashboard?.company || 'Your company'}</h2>
+            {workspace && <span className="text-xs font-medium text-slate-600 bg-slate-100 rounded-full px-2.5 py-1">{workspace.role_label}</span>}
             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-full px-2.5 py-1">
               <BadgeCheck size={14} /> Verified employer
             </span>
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">Post roles, review applicants and move candidates through your pipeline.</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {workspace && !can('all_jobs')
+              ? 'You see the jobs you’re on the hiring team for. Ask your admin to add you to others.'
+              : 'Post roles, review applicants and move candidates through your pipeline.'}
+          </p>
         </div>
-        <button onClick={() => setTab('post')} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2.5">
+        {can('post_jobs') && <button onClick={() => setTab('post')} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2.5">
           <Plus size={16} /> Post a job
-        </button>
+        </button>}
       </section>
 
       {/* KPIs */}
@@ -310,10 +331,10 @@ export default function HRPortal() {
       )}
 
       {/* Tabs */}
-      <div role="tablist" aria-label="Employer portal sections" className="inline-flex rounded-xl bg-slate-100 p-1 gap-1">
+      <div role="tablist" aria-label="Employer portal sections" className="flex w-fit max-w-full overflow-x-auto overscroll-x-contain rounded-xl bg-slate-100 p-1 gap-1">
         {TABS.map(({ id, label, icon: Icon, count }) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${tab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+            className={`shrink-0 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${tab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
             <Icon size={16} />{label}
             {count !== undefined && <span className={`rounded-full px-2 py-0.5 text-xs ${tab === id ? 'bg-emerald-50 text-emerald-700' : 'bg-white/70 text-slate-500'}`}>{count}</span>}
           </button>
@@ -321,7 +342,11 @@ export default function HRPortal() {
       </div>
 
       {/* Post a job */}
-      {tab === 'post' && (
+      {tab === 'team' && (
+        <TeamPanel company={workspace?.company?.name || dashboard?.company} onNotice={setNotice} />
+      )}
+
+      {tab === 'post' && can('post_jobs') && (
         <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem] gap-6 items-start">
           <form onSubmit={postJob} className={`${card} divide-y divide-slate-100`}>
             <div className="p-6">
@@ -456,8 +481,10 @@ export default function HRPortal() {
           <div className={`${card} border-dashed p-12 text-center`}>
             <div className="mx-auto w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center"><Briefcase size={22} /></div>
             <p className="font-medium text-slate-900 mt-4">No job postings yet</p>
-            <p className="text-sm text-slate-500 mt-1">Publish your first role to start receiving applicants.</p>
-            <button onClick={() => setTab('post')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2.5"><Plus size={16} />Post a job</button>
+            {can('post_jobs') ? (<>
+              <p className="text-sm text-slate-500 mt-1">Publish your first role to start receiving applicants.</p>
+              <button onClick={() => setTab('post')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2.5"><Plus size={16} />Post a job</button>
+            </>) : <p className="text-sm text-slate-500 mt-1">You’re not on the hiring team for any job yet. Ask your company admin to add you.</p>}
           </div>
         ) : (
           <div className={`${card} divide-y divide-slate-100`}>
@@ -477,7 +504,12 @@ export default function HRPortal() {
                     <a href={job.url} target="_blank" rel="noopener noreferrer" title="External application page"
                       className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><ExternalLink size={16} /></a>
                   )}
-                  {!job.url && (
+                  {can('post_jobs') && (
+                    <button onClick={() => setHiringTeamJob(job)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                      <UsersRound size={16} />Hiring team
+                    </button>)}
+                  {!job.url && can('post_jobs') && (
                     <button onClick={() => setFormEditor({ job, value: job.application_form || defaultApplicationForm(), saving: false, error: '' })}
                       className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                       <ClipboardList size={16} />Application form
@@ -486,8 +518,8 @@ export default function HRPortal() {
                     className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                     <Users size={16} />View applicants
                   </button>
-                  <button onClick={() => deleteJob(job)} aria-label={`Delete ${job.title}`}
-                    className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>
+                  {can('post_jobs') && <button onClick={() => deleteJob(job)} aria-label={`Delete ${job.title}`}
+                    className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>}
                 </div>
               </div>
             ))}
@@ -567,12 +599,14 @@ export default function HRPortal() {
                               {loadingResume === app.application_id ? 'Loading…' : 'Resume'}
                             </button>
                           ) : <span className="text-xs text-slate-400">Applied externally</span>}
-                          <label className="sr-only" htmlFor={`stage-${app.application_id}`}>Stage for {app.applicant_name}</label>
-                          <select id={`stage-${app.application_id}`} value={stageId(app.status)}
-                            onChange={e => updateStatus(app.application_id, e.target.value)}
-                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-600">
-                            {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                          </select>
+                          {can('move_candidates') ? (<>
+                            <label className="sr-only" htmlFor={`stage-${app.application_id}`}>Stage for {app.applicant_name}</label>
+                            <select id={`stage-${app.application_id}`} value={stageId(app.status)}
+                              onChange={e => updateStatus(app.application_id, e.target.value)}
+                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-600">
+                              {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                            </select>
+                          </>) : null}
                         </div>
                       </div>
                       {(app.details || app.answers?.length > 0) && (<>

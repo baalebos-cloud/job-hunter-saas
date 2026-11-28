@@ -127,6 +127,7 @@ def test_other_companies_never_see_each_others_jobs(client, db, sent):
 def test_invitation_rules(client, db, sent):
     assert invite(client, 'candidate@example.com', 'recruiter').status_code == 409     # candidate account
     assert invite(client, 'not-an-email', 'recruiter').status_code == 400
+    assert invite(client, 'someone@gmail.com', 'recruiter').status_code == 400        # free email provider
     assert invite(client, 'a@northwind.example', 'owner').status_code == 400           # unknown role
     assert invite(client, 'a@northwind.example', 'recruiter').status_code == 201
     assert invite(client, 'a@northwind.example', 'recruiter').status_code == 409       # already pending
