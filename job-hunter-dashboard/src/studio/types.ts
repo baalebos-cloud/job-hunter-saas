@@ -28,6 +28,9 @@ export interface ResumeData {
 export type Paper = 'A4' | 'Letter';
 export const PAPER_SIZES: Record<Paper, [number, number]> = { A4: [595.28, 841.89], Letter: [612, 792] };
 
+/** Type sizes in points, shared by the PDF engine and the on-screen paper. */
+export const TYPE = { name: 17, headline: 10, contact: 9.5, heading: 11, body: 9.8, entry: 10.2 } as const;
+
 export function emptyResume(): ResumeData {
   return {
     fullName: '', headline: '', location: '', phone: '', email: '', linkedin: '', github: '', portfolio: '',

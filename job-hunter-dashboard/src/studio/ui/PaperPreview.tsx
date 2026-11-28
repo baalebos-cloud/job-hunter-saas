@@ -2,8 +2,11 @@
 // separators and text. The downloaded PDF (Full Preview) is the source of truth for page breaks.
 import type { ReactNode } from 'react';
 import type { Paper, ResumeData } from '../types';
-import { PAPER_SIZES } from '../types';
+import { PAPER_SIZES, TYPE } from '../types';
 import { SECTION_TITLES } from '../atsAnalyzer';
+
+// Sizes relative to the body text, so the paper scales with its width like the PDF page.
+const em = (pt: number) => `${(pt / TYPE.body).toFixed(4)}em`;
 
 const clean = (s: string | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const join = (parts: Array<string | undefined>, sep: string) => parts.map(clean).filter(Boolean).join(sep);
@@ -11,7 +14,7 @@ const join = (parts: Array<string | undefined>, sep: string) => parts.map(clean)
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-[1.1em] break-inside-avoid-page">
-      <h2 className="text-[1.12em] font-bold tracking-wide text-[#1f4e79] border-b-[1.5px] border-[#1f4e79] pb-[2px] mb-[0.45em]">{title}</h2>
+      <h2 style={{ fontSize: em(TYPE.heading), borderBottomWidth: '1.25px' }} className="font-bold tracking-wide text-[#1F4E79] border-b border-[#1F4E79] pb-[2px] mb-[0.45em]">{title}</h2>
       {children}
     </section>
   );
@@ -25,7 +28,7 @@ function LeftRight({ left, right }: { left: ReactNode; right: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <p className="min-w-0">{left}</p>
-      {right && <p className="shrink-0 whitespace-nowrap">{right}</p>}
+      {right && <p className="shrink-0 whitespace-nowrap italic text-[#333]">{right}</p>}
     </div>
   );
 }
@@ -47,7 +50,7 @@ export default function PaperPreview({ data, paper }: { data: ResumeData; paper:
   return (
     // 1pt in the PDF = 1 unit here; the font size scales with the container width (cqw).
     <div className="studio-paper-wrap w-full [container-type:inline-size]">
-      <article aria-label="Resume preview" className="studio-paper mx-auto bg-white text-[#121212] shadow-[0_1px_3px_rgba(15,23,42,.12),0_12px_32px_-12px_rgba(15,23,42,.25)]"
+      <article aria-label="Resume preview" className="studio-paper mx-auto bg-white text-[#121212] border border-slate-200 shadow-sm print:border-0 print:shadow-none"
         style={{ aspectRatio: `${w} / ${h}`, minHeight: 'auto', padding: `${(46 / w) * 100}cqw ${(50 / w) * 100}cqw`,
           fontFamily: 'Helvetica, Arial, sans-serif', fontSize: `${(9.8 / w) * 100}cqw`, lineHeight: 1.32 }}>
         {empty ? (
@@ -55,10 +58,10 @@ export default function PaperPreview({ data, paper }: { data: ResumeData; paper:
         ) : (
           <>
             <header className="text-center">
-              <h1 className="text-[1.84em] font-bold text-[#1f4e79] leading-tight">{clean(data.fullName).toUpperCase() || 'YOUR NAME'}</h1>
-              {clean(data.headline) && <p className="mt-[1px] text-[1.06em] font-bold">{clean(data.headline)}</p>}
-              {contact1 && <p className="mt-[1px] text-[0.95em] text-[#333]">{contact1}</p>}
-              {contact2 && <p className="text-[0.95em] text-[#333] break-words">{contact2}</p>}
+              <h1 style={{ fontSize: em(TYPE.name) }} className="font-bold text-[#1F4E79] leading-tight">{clean(data.fullName).toUpperCase() || 'YOUR NAME'}</h1>
+              {clean(data.headline) && <p style={{ fontSize: em(TYPE.headline) }} className="mt-[1px] font-bold">{clean(data.headline)}</p>}
+              {contact1 && <p style={{ fontSize: em(TYPE.contact) }} className="mt-[1px] text-[#333]">{contact1}</p>}
+              {contact2 && <p style={{ fontSize: em(TYPE.contact) }} className="text-[#333] break-words">{contact2}</p>}
             </header>
             {clean(data.summary) && <Section title={SUMMARY}><p className="text-justify">{clean(data.summary)}</p></Section>}
             {core.length > 0 && <Section title={CORE}><p>{core.join(' | ')}</p></Section>}
@@ -85,7 +88,7 @@ export default function PaperPreview({ data, paper }: { data: ResumeData; paper:
                     const where = join([r.company, r.location], ' · ');
                     return (
                       <div key={i} className="break-inside-avoid-page">
-                        <LeftRight left={<><b>{clean(r.role)}</b>{where && ` | ${where}`}</>} right={clean(r.dates)} />
+                        <LeftRight left={<b>{clean(r.role)}{where && ` | ${where}`}</b>} right={clean(r.dates)} />
                         <ul>
                           {r.bullets.map(clean).filter(Boolean).map((b, n) => <Bullet key={n}>{b}</Bullet>)}
                         </ul>
@@ -97,12 +100,12 @@ export default function PaperPreview({ data, paper }: { data: ResumeData; paper:
             )}
             {schools.length > 0 && (
               <Section title={EDUCATION}>
-                {schools.map((e, i) => <LeftRight key={i} left={<><b>{clean(e.degree)}</b>{clean(e.institution) && ` | ${clean(e.institution)}`}</>} right={clean(e.date)} />)}
+                {schools.map((e, i) => <LeftRight key={i} left={<b>{clean(e.degree)}{clean(e.institution) && ` | ${clean(e.institution)}`}</b>} right={clean(e.date)} />)}
               </Section>
             )}
             {certs.length > 0 && (
               <Section title={CERTS}>
-                {certs.map((c, i) => <LeftRight key={i} left={<>{'•  '}<b>{clean(c.name)}</b>{clean(c.issuer) && `, ${clean(c.issuer)}`}</>} right={clean(c.date)} />)}
+                {certs.map((c, i) => <LeftRight key={i} left={<>{'•  '}<b>{clean(c.name)}{clean(c.issuer) && `, ${clean(c.issuer)}`}</b></>} right={clean(c.date)} />)}
               </Section>
             )}
           </>

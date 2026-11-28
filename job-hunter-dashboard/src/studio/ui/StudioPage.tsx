@@ -1,8 +1,9 @@
 // Resume Studio: edit a single-column ATS resume by hand, check it, and download a
 // real-text PDF built in the browser. Saved to the account (and as a local draft).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, ClipboardCopy, Columns2, Download, FileSearch, FileText, Loader2, PencilLine, Printer, RotateCcw, ScanSearch, UserRound } from 'lucide-react';
+import { Check, ClipboardCopy, Download, FileText, Loader2, PencilLine, Printer, RotateCcw, UserRound } from 'lucide-react';
 import type { Paper, ResumeData } from '../types';
 import { emptyResume } from '../types';
 import { analyzeJobDescription, analyzeResumeAts, buildPlainTextResume } from '../atsAnalyzer';
@@ -16,9 +17,8 @@ import PaperPreview from './PaperPreview';
 import PdfPreview from '../../components/common/PdfPreview';
 
 type View = 'split' | 'edit' | 'ats' | 'preview';
-const VIEWS: Array<[View, string, typeof Columns2]> = [
-  ['split', 'Split Studio', Columns2], ['edit', 'Edit Sections', PencilLine], ['ats', 'ATS Audit', ScanSearch], ['preview', 'Full Preview', FileSearch],
-];
+// [id, label, short label for phones]
+const VIEWS: Array<[View, string, string]> = [['split', 'Split Studio', 'Split'], ['edit', 'Edit Sections', 'Edit'], ['ats', 'ATS Audit', 'ATS'], ['preview', 'Full Preview', 'Preview']];
 const DRAFT_KEY = 'studioDraft:v1';
 interface Draft { data: ResumeData; paper: Paper; preset: string; jd: string; savedAt: number }
 
@@ -44,7 +44,7 @@ async function buildPdf(data: ResumeData, paper: Paper): Promise<Blob> {
 function StartScreen({ onStart, busy, error }: { onStart: (kind: 'profile' | 'blank' | string) => void; busy: string; error: string }) {
   const [sources, setSources] = useState<TailoredSource[] | null>(null);
   useEffect(() => { studioApi.listSources().then(s => setSources(s.tailored)).catch(() => setSources([])); }, []);
-  const card = 'w-full text-left rounded-xl border border-slate-200 bg-white p-4 hover:border-emerald-600 hover:shadow-sm disabled:opacity-50 flex gap-3';
+  const card = 'w-full text-left rounded-lg border border-slate-200 bg-white p-4 hover:border-[#1F4E79] hover:shadow-sm disabled:opacity-50 flex gap-3';
   return (
     <div className="max-w-2xl mx-auto py-6 space-y-5">
       <div>
@@ -52,7 +52,7 @@ function StartScreen({ onStart, busy, error }: { onStart: (kind: 'profile' | 'bl
       </div>
       {error && <p className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{error}</p>}
       <button type="button" className={card} disabled={!!busy} onClick={() => onStart('profile')}>
-        <UserRound className="shrink-0 text-emerald-700" size={20} />
+        <UserRound className="shrink-0 text-[#1F4E79]" size={20} />
         <span><span className="block font-semibold text-slate-900">From my profile</span>
           <span className="block text-sm text-slate-500">Copies your name, contact details, about, experience, education and skills.</span></span>
         {busy === 'profile' && <Loader2 className="ml-auto animate-spin text-slate-400" size={18} />}
@@ -60,7 +60,7 @@ function StartScreen({ onStart, busy, error }: { onStart: (kind: 'profile' | 'bl
       {sources === null ? <p className="text-sm text-slate-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading your tailored resumes…</p>
         : sources.map(s => (
           <button key={s.task_id} type="button" className={card} disabled={!!busy} onClick={() => onStart(s.task_id)}>
-            <FileText className="shrink-0 text-emerald-700" size={20} />
+            <FileText className="shrink-0 text-[#1F4E79]" size={20} />
             <span className="min-w-0"><span className="block font-semibold text-slate-900 truncate">Tailored for {s.job_title}{s.company ? ` · ${s.company}` : ''}</span>
               <span className="block text-sm text-slate-500">Copies that resume and its job description{s.created_at ? ` · ${new Date(s.created_at).toLocaleDateString()}` : ''}.</span></span>
             {busy === s.task_id && <Loader2 className="ml-auto animate-spin text-slate-400" size={18} />}
@@ -86,11 +86,12 @@ export default function StudioPage() {
   const [jdTitle, setJdTitle] = useState<string | null>(null);
   const [view, setView] = useState<View>('split');
   const [tab, setTab] = useState<EditorTab>('profile');
-  const [mobilePane, setMobilePane] = useState<'edit' | 'paper'>('edit');
+  const [mobilePane, setMobilePane] = useState<'edit' | 'paper'>('paper');
+  const [downloaded, setDownloaded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'saved' | 'error'; at?: string; message?: string }>({ kind: 'idle' });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [replaceFrom, setReplaceFrom] = useState<string | null>(null);
   const dirty = useRef(false);
 
@@ -186,7 +187,6 @@ export default function StudioPage() {
     return () => { clearTimeout(t); if (url) URL.revokeObjectURL(url); };
   }, [view, display, paper]);
 
-  const flash = (text: string) => { setNotice(text); setTimeout(() => setNotice(''), 2500); };
   const download = async () => {
     if (!display) return;
     setBusy('pdf');
@@ -195,12 +195,13 @@ export default function StudioPage() {
       const a = Object.assign(document.createElement('a'), { href: url, download: fileName(display.fullName) });
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setDownloaded(true); setTimeout(() => setDownloaded(false), 2500);
     } catch { setError('The PDF could not be built. Please try again.'); }
     finally { setBusy(''); }
   };
   const copyText = async () => {
     if (!display) return;
-    try { await navigator.clipboard.writeText(buildPlainTextResume(display)); flash('Plain text copied'); }
+    try { await navigator.clipboard.writeText(buildPlainTextResume(display)); setCopied(true); setTimeout(() => setCopied(false), 2000); }
     catch { setError('Copying is blocked in this browser. Use Download PDF instead.'); }
   };
   const reset = async () => {
@@ -210,128 +211,158 @@ export default function StudioPage() {
     setData(null); setJd(''); setJdTitle(null); setPreset('as-is'); setStatus({ kind: 'idle' });
   };
 
-  if (loading) return <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-slate-400" /></div>;
-  if (!data || !display || !report) return <StartScreen onStart={startFrom} busy={busy} error={error} />;
-
-  const keywordStat = jdMatch ? `${jdMatch.matchedKeywords.length}/${jdMatch.extractedKeywords.length} job keywords` : `${report.matched}/${report.total} common keywords`;
-  const btn = 'inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50';
-  const editor = (
-    <div className="space-y-4">
-      <div role="tablist" aria-label="Sections" className="flex flex-wrap gap-1">
-        {EDITOR_TABS.map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold ${tab === id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{label}</button>
-        ))}
-      </div>
-      <Editor tab={tab} data={data} set={set} jd={jd} onJd={change(setJd)} jdTitle={jdTitle} />
+  const shell = (children: ReactNode, header?: ReactNode) => (
+    <div className="studio-root min-h-[100dvh] bg-slate-100 text-slate-900" style={{ fontFamily: "'Plus Jakarta Sans', Inter, Arial, sans-serif" }}>
+      <header className="sticky top-0 z-30 h-14 bg-white border-b border-slate-200 print:hidden">
+        <div className="h-full max-w-[1440px] mx-auto px-4 lg:px-6 flex items-center gap-4">
+          <span className="hidden md:block md:w-44 xl:w-52 shrink-0 whitespace-nowrap text-[17px] font-extrabold tracking-tight text-[#1F4E79]">Resume Studio</span>
+          {header}
+        </div>
+      </header>
+      {children}
     </div>
   );
 
-  return (
-    <div className="studio-root space-y-4">
+  if (loading) return shell(<div className="py-16 flex justify-center"><Loader2 className="animate-spin text-slate-400" /></div>);
+  if (!data || !display || !report) return shell(<main className="max-w-[1440px] mx-auto p-4 lg:p-6"><StartScreen onStart={startFrom} busy={busy} error={error} /></main>);
+
+  const keywordStat = jdMatch
+    ? `${jdMatch.matchedKeywords.length}/${jdMatch.extractedKeywords.length} ATS keywords`
+    : `${report.matched}/${report.total} ATS keywords`;
+  const btn = 'inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50';
+  const editorPanel = (tabs: boolean, only?: EditorTab) => (
+    <div className="bg-white border border-slate-200 rounded-lg">
+      {tabs && (
+        <div role="tablist" aria-label="Resume sections"
+          className="sticky top-0 z-10 flex overflow-x-auto lg:grid lg:grid-cols-5 bg-slate-50 border-b border-slate-200 rounded-t-lg">
+          {EDITOR_TABS.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
+              className={`shrink-0 whitespace-nowrap lg:whitespace-normal px-3 lg:px-2 py-2.5 text-[12px] font-semibold leading-tight text-center border-b-2 -mb-px ${tab === id ? 'border-[#1F4E79] text-[#1F4E79] bg-white' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>{label}</button>
+          ))}
+        </div>
+      )}
+      <div className="p-4 sm:p-5">
+        <Editor tab={only ?? tab} data={only === 'ats' ? display : data} set={set} jd={jd} onJd={change(setJd)} jdTitle={jdTitle} />
+      </div>
+    </div>
+  );
+  const sheet = (
+    <div className={`mx-auto w-full ${paper === 'A4' ? 'max-w-[794px]' : 'max-w-[816px]'}`}><PaperPreview data={display} paper={paper} /></div>
+  );
+
+  const header = (
+    <>
+      <nav aria-label="Studio views" className="flex-1 min-w-0 h-full flex md:justify-center gap-4 sm:gap-5 lg:gap-7 overflow-x-auto">
+        {VIEWS.map(([id, label, short]) => (
+          <button key={id} type="button" aria-current={view === id ? 'page' : undefined} onClick={() => setView(id)} aria-label={label}
+            className={`h-full shrink-0 whitespace-nowrap border-b-2 text-[14px] font-semibold transition-colors ${view === id ? 'border-[#1F4E79] text-[#1F4E79]' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+            <span className="hidden sm:inline">{label}</span><span className="sm:hidden">{short}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="md:w-44 xl:w-52 shrink-0 flex justify-end">
+        <button type="button" onClick={download} disabled={busy === 'pdf'} aria-live="polite"
+          className="inline-flex items-center gap-2 rounded-md bg-[#1F4E79] px-3 sm:px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#173C5E] disabled:opacity-70 whitespace-nowrap">
+          {busy === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : downloaded ? <Check size={16} /> : <Download size={16} />}
+          <span className="hidden sm:inline">{busy === 'pdf' ? 'Preparing…' : downloaded ? 'Downloaded' : 'Download PDF'}</span>
+          <span className="sm:hidden">PDF</span>
+        </button>
+      </div>
+    </>
+  );
+
+  return shell(
+    <>
       <style>{`@media print {
         @page { size: ${paper === 'A4' ? 'A4' : 'letter'}; margin: 0; }
         body * { visibility: hidden !important; }
         .studio-paper, .studio-paper * { visibility: visible !important; }
         .studio-paper-wrap { position: absolute; inset: 0; width: 100%; }
-        .studio-paper { box-shadow: none !important; width: 100%; }
+        .studio-paper { box-shadow: none !important; border: 0 !important; width: 100%; }
       }`}</style>
 
-      {replaceFrom && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          <p className="flex-1 text-sm text-amber-900">Replace what is in the Studio with the tailored resume you opened? Your current Studio resume will be overwritten.</p>
-          <div className="flex gap-2">
-            <button type="button" className={btn} onClick={() => setReplaceFrom(null)}>Keep current</button>
-            <button type="button" className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-              onClick={() => { const id = replaceFrom; setReplaceFrom(null); startFrom(id); }}>Replace</button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <nav aria-label="Studio views" className="mr-auto flex rounded-lg border border-slate-200 bg-white p-0.5 overflow-x-auto">
-          {VIEWS.map(([id, label, Icon]) => (
-            <button key={id} type="button" aria-pressed={view === id} onClick={() => setView(id)}
-              className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${view === id ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
-              <Icon size={15} /> <span className="hidden sm:inline">{label}</span><span className="sm:hidden">{label.split(' ')[0]}</span>
+      <div className="bg-white border-b border-slate-200 print:hidden">
+        <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Segmented label="Role focus" value={preset} onChange={change(setPreset)} options={ROLE_PRESETS.map(p => [p.id, p.label] as [string, string])} />
+          <Segmented label="Paper size" value={paper} onChange={v => change(setPaper)(v as Paper)} options={[['A4', 'A4'], ['Letter', 'US Letter']]} />
+          <p className="hidden lg:block ml-auto text-[12px] text-slate-500 font-[JetBrains_Mono,ui-monospace,monospace] tabular-nums">
+            {report.wordCount.toLocaleString()} words · {keywordStat} · Standard selectable PDF
+          </p>
+          <div className="ml-auto lg:ml-0 flex flex-wrap items-center gap-2">
+            <span className="text-[12px] text-slate-500" aria-live="polite">
+              {status.kind === 'saving' ? 'Saving…' : status.kind === 'saved' ? 'Saved' : status.kind === 'error' ? <span className="text-rose-700">{status.message}</span> : ''}
+            </span>
+            <button type="button" className={btn} onClick={() => window.print()}><Printer size={15} />Print / Save PDF</button>
+            <button type="button" className={`${btn} ${copied ? 'text-[#1F4E79]' : ''}`} onClick={copyText} aria-live="polite">
+              {copied ? <Check size={15} /> : <ClipboardCopy size={15} />}{copied ? 'Copied ATS Text' : 'Copy Plain Text'}
             </button>
-          ))}
-        </nav>
-        <button type="button" onClick={download} disabled={busy === 'pdf'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-          {busy === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
-        </button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5">
-        <label className="flex items-center gap-2 text-sm text-slate-600">Focus
-          <select value={preset} onChange={e => change(setPreset)(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
-            {ROLE_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-        </label>
-        <div className="flex rounded-lg border border-slate-300 p-0.5" role="group" aria-label="Paper size">
-          {(['A4', 'Letter'] as Paper[]).map(p => (
-            <button key={p} type="button" aria-pressed={paper === p} onClick={() => change(setPaper)(p)}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold ${paper === p ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>{p}</button>
-          ))}
-        </div>
-        <p className="text-xs text-slate-500 px-1">
-          {report.wordCount.toLocaleString()} words · {keywordStat} · <span className="text-emerald-700 font-medium">Standard selectable PDF</span>
-        </p>
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-slate-500 mr-1" aria-live="polite">
-            {status.kind === 'saving' ? 'Saving…' : status.kind === 'saved' ? <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} className="text-emerald-600" />Saved</span>
-              : status.kind === 'error' ? <span className="text-rose-700">{status.message}</span> : ''}
-          </span>
-          {notice && <span className="text-xs text-emerald-700 mr-1">{notice}</span>}
-          <button type="button" className={btn} onClick={() => window.print()} title="Print" aria-label="Print"><Printer size={15} /><span className="hidden md:inline">Print</span></button>
-          <button type="button" className={btn} onClick={copyText} title="Copy plain text" aria-label="Copy plain text"><ClipboardCopy size={15} /><span className="hidden md:inline">Copy text</span></button>
-          <button type="button" className={btn} onClick={reset} title="Reset" aria-label="Reset"><RotateCcw size={15} /><span className="hidden md:inline">Reset</span></button>
-        </div>
-      </div>
-      {preset !== 'as-is' && <p className="text-xs text-slate-500">Focus re-orders your skills, projects and bullets in the preview and PDF so the most relevant come first. Your text is unchanged and nothing is added.</p>}
-      {error && <p className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{error}</p>}
-
-      {view === 'split' && (
-        <>
-          <div className="flex lg:hidden rounded-lg border border-slate-200 bg-white p-0.5 w-fit" role="group" aria-label="Show">
-            {(['edit', 'paper'] as const).map(p => (
-              <button key={p} type="button" aria-pressed={mobilePane === p} onClick={() => setMobilePane(p)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${mobilePane === p ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>{p === 'edit' ? 'Edit' : 'Preview'}</button>
-            ))}
+            <button type="button" className={btn} onClick={reset}><RotateCcw size={15} />Reset</button>
           </div>
-          <div className="lg:grid lg:grid-cols-[440px_minmax(0,1fr)] lg:gap-6 lg:items-start">
-            <aside aria-label="Editor" className={`${mobilePane === 'edit' ? 'block' : 'hidden'} lg:block lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-4`}>
-              {editor}
-            </aside>
-            <div className={`${mobilePane === 'paper' ? 'block' : 'hidden'} lg:block print:block rounded-2xl bg-slate-100 p-3 sm:p-6`}>
-              <div className="max-w-[820px] mx-auto"><PaperPreview data={display} paper={paper} /></div>
+        </div>
+      </div>
+
+      <main className="max-w-[1440px] mx-auto p-4 lg:p-6 space-y-4">
+        {replaceFrom && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3 print:hidden">
+            <p className="flex-1 text-sm text-amber-900">Replace what is in the Studio with the tailored resume you opened? Your current Studio resume will be overwritten.</p>
+            <div className="flex gap-2">
+              <button type="button" className={btn} onClick={() => setReplaceFrom(null)}>Keep current</button>
+              <button type="button" className="rounded-md bg-[#1F4E79] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#173C5E]"
+                onClick={() => { const id = replaceFrom; setReplaceFrom(null); startFrom(id); }}>Replace</button>
             </div>
           </div>
-        </>
-      )}
-      {view === 'edit' && <div className="max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">{editor}</div>}
-      {view === 'ats' && (
-        <div className="max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-          <Editor tab="ats" data={display} set={set} jd={jd} onJd={change(setJd)} jdTitle={jdTitle} />
-        </div>
-      )}
-      {view === 'preview' && (
-        <div className="space-y-2">
-          <div className="hidden print:block"><PaperPreview data={display} paper={paper} /></div>
-          {pdfError ? <p className="text-sm text-rose-700 bg-rose-50 rounded-xl p-3">{pdfError}</p>
-            : pdfUrl ? (
-              <>
-                <PdfPreview src={pdfUrl} title="Resume PDF" className="rounded-2xl bg-slate-100 p-2 sm:p-4" maxPages={4} />
-                <p className="text-xs text-slate-500">This is the exact PDF you download.</p>
-              </>
-            ) : <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-slate-400" /></div>}
-        </div>
-      )}
-      {view !== 'split' && view !== 'preview' && <div className="hidden print:block"><PaperPreview data={display} paper={paper} /></div>}
-      <p className="text-xs text-slate-400">
-        Need the job-tailored version instead? <button type="button" className="font-semibold text-emerald-700 hover:underline" onClick={() => navigate('/optimizer')}>Open the resume workspace</button>.
-      </p>
+        )}
+        {preset !== 'as-is' && <p className="text-xs text-slate-500 print:hidden">Role focus re-orders your skills, projects and bullets in the preview and PDF so the most relevant come first. Your text is unchanged and nothing is added.</p>}
+        {error && <p role="alert" className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 print:hidden">{error}</p>}
+
+        {view === 'split' && (
+          <>
+            <div className="grid grid-cols-2 gap-2 lg:hidden print:hidden" role="group" aria-label="Show">
+              {([['paper', 'Resume Preview'], ['edit', 'Edit & ATS Audit']] as const).map(([id, label]) => (
+                <button key={id} type="button" aria-pressed={mobilePane === id} onClick={() => setMobilePane(id)}
+                  className={`rounded-md py-2.5 text-[14px] font-semibold ${mobilePane === id ? 'bg-[#1F4E79] text-white' : 'bg-white border border-slate-300 text-slate-700'}`}>{label}</button>
+              ))}
+            </div>
+            <div className="lg:grid lg:grid-cols-[440px_minmax(0,1fr)] lg:gap-6 lg:items-start">
+              <aside aria-label="Editor and ATS audit" className={`${mobilePane === 'edit' ? 'block' : 'hidden'} lg:block lg:sticky lg:top-[72px] lg:max-h-[calc(100dvh-88px)] lg:overflow-y-auto overscroll-contain print:hidden`}>
+                {editorPanel(true)}
+              </aside>
+              <div className={`${mobilePane === 'paper' ? 'block' : 'hidden'} lg:block print:block`}>{sheet}</div>
+            </div>
+          </>
+        )}
+        {view === 'edit' && <div className="max-w-3xl mx-auto print:hidden">{editorPanel(true)}</div>}
+        {view === 'ats' && <div className="max-w-3xl mx-auto print:hidden">{editorPanel(false, 'ats')}</div>}
+        {view === 'preview' && (
+          <div className="max-w-[850px] mx-auto space-y-2">
+            <div className="hidden print:block">{sheet}</div>
+            {pdfError ? <p className="text-sm text-rose-700 bg-rose-50 rounded-lg p-3 print:hidden">{pdfError}</p>
+              : pdfUrl ? (
+                <div className="print:hidden">
+                  <PdfPreview src={pdfUrl} title="Resume PDF" className="space-y-4" maxPages={4} />
+                  <p className="mt-2 text-xs text-slate-500">This is the exact PDF you download: real, selectable text on {paper === 'A4' ? 'A4' : 'US Letter'} pages.</p>
+                </div>
+              ) : <div className="py-16 flex justify-center print:hidden"><Loader2 className="animate-spin text-slate-400" /></div>}
+          </div>
+        )}
+        {(view === 'edit' || view === 'ats') && <div className="hidden print:block">{sheet}</div>}
+        <p className="text-xs text-slate-500 print:hidden">
+          Need the job-tailored version instead? <button type="button" className="font-semibold text-[#1F4E79] hover:underline" onClick={() => navigate('/optimizer')}>Open the resume workspace</button>.
+        </p>
+      </main>
+    </>,
+    header,
+  );
+}
+
+/** A segmented control: one choice from a few, as radio buttons. */
+function Segmented({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: Array<[string, string]> }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex max-w-full overflow-x-auto bg-slate-100 p-1 rounded-lg">
+      {options.map(([id, text]) => (
+        <button key={id} type="button" role="radio" aria-checked={value === id} onClick={() => onChange(id)}
+          className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1 text-[13px] font-semibold transition-colors ${value === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}>{text}</button>
+      ))}
     </div>
   );
 }
