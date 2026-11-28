@@ -517,3 +517,13 @@ def test_free_scans_are_shared_between_accounts_from_one_device(env):
     assert remaining_scans(two.id, env.db) == 1          # 3 free scans per device, 2 already used by "one"
     env.db.query(Subscription).filter_by(user_id=one.id).update({'plan': 'pro'}); env.db.commit()
     assert remaining_scans(two.id, env.db) == 3          # a paid account never eats into anyone's free scans
+
+
+def test_employer_signup_accepts_empty_optional_fields_sent_as_null(env):
+    # The form leaves Country, LinkedIn and website blank: older pages sent null, which used to fail with 422.
+    r = env.client.post('/api/v1/hr-auth/signup', json={
+        'full_name': 'T', 'email': 'people@acme-hiring.example', 'password': PASSWORD, 'company_name': 'Acme',
+        'job_title': None, 'country': None, 'linkedin_url': None, 'company_url': None})
+    assert r.status_code == 200, r.text
+    user = env.db.query(User).filter_by(email='people@acme-hiring.example').one()
+    assert user.hr_job_title == 'HR Manager' and (user.country or '') == ''

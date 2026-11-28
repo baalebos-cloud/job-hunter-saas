@@ -2,7 +2,7 @@
 // job-hunter-dashboard/src/components/auth/Signup.jsx
 // Wired with referral tracking — captures ?ref= from URL and calls /referral/track
 // =============================================================================
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { clearFirstTouch, firstTouch } from '../../lib/attribution';
 import { deviceHeaders } from '../../lib/device';
@@ -11,12 +11,11 @@ import VerifyEmailNotice from './VerifyEmailNotice';
 import PasswordInput from './PasswordInput';
 import ChipInput from './ChipInput';
 import { COUNTRIES, TECH_TRACKS, cleanTrack, matchCountry } from '../../lib/signupOptions';
-import { updatedAgo, useLiveStats } from '../../lib/liveStats';
+import AuthShell, { AsideEyebrow, ErrorNote, Spinner } from './AuthShell';
+import { buttonCls, fieldCls, hintCls, labelCls, linkCls, optional, quietLinkCls } from './authStyles';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
-const inputCls = 'w-full px-4 py-3.5 rounded-2xl border-2 border-slate-800 bg-slate-900 outline-none focus:border-emerald-500 transition-all text-white font-semibold text-sm placeholder:text-slate-600';
-const labelCls = 'block text-xs font-black uppercase tracking-widest text-slate-500 mb-2';
 
 export default function Signup() {
   const [form, setForm]     = useState({ name: '', email: '', password: '', country: '' });
@@ -27,7 +26,6 @@ export default function Signup() {
   const [error, setError]   = useState('');
   const [refCode, setRefCode] = useState('');
   const [sentTo, setSentTo] = useState('');
-  const stats = useLiveStats();   // real figures; hidden when unavailable   // set once the account exists: verify email, then sign in
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // ── Capture referral code from URL or localStorage ────────────────────────
@@ -75,177 +73,92 @@ export default function Signup() {
     }
   };
 
+  const aside = (
+    <>
+      <AsideEyebrow>On the free plan</AsideEyebrow>
+      <ul className="mt-6 space-y-6">
+        {[['3 tailored resumes a month', 'Rewritten around each job description, as PDF and Word.'],
+          ['Nothing invented', 'Every line is checked against your own resume. Anything it can’t confirm is left out.'],
+          ['See your match before you apply', 'Which requirements your resume covers, and which it doesn’t.'],
+          ['Job board and alerts', 'Tech jobs, with daily or weekly email alerts for your tracks.']].map(([t, d]) => (
+          <li key={t}><p className="text-[16px] font-semibold">{t}</p><p className="mt-1 text-[14.5px] text-slate-600">{d}</p></li>))}
+      </ul>
+      <p className="mt-10 border-t border-[#e2ddd2] pt-5 text-[13.5px] text-slate-600">No card needed. <a href="/pricing" className={quietLinkCls}>Compare plans</a></p>
+    </>
+  );
+  const chipField = `${fieldCls} cursor-text py-2.5`;
+
   return (
-    <div className="app-canvas min-h-screen w-full flex" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <div className="app-canvas-mesh" />
-      <div className="app-canvas-grain" />
-
-      {/* ── Left hero panel ── */}
-      <div className="hidden lg:flex lg:w-[45%] min-w-0 relative flex-col justify-between p-14 overflow-hidden z-10">
-        <img src="https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&q=85"
-          alt="tech" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/70 via-slate-900/55 to-emerald-950/45" />
-
-        <div className="absolute top-28 right-10 bg-slate-900/80 backdrop-blur border border-emerald-500/20 rounded-2xl p-5 shadow-2xl">
-          <div className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">{stats ? 'Live on Baalebos' : 'On Baalebos'}</div>
-          {[stats && ['💼', `${stats.open_jobs.toLocaleString()} open tech jobs`, 'text-emerald-400'],
-            stats?.updated_at && ['⚡', `Jobs updated ${updatedAgo(stats.updated_at)}`, 'text-blue-400'],
-            ['🌍', 'Remote & worldwide roles', 'text-amber-400']].filter(Boolean).map(([icon,label,cls]) => (
-            <div key={label} className="flex items-center gap-2 mb-2 last:mb-0">
-              <span>{icon}</span>
-              <span className={`text-sm font-bold ${cls}`}>{label}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
-            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
+    <AuthShell wide title={sentTo ? 'Check your inbox' : 'Create your account'} aside={aside}
+      intro={sentTo ? null : 'Free to start. Tell us what you’re looking for and we’ll tailor your resume to each job you apply to.'}>
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {sentTo ? <VerifyEmailNotice email={sentTo} title="Verify your email to finish" /> : (
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className={labelCls} htmlFor="signup-name">Full name</label>
+            <input id="signup-name" type="text" required autoComplete="name" placeholder="Oluwadare Jayeola" className={fieldCls}
+              value={form.name} onChange={e => set('name', e.target.value)} />
           </div>
           <div>
-            <div className="text-white font-black text-lg tracking-tight">BAALEBOS CLOUD</div>
-            <div className="text-emerald-400 text-[10px] font-bold uppercase tracking-[0.2em]">AI Talent Infrastructure</div>
+            <label className={labelCls} htmlFor="signup-email">Email</label>
+            <input id="signup-email" type="email" required autoComplete="email" placeholder="you@example.com" className={fieldCls}
+              value={form.email} onChange={e => set('email', e.target.value)} />
+            <p className={hintCls}>We’ll send a link to confirm it. Temporary email addresses can’t be used.</p>
           </div>
-        </div>
+          <div>
+            <label className={labelCls} htmlFor="signup-password">Password</label>
+            <PasswordInput id="signup-password" required minLength={8} autoComplete="new-password" placeholder="At least 8 characters"
+              className={fieldCls} value={form.password} onChange={e => set('password', e.target.value)} />
+          </div>
 
-        <div className="relative z-10">
-          <h2 className="text-4xl font-black text-white leading-tight mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>
-            Join Engineers<br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-blue-400">
-              Getting Hired
-            </span><br/>
-            Globally.
-          </h2>
-          <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
-            From ATS optimization to interview — our AI guides every step of your global tech job search.
-          </p>
-        </div>
-
-        <div className="relative z-10 text-xs text-slate-600 font-medium">
-          © {new Date().getFullYear()} Baalebos Cloud
-        </div>
+          <div className="border-t border-[#e7e3da] pt-6">
+            <p className="text-[12.5px] font-semibold uppercase tracking-[.12em] text-slate-500">The work you want</p>
+            <p className="mt-1 text-[13.5px] text-slate-600">Used to match jobs and alerts. You can change it later in your profile.</p>
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="signup-track">Career tracks <span className="font-normal text-slate-500">(up to 3)</span></label>
+            <ChipInput id="signup-track" values={tracks} onChange={setTracks} suggestions={TECH_TRACKS} max={3}
+              placeholder="Type or pick, e.g. DevOps Engineer" normalize={v => cleanTrack(v) || null}
+              className={chipField} chipClass="bg-[#0b1324] text-white" />
+            <p className={hintCls}>Pick from the list or type your own. The first one is your main track.</p>
+          </div>
+          <div>
+            <span className={labelCls} id="signup-work-label">Work type</span>
+            <div role="group" aria-labelledby="signup-work-label" className="grid grid-cols-3 gap-2">
+              {[['remote', 'Remote'], ['hybrid', 'Hybrid'], ['onsite', 'On-site']].map(([id, label]) => {
+                const on = workTypes.includes(id);
+                return <button key={id} type="button" aria-pressed={on} onClick={() => setWorkTypes(w => (on ? w.filter(x => x !== id) : [...w, id]))}
+                  className={`rounded-[10px] border py-2.5 text-[14.5px] font-semibold transition ${on ? 'border-[#0b1324] bg-[#0b1324] text-white' : 'border-[#d6d3cc] bg-white text-slate-700 hover:border-slate-400'}`}>
+                  {label}</button>;
+              })}
+            </div>
+            <p className={hintCls}>Choose any that suit you.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls} htmlFor="signup-country">Country you live in</label>
+              <input id="signup-country" list="signup-country-options" maxLength={60} autoComplete="country-name"
+                placeholder="Start typing, e.g. Nigeria" className={fieldCls}
+                value={form.country} onChange={e => set('country', e.target.value)} />
+              <datalist id="signup-country-options">
+                {COUNTRIES.map(c => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="signup-work-countries">Also open to {optional}</label>
+              <ChipInput id="signup-work-countries" values={workCountries} onChange={setWorkCountries} suggestions={COUNTRIES} max={5}
+                placeholder="Other countries" normalize={v => matchCountry(v)}
+                onInvalid={(raw, why) => setError(why === 'max' ? 'Choose up to 5 countries.' : `Choose "${raw}" from the country list.`)}
+                className={chipField} chipClass="bg-slate-100 text-slate-800" />
+            </div>
+          </div>
+          <button type="submit" disabled={loading} className={buttonCls}>{loading ? <><Spinner />Creating your account…</> : 'Create account'}</button>
+          <p className="text-[12.5px] text-slate-500">By creating an account you agree to the <a href="/legal/terms" className="underline">Terms</a> and <a href="/legal/privacy" className="underline">Privacy Policy</a>.</p>
+        </form>)}
+      <p className="mt-6 text-[14.5px] text-slate-600">Already have an account? <a href="/login" className={linkCls}>Sign in</a></p>
+      <div className="mt-10 border-t border-[#e7e3da] pt-5 text-[13.5px] text-slate-600">
+        Hiring? <a href="/hr/signup" className={quietLinkCls}>Apply for an employer account</a>
       </div>
-
-      {/* ── Right form panel ── */}
-      <div className="w-full lg:w-[55%] min-w-0 flex-1 flex items-center justify-center p-8 relative z-10 overflow-y-auto">
-        <div className="w-full max-w-lg py-8">
-
-          {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
-            <span className="font-black text-white text-lg">BAALEBOS CLOUD</span>
-          </div>
-
-          <div className="mb-8">
-            <h1 className="text-3xl font-black text-white" style={{ fontFamily: "'Playfair Display', serif" }}>
-              Create your account
-            </h1>
-            <p className="text-slate-400 text-sm font-medium mt-2">
-              Tailor your resume to every tech job you apply for, and find remote and worldwide roles.
-            </p>
-          </div>
-
-          {/* Referral banner — shown when a ref code is detected */}
-          {refCode && (
-            <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-2xl text-sm font-bold flex items-center gap-2">
-              🎉 You were referred! Sign up to give your friend credit — and get started free.
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-2xl text-sm font-bold flex items-center gap-2">
-              ⚠️ {error}
-            </div>
-          )}
-
-          {sentTo ? <VerifyEmailNotice email={sentTo} title="Verify your email to finish" /> : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className={labelCls}>Full Name</label>
-              <input type="text" required placeholder="e.g. Oluwadare Jayeola" className={inputCls}
-                value={form.name} onChange={e => set('name', e.target.value)} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Email Address</label>
-              <input type="email" required placeholder="you@company.com" className={inputCls}
-                value={form.email} onChange={e => set('email', e.target.value)} />
-            </div>
-
-            <div>
-              <label className={labelCls} htmlFor="signup-password">Password</label>
-              <PasswordInput id="signup-password" required minLength={8} autoComplete="new-password" placeholder="Min. 8 characters"
-                className={inputCls} value={form.password} onChange={e => set('password', e.target.value)} />
-            </div>
-
-            <div>
-              <label className={labelCls} htmlFor="signup-track">Career tracks <span className="normal-case tracking-normal font-semibold text-slate-600">(up to 3)</span></label>
-              <ChipInput id="signup-track" values={tracks} onChange={setTracks} suggestions={TECH_TRACKS} max={3}
-                placeholder="Type or pick, e.g. DevOps Engineer" normalize={v => cleanTrack(v) || null}
-                className={`${inputCls} cursor-text`} chipClass="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" />
-              <p className="mt-1.5 text-xs text-slate-500">Pick from the list or type your own. The first one is your main track.</p>
-            </div>
-
-            <div>
-              <span className={labelCls} id="signup-work-label">Work type you want</span>
-              <div role="group" aria-labelledby="signup-work-label" className="grid grid-cols-3 gap-2">
-                {[['remote', 'Remote'], ['hybrid', 'Hybrid'], ['onsite', 'On-site']].map(([id, label]) => {
-                  const on = workTypes.includes(id);
-                  return <button key={id} type="button" aria-pressed={on} onClick={() => setWorkTypes(w => (on ? w.filter(x => x !== id) : [...w, id]))}
-                    className={`rounded-2xl border-2 py-3 text-sm font-bold transition-all ${on ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 text-slate-400 hover:border-slate-700'}`}>
-                    {label}{on ? ' ✓' : ''}</button>;
-                })}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls} htmlFor="signup-country">Country you live in</label>
-                <input id="signup-country" list="signup-country-options" maxLength={60} autoComplete="country-name"
-                  placeholder="Start typing, e.g. Nigeria" className={inputCls}
-                  value={form.country} onChange={e => set('country', e.target.value)} />
-                <datalist id="signup-country-options">
-                  {COUNTRIES.map(c => <option key={c} value={c} />)}
-                </datalist>
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="signup-work-countries">Also open to <span className="normal-case tracking-normal font-semibold text-slate-600">(optional)</span></label>
-                <ChipInput id="signup-work-countries" values={workCountries} onChange={setWorkCountries} suggestions={COUNTRIES} max={5}
-                  placeholder="Countries you can work in" normalize={v => matchCountry(v)}
-                  onInvalid={(raw, why) => setError(why === 'max' ? 'Choose up to 5 countries.' : `Choose "${raw}" from the country list.`)}
-                  className={`${inputCls} cursor-text`} chipClass="bg-slate-800 text-slate-200 border border-slate-700" />
-              </div>
-            </div>
-
-            <button type="submit" disabled={loading}
-              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-500 active:scale-[0.98] transition-all shadow-xl shadow-emerald-600/20 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed mt-2">
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  Creating Account...
-                </span>
-              ) : 'Start My Global Job Search →'}
-            </button>
-          </form>)}
-
-          <div className="mt-6 pt-6 border-t border-slate-800 text-center">
-            <p className="text-sm text-slate-500 font-medium">
-              Already have an account?{' '}
-              <a href="/login" className="text-emerald-400 font-black hover:text-emerald-300 transition-colors">Sign in →</a>
-            </p>
-          </div>
-
-        </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

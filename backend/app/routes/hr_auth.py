@@ -10,7 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from collections import defaultdict
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 import time
 import logging
 logger = logging.getLogger(__name__)
@@ -52,6 +52,17 @@ class HRSignupRequest(BaseModel):
     country:      str = ""
     linkedin_url: str = ""
     company_url:  str = ""
+
+    # Optional fields left empty may arrive as null; treat them as not given.
+    @field_validator('country', 'linkedin_url', 'company_url', mode='before')
+    @classmethod
+    def _empty_optional(cls, value):
+        return '' if value is None else value
+
+    @field_validator('job_title', mode='before')
+    @classmethod
+    def _default_title(cls, value):
+        return 'HR Manager' if value is None or not str(value).strip() else value
 
 
 class HRLoginRequest(BaseModel):
