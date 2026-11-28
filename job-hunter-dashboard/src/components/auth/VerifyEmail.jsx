@@ -63,7 +63,7 @@ export default function VerifyEmail() {
     hr_pending: {
       icon: <div className="w-20 h-20 bg-blue-500/10 border-2 border-blue-500/30 rounded-full flex items-center justify-center mx-auto mb-6"><span className="text-4xl">⏳</span></div>,
       title: 'Email verified!',
-      sub:   'Your HR account is now pending admin approval. You\'ll receive an email within 24–48 hours.',
+      sub:   'Your HR account is now pending admin approval. We\'ll email you as soon as a decision is made.',
       color: 'text-blue-400',
     },
     error: {

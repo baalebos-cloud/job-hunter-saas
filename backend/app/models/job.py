@@ -27,6 +27,7 @@ class Job(Base):
     work_type = Column(String, nullable=True)  # remote | hybrid | onsite
     posted_by_hr = Column(Boolean, default=False)  # True = HR posted, False = scraped
     hr_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # HR who posted
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True)  # employer workspace
     # Job board: one listing per role even when several boards carry it.
     dedupe_key = Column(String(300), nullable=True, index=True)   # normalised "title|company"
     skills = Column(JSON, nullable=True)                         # canonical skill names found in the posting

@@ -15,6 +15,7 @@ from backend.app.database import Base, engine, get_db
 from backend.app.routes import jobs, resume, auth, application, dashboard
 from backend.app.routes import admin as admin_router
 from backend.app.routes import hr as hr_router
+from backend.app.routes import hr_team as hr_team_router
 from backend.app.routes import billing as billing_router
 from backend.app.routes import referral as referral_router
 from backend.app.routes import hr_auth as hr_auth_router
@@ -89,6 +90,7 @@ RATE_LIMITS = {
     "/api/v1/auth/login":        (10,  60),   # 10 requests per 60 seconds
     "/api/v1/auth/admin/login":  (10,  60),
     "/api/v1/hr-auth/login":     (10,  60),
+    "/api/v1/hr/team/accept":    (10,  60),   # password checks on invitation links
     "/api/v1/auth/signup":       (5,   60),   # 5 requests per 60 seconds
     "/api/v1/auth/forgot-password": (5, 300),
     "/api/v1/auth/refresh":      (30,  60),
@@ -291,6 +293,7 @@ app.include_router(application.router, prefix="/api/v1/application", tags=["Appl
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(admin_router.router,    prefix="/api/v1/admin",   tags=["Admin"])
 app.include_router(hr_router.router,       prefix="/api/v1/hr",      tags=["HR"])
+app.include_router(hr_team_router.router,  prefix="/api/v1/hr",      tags=["Employer workspace"])
 app.include_router(billing_router.router,  prefix="/api/v1/billing",   tags=["Billing"])
 app.include_router(referral_router.router, prefix="/api/v1/referral",  tags=["Referral"])
 app.include_router(hr_auth_router.router,  prefix="/api/v1/hr-auth",   tags=["HR Auth"])
