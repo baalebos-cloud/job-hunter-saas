@@ -32,7 +32,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -58,6 +58,12 @@ for _family, (_regular, _bold, _italic, _bold_italic) in FONT_FAMILIES.items():
 _DOCUMENT_FONT = contextvars.ContextVar('resume_document_font', default=PRIMARY_FONT)
 # Main language of the resume being rendered (PDF /Lang; right alignment for Arabic/Hebrew).
 _DOCUMENT_LANG = contextvars.ContextVar('resume_document_lang', default='en')
+# Layout preset. All three are single-column, real text, no tables or graphics:
+#   classic: centred header, caps headings (the original look)
+#   modern:  left-aligned header, title-case headings
+#   compact: classic look at the densest layout profile, to fit more on a page
+TEMPLATES = ('classic', 'modern', 'compact')
+_DOCUMENT_TEMPLATE = contextvars.ContextVar('resume_document_template', default='classic')
 
 ACCENT_COLOR = colors.HexColor('#1F4E79')   # name, headings and rules only; carries no meaning
 TEXT_COLOR = colors.HexColor('#1A1A1A')
@@ -121,6 +127,13 @@ def resolve_region(region: str | None = None, country: str | None = None) -> str
 
 def page_size_for_region(region: str | None) -> tuple[float, float]:
     return LETTER if resolve_region(region) in LETTER_REGIONS else A4
+
+
+def resolve_template(requested=None) -> str:
+    value = str(requested or 'classic').strip().lower()
+    if value not in TEMPLATES:
+        raise ResumeExportError('Layout must be classic, modern or compact.')
+    return value
 
 
 def resolve_max_pages(region: str | None, requested=None) -> int | str:
@@ -446,12 +459,13 @@ class ExportResult:
 
     max_pages: int | str = 1
     lang: str = 'en'
+    template: str = 'classic'
     content: dict = field(default_factory=dict)   # what was rendered (after region rules and condensing)
 
     def info(self) -> dict:
         return {'pages': self.pages, 'page_size': self.page_size, 'region': self.region, 'layout': self.layout,
                 'font': self.font, 'condensed': self.condensed, 'condensed_items': list(self.condensed_items),
-                'warnings': list(self.warnings), 'max_pages': self.max_pages, 'lang': self.lang}
+                'warnings': list(self.warnings), 'max_pages': self.max_pages, 'lang': self.lang, 'template': self.template}
 
 
 # ── Unicode font fallback ────────────────────────────────────────────────────
@@ -579,9 +593,9 @@ def _unsupported_characters(data: dict) -> list[str]:
 class SectionHeading(Flowable):
     """Bold accent-coloured caps over a thin rule, kept with the content that follows."""
 
-    def __init__(self, text: str, font: str, size: float, space_before: float):
+    def __init__(self, text: str, font: str, size: float, space_before: float, upper: bool = True):
         super().__init__()
-        self.text, self.font, self.size = text.upper(), font, size
+        self.text, self.font, self.size = (text.upper() if upper else text), font, size
         self.keepWithNext = 1
         self.spaceBefore, self.spaceAfter = space_before, 3
 
@@ -634,14 +648,16 @@ def _styles(layout: Layout, font: str) -> dict[str, ParagraphStyle]:
     base = dict(fontName=font, fontSize=layout.body, leading=layout.leading, textColor=TEXT_COLOR,
                 splitLongWords=1, uriWasteReduce=0.3)
     from backend.app.utils.language import RTL_LANGS
-    if _DOCUMENT_LANG.get() in RTL_LANGS:
+    rtl = _DOCUMENT_LANG.get() in RTL_LANGS
+    if rtl:
         base['alignment'] = TA_RIGHT     # right-to-left resumes read from the right margin
+    header = TA_CENTER if _DOCUMENT_TEMPLATE.get() != 'modern' else (TA_RIGHT if rtl else TA_LEFT)
     return {
         'name': ParagraphStyle('Name', **{**base, 'fontName': bold, 'fontSize': layout.title,
                                           'leading': layout.title * 1.2, 'textColor': ACCENT_COLOR,
-                                          'alignment': TA_CENTER}),
-        'title': ParagraphStyle('Title', **{**base, 'textColor': MUTED_COLOR, 'alignment': TA_CENTER}),
-        'contact': ParagraphStyle('Contact', **{**base, 'textColor': MUTED_COLOR, 'alignment': TA_CENTER}),
+                                          'alignment': header}),
+        'title': ParagraphStyle('Title', **{**base, 'textColor': MUTED_COLOR, 'alignment': header}),
+        'contact': ParagraphStyle('Contact', **{**base, 'textColor': MUTED_COLOR, 'alignment': header}),
         'body': ParagraphStyle('Body', **base),
         'skill': ParagraphStyle('Skill', **{**base, 'spaceAfter': 1}),
         'entry': ParagraphStyle('Entry', **{**base, 'fontName': bold, 'spaceBefore': layout.entry_gap + 2}),
@@ -673,7 +689,8 @@ def _story(data: dict, layout: Layout, font: str) -> list:
     story = []
 
     def heading(title):
-        story.append(SectionHeading(title, f'{font}-Bold', layout.body, layout.section_gap + 3))
+        story.append(SectionHeading(title, f'{font}-Bold', layout.body, layout.section_gap + 3,
+                                    upper=_DOCUMENT_TEMPLATE.get() != 'modern'))
 
     def entry(primary, secondary, right, keep_with_next):
         # Dates in a script the base font lacks stay in the paragraph, which
@@ -841,7 +858,7 @@ def strip_branding(data: dict) -> dict:
 
 
 def export_resume(resume_data, region: str | None = None, page_size: str | None = None,
-                  priority_keywords=None, max_pages=None, **_ignored) -> ExportResult:
+                  priority_keywords=None, max_pages=None, template=None, **_ignored) -> ExportResult:
     """Render a one- or two-page resume and report what was done to fit it.
 
     ``max_pages`` is 1, 2 or 'auto' (default: 1 for US/CA, 'auto' elsewhere).
@@ -858,13 +875,16 @@ def export_resume(resume_data, region: str | None = None, page_size: str | None 
     from backend.app.utils.language import detect_language, resume_text
     font = choose_font(data)
     lang = detect_language(resume_text(data))
+    template = resolve_template(template)
     token, lang_token = _DOCUMENT_FONT.set(font), _DOCUMENT_LANG.set(lang)
+    template_token = _DOCUMENT_TEMPLATE.set(template)
     try:
         result = _export(data, region, page_size, priority_keywords, max_pages)
     finally:
         _DOCUMENT_FONT.reset(token)
         _DOCUMENT_LANG.reset(lang_token)
-    result.font, result.lang = font, lang
+        _DOCUMENT_TEMPLATE.reset(template_token)
+    result.font, result.lang, result.template = font, lang, template
     return result
 
 
@@ -896,9 +916,10 @@ def _export(data: dict, region, page_size, priority_keywords, max_pages=None) ->
                             'employer or country does not ask for them.')
 
     # One page first: for a 1-page setting, and for 'auto' when it fits without cuts.
-    pdf, pages, layout = b'', 0, LAYOUTS[0]
+    layouts = LAYOUTS[-1:] if _DOCUMENT_TEMPLATE.get() == 'compact' else LAYOUTS
+    pdf, pages, layout = b'', 0, layouts[0]
     for target in ((1,) if limit == 1 else (1, 2)):
-        for layout in LAYOUTS:
+        for layout in layouts:
             pdf, pages = _render(data, layout, pagesize)
             if pages <= target:
                 break

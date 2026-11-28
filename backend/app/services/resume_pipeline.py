@@ -32,13 +32,13 @@ def provider_diagnostics(exc):
     return result
 
 
-def export_strict(tailored, region, requirements, max_pages=None):
+def export_strict(tailored, region, requirements, max_pages=None, template=None):
     """Render the 1- or 2-page resume (see ``resolve_max_pages``); candidate content only."""
     from io import BytesIO
     from pypdf import PdfReader
     from backend.app.utils.pdf_generator import ResumeExportError, export_resume, resolve_max_pages
     keywords = [r.get('phrase') or r.get('requirement') for r in requirements or [] if isinstance(r, dict)]
-    result = export_resume(tailored, region=region, priority_keywords=keywords, max_pages=max_pages)
+    result = export_resume(tailored, region=region, priority_keywords=keywords, max_pages=max_pages, template=template)
     limit = 1 if resolve_max_pages(region, max_pages) == 1 else 2
     if len(PdfReader(BytesIO(result.pdf)).pages) > limit:  # hard invariant, checked before storing
         raise ResumeExportError(f'The resume could not be fitted on {"one page" if limit == 1 else "two pages"}.')

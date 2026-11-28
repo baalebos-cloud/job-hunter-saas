@@ -22,6 +22,13 @@ export default function BulkTailor() {
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
   const [batch, setBatch] = useState(null);              // status from /resume/bulk/{id}
+  const [kept, setKept] = useState(null);                // the resume kept on the profile, if any
+  const [region, setRegion] = useState('');
+  const [pages, setPages] = useState('');
+  useEffect(() => {
+    axios.get(`${API}/profile/resume`, { headers: headers() }).then(r => setKept(r.data?.resume || null)).catch(() => {});
+  }, []);
+  const useKept = !!kept && !file;
 
   const count = picked.length + pasted.length;
   const full = count >= MAX_JOBS;
@@ -51,10 +58,13 @@ export default function BulkTailor() {
 
   const start = async () => {
     setError('');
-    if (!file) return setError('Choose your resume first.');
+    if (!file && !kept) return setError('Choose your resume first.');
     if (!count) return setError('Choose at least one job.');
     const form = new FormData();
-    form.append('file', file);
+    if (file) form.append('file', file);
+    else form.append('use_profile_resume', 'true');      // the resume kept on the profile
+    if (region) form.append('region', region);
+    if (pages) form.append('max_pages', pages);
     if (picked.length) form.append('job_ids', picked.map(j => j.id).join(','));
     if (pasted.length) form.append('pasted_jobs', JSON.stringify(pasted));
     setStarting(true);
@@ -117,8 +127,31 @@ export default function BulkTailor() {
         <button type="button" onClick={() => fileRef.current?.click()}
           className="mt-3 w-full flex items-center gap-3 border-2 border-dashed border-slate-200 rounded-xl p-4 text-left hover:border-emerald-300">
           <Upload size={18} className="text-slate-400" />
-          <span className="text-sm">{file ? <strong>{file.name}</strong> : 'Choose your current resume (PDF or DOCX, up to 10 MB)'}</span>
+          <span className="text-sm">{file ? <strong>{file.name}</strong>
+            : useKept ? <><strong>{kept.filename}</strong> <span className="text-slate-500">· the resume on your profile · click to use a different file</span></>
+            : 'Choose your current resume (PDF or DOCX, up to 10 MB)'}</span>
         </button>
+        {file && kept && <button type="button" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}
+          className="mt-2 text-xs font-semibold text-emerald-700 hover:underline">Use the resume on my profile instead ({kept.filename})</button>}
+        <div className="mt-4 grid sm:grid-cols-2 gap-3">
+          <label className="block text-sm font-medium text-slate-700" htmlFor="bulk-region">Resume convention
+            <select id="bulk-region" value={region} onChange={e => setRegion(e.target.value)} className={`${field} mt-1.5`}>
+              <option value="">Auto (from my profile country)</option>
+              <option value="US">United States (Letter)</option>
+              <option value="CA">Canada (Letter)</option>
+              <option value="UK">United Kingdom (A4)</option>
+              <option value="EU">European Union (A4)</option>
+              <option value="NG">Nigeria (A4)</option>
+              <option value="OTHER">Other / international (A4)</option>
+            </select></label>
+          <label className="block text-sm font-medium text-slate-700" htmlFor="bulk-pages">Length
+            <select id="bulk-pages" value={pages} onChange={e => setPages(e.target.value)} className={`${field} mt-1.5`}>
+              <option value="">Usual for the convention</option>
+              <option value="1">1 page</option>
+              <option value="auto">1 page if it fits, otherwise 2</option>
+              <option value="2">Up to 2 pages</option>
+            </select></label>
+        </div>
       </section>
 
       <section className="bg-white border border-slate-200 rounded-2xl p-5">
