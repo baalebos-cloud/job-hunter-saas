@@ -14,6 +14,7 @@ to the backup provider straight away on a rate limit instead of waiting.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from contextlib import contextmanager
@@ -21,6 +22,8 @@ from contextlib import contextmanager
 from fastapi import HTTPException
 
 from backend.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessingGate:
@@ -85,3 +88,43 @@ def processing_slot(priority: bool):
         yield
     finally:
         _gate.release()
+
+
+# ── Async queue health ───────────────────────────────────────────────────────
+# RESUME_PROCESSING_MODE=async hands tailoring to Celery workers (202 + polling).
+# If no worker answers, queued resumes would sit in "processing" until they
+# expire, so requests are tailored in the API process instead, as in sync mode.
+_WORKER_CHECK_TTL = 30.0
+_worker_state = {'at': -1e9, 'ok': False}
+_worker_lock = threading.Lock()
+
+
+def _ping_workers(timeout: float = 1.0) -> bool:
+    from backend.app.celery_app import celery_app
+    return bool(celery_app.control.ping(timeout=timeout))
+
+
+def async_workers_available() -> bool:
+    """True when at least one Celery worker answered a ping in the last 30 seconds."""
+    import concurrent.futures
+    now = time.monotonic()
+    with _worker_lock:
+        if now - _worker_state['at'] < _WORKER_CHECK_TTL:
+            return _worker_state['ok']
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        ok = pool.submit(_ping_workers).result(timeout=2.0)   # a dead broker cannot stall the request
+    except Exception:
+        ok = False
+    finally:
+        pool.shutdown(wait=False)
+    with _worker_lock:
+        _worker_state.update(at=time.monotonic(), ok=ok)
+    if not ok:
+        logger.warning('resume_async_no_worker fallback=sync')
+    return ok
+
+
+def use_async_queue() -> bool:
+    """Queue tailoring on Celery only in async mode and only with a live worker."""
+    return settings.RESUME_PROCESSING_MODE == 'async' and async_workers_available()
