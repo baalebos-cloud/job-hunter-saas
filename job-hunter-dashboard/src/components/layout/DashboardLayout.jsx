@@ -6,7 +6,9 @@ import axios from 'axios';
 import { assetUrl, signOut } from '../../lib/session';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const links = [['Dashboard','/',LayoutDashboard],['Resume workspace','/optimizer',FileText],['My resumes','/resumes',Files],['Resume Studio','/studio',PenLine],['Jobs','/jobs',Briefcase],['Applications','/applications',ListChecks],['Referrals','/referral',Gift],['My profile','/profile',UserRound],['Plans','/pricing',CreditCard],['Settings','/settings',Settings],['Help & support','/help',LifeBuoy]];
-export default function DashboardLayout({children}) {
+// `full`: the page draws its own header and spacing edge to edge (Resume Studio); the app
+// header is then shown only on small screens, where it holds the menu button.
+export default function DashboardLayout({children, full=false}) {
   const {pathname}=useLocation(); const [open,setOpen]=useState(false); const [profile,setProfile]=useState(null);
   useEffect(()=>{setOpen(false)},[pathname]);
   useEffect(()=>{const load=()=>axios.get(`${API}/auth/me`,{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}}).then(r=>setProfile(r.data)).catch(()=>{});load();window.addEventListener('profile:updated',load);return()=>window.removeEventListener('profile:updated',load)},[]);
@@ -21,7 +23,7 @@ export default function DashboardLayout({children}) {
       <nav className="px-3 space-y-1 overflow-y-auto flex-1" aria-label="Main navigation">{nav.map(([label,path,Icon])=><Link key={path} to={path} aria-current={pathname===path?'page':undefined} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${pathname===path?'bg-emerald-50 text-emerald-800':'text-slate-600 hover:bg-slate-50'}`}><Icon size={19}/>{label}</Link>)}</nav>
       <div className="p-4 border-t border-slate-100 flex gap-3 items-center">{profile?.photo_url?<img src={assetUrl(profile.photo_url)} alt="" className="rounded-full w-9 h-9 object-cover"/>:<div className="rounded-full bg-emerald-100 w-9 h-9 flex items-center justify-center text-emerald-800 font-semibold">{(profile?.full_name||'B').slice(0,1)}</div>}<Link to="/profile" className="truncate text-sm flex-1">{profile?.full_name||'Your account'}</Link><button aria-label="Sign out" onClick={()=>signOut(axios)}><LogOut size={18}/></button></div>
     </aside>
-    <div className="min-w-0 flex-1"><header className="h-20 px-5 md:px-9 flex gap-4 items-center border-b border-slate-100 bg-white"><button className="lg:hidden" aria-label="Open navigation" onClick={()=>setOpen(true)}><Menu/></button><h1 className="text-xl font-semibold">{nav.find(x=>x[1]===pathname)?.[0]||({'/developers':'API documentation','/admin':'Team console'})[pathname]||'Baalebos'}</h1><span className="ml-auto text-sm text-slate-500 hidden sm:block">Your next opportunity starts here</span></header><main className="p-5 md:p-9 pb-24 max-w-7xl mx-auto">{children}</main></div>
+    <div className="min-w-0 flex-1"><header className={`h-20 px-5 md:px-9 flex gap-4 items-center border-b border-slate-100 bg-white ${full?'lg:hidden print:hidden':''}`}><button className="lg:hidden" aria-label="Open navigation" onClick={()=>setOpen(true)}><Menu/></button><h1 className="text-xl font-semibold">{nav.find(x=>x[1]===pathname)?.[0]||({'/developers':'API documentation','/admin':'Team console'})[pathname]||'Baalebos'}</h1><span className="ml-auto text-sm text-slate-500 hidden sm:block">Your next opportunity starts here</span></header><main className={full?'':'p-5 md:p-9 pb-24 max-w-7xl mx-auto'}>{children}</main></div>
     <HelpWidget/>
   </div>
 }

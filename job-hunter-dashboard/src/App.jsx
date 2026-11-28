@@ -441,7 +441,7 @@ function App() {
           <RequireAuth><DashboardLayout><MyResumes /></DashboardLayout></RequireAuth>
         } />
         <Route path="/studio" element={
-          <RequireAuth><DashboardLayout><Suspense fallback={<p className="p-6 text-sm text-slate-500">Loading Resume Studio…</p>}><StudioPage /></Suspense></DashboardLayout></RequireAuth>
+          <RequireAuth><DashboardLayout full><Suspense fallback={<p className="p-6 text-sm text-slate-500">Loading Resume Studio…</p>}><StudioPage /></Suspense></DashboardLayout></RequireAuth>
         } />
         <Route path="/jobs" element={
           <RequireAuth><DashboardLayout><JobsPage /></DashboardLayout></RequireAuth>

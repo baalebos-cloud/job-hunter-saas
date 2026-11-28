@@ -2,7 +2,8 @@
 // or canvas images), so ATS parsers read exactly what the person sees.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import type { ResumeData, Paper } from './types';
-import { PAPER_SIZES } from './types';
+import { PAPER_SIZES, TYPE } from './types';
+export { TYPE };
 import { needsUnicodeFont, normalizeText, toWinAnsi } from './text';
 import { SECTION_TITLES } from './atsAnalyzer';
 
@@ -12,8 +13,9 @@ const MUTED = rgb(0.2, 0.2, 0.2);
 const MARGIN_X = 50;
 const MARGIN_TOP = 46;
 const MARGIN_BOTTOM = 46;
-const BODY = 9.8;
+const BODY = TYPE.body;
 const LEADING = 1.32;
+
 
 export interface UnicodeFonts { regular: Uint8Array; bold: Uint8Array }
 export interface PdfOptions { paper?: Paper; unicodeFonts?: UnicodeFonts; title?: string }
@@ -115,10 +117,24 @@ export class Layout {
     return lines.length;
   }
 
-  /** Left text and a right-aligned italic date on one baseline; the left side wraps before the date column. */
-  drawLeftRight(left: Segment[], right: string, size = BODY + 0.4) {
+  /** Height of a wrapped paragraph, without drawing it. */
+  measureRich(segments: Segment[], size = BODY, bullet = false): number {
+    const indent = bullet ? 12 : 0;
+    return this.wrapSegments(segments, size, this.contentWidth - indent).length * size * LEADING;
+  }
+
+  /** Height of a left/right header line, without drawing it. */
+  measureLeftRight(left: Segment[], right: string, size: number = TYPE.entry): number {
+    const rightWidth = right ? this.measure(right, size, 'italic') + 12 : 0;
+    return this.wrapSegments(left, size, this.contentWidth - rightWidth).length * size * LEADING;
+  }
+
+  /** Left text and a right-aligned italic date on one baseline; the left side wraps before the date column.
+   *  A header that wraps onto several lines is never split across two pages. */
+  drawLeftRight(left: Segment[], right: string, size: number = TYPE.entry) {
     const rightWidth = right ? this.measure(right, size, 'italic') + 12 : 0;
     const lines = this.wrapSegments(left, size, this.contentWidth - rightWidth);
+    this.ensureSpace(lines.length * size * LEADING);
     lines.forEach((line, n) => {
       this.ensureSpace(size * LEADING);
       this.y -= size;
@@ -131,7 +147,7 @@ export class Layout {
 
   /** Section heading with a full-width rule; reserves room for the first item too (no orphaned headings). */
   heading(title: string, firstItemHeight: number) {
-    const size = 11;
+    const size = TYPE.heading;
     this.ensureSpace(size * 1.8 + 6 + firstItemHeight);
     this.y -= 9 + size;
     this.draw(title, MARGIN_X, size, 'bold', NAVY);
@@ -193,12 +209,12 @@ export async function generateResumePdf(data: ResumeData, options: PdfOptions = 
 
   const L = new Layout(doc, fonts, paper);
   // Header
-  L.centered(name.toUpperCase(), 18, 'bold', NAVY);
-  if (clean(data.headline)) { L.gap(1); L.centered(data.headline, 10.4, 'bold'); }
+  L.centered(name.toUpperCase(), TYPE.name, 'bold', NAVY);
+  if (clean(data.headline)) { L.gap(1); L.centered(data.headline, TYPE.headline, 'bold'); }
   const contact1 = [data.location, data.phone, data.email].map(clean).filter(Boolean).join(' | ');
   const contact2 = [data.linkedin, data.github, data.portfolio].map(clean).filter(Boolean).join(' | ');
-  if (contact1) { L.gap(1); L.centered(contact1, 9.3, 'regular', MUTED); }
-  if (contact2) L.centered(contact2, 9.3, 'regular', MUTED);
+  if (contact1) { L.gap(1); L.centered(contact1, TYPE.contact, 'regular', MUTED); }
+  if (contact2) L.centered(contact2, TYPE.contact, 'regular', MUTED);
 
   const [SUMMARY, CORE, SOFT, PROJECTS, TECH, EXPERIENCE, EDUCATION, CERTS] = SECTION_TITLES;
   if (clean(data.summary)) { L.heading(SUMMARY, lineHeight(2)); L.drawWrappedRichLine([{ text: data.summary }]); }
@@ -224,27 +240,36 @@ export async function generateResumePdf(data: ResumeData, options: PdfOptions = 
   }
   const roles = data.experience.filter(r => clean(r.role) || clean(r.company));
   if (roles.length) {
-    L.heading(EXPERIENCE, lineHeight(3));
+    // A role's header (however many lines it wraps to) always starts on the same page as its first bullet.
+    const roleHeader = (r: typeof roles[number]): Segment[] => {
+      const where = [r.company, r.location].map(clean).filter(Boolean).join(' · ');
+      return [{ text: `${clean(r.role)}${where ? ` | ${where}` : ''}`, style: 'bold' }];
+    };
+    const roleStart = (r: typeof roles[number]) => {
+      const first = r.bullets.map(clean).find(Boolean);
+      return L.measureLeftRight(roleHeader(r), clean(r.dates)) + (first ? L.measureRich([{ text: first }], BODY, true) : 0);
+    };
+    L.heading(EXPERIENCE, roleStart(roles[0]));
     roles.forEach((r, n) => {
       if (n) L.gap(4);
-      L.ensureSpace(lineHeight(3));          // never split a role between its header and first bullet
-      const where = [r.company, r.location].map(clean).filter(Boolean).join(' · ');
-      L.drawLeftRight([{ text: clean(r.role), style: 'bold' }, { text: where ? ` | ${where}` : '' }], clean(r.dates));
+      L.ensureSpace(roleStart(r));
+      L.drawLeftRight(roleHeader(r), clean(r.dates));
       for (const b of r.bullets.map(clean).filter(Boolean)) L.drawWrappedRichLine([{ text: b }], { bullet: true });
     });
   }
   const schools = data.education.filter(e => clean(e.degree) || clean(e.institution));
   if (schools.length) {
-    L.heading(EDUCATION, lineHeight());
-    for (const e of schools) L.drawLeftRight([{ text: clean(e.degree), style: 'bold' }, { text: clean(e.institution) ? ` | ${clean(e.institution)}` : '' }], clean(e.date));
+    const school = (e: typeof schools[number]): Segment[] =>
+      [{ text: `${clean(e.degree)}${clean(e.institution) ? ` | ${clean(e.institution)}` : ''}`, style: 'bold' }];
+    L.heading(EDUCATION, L.measureLeftRight(school(schools[0]), clean(schools[0].date)));
+    for (const e of schools) L.drawLeftRight(school(e), clean(e.date));
   }
   const certs = data.certifications.filter(c => clean(c.name));
   if (certs.length) {
-    L.heading(CERTS, lineHeight());
-    for (const c of certs) {
-      L.drawLeftRight([{ text: '\u2022  ' }, { text: clean(c.name), style: 'bold' }, { text: clean(c.issuer) ? `, ${clean(c.issuer)}` : '' }],
-        clean(c.date), BODY);
-    }
+    const cert = (c: typeof certs[number]): Segment[] =>
+      [{ text: '\u2022  ' }, { text: `${clean(c.name)}${clean(c.issuer) ? `, ${clean(c.issuer)}` : ''}`, style: 'bold' }];
+    L.heading(CERTS, L.measureLeftRight(cert(certs[0]), clean(certs[0].date), BODY));
+    for (const c of certs) L.drawLeftRight(cert(c), clean(c.date), BODY);
   }
   return doc.save();
 }

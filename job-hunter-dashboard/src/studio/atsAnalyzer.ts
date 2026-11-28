@@ -79,15 +79,19 @@ export function analyzeResumeAts(data: ResumeData): AtsReport {
   const emptySections = sections.filter(([, ok]) => !ok).map(([name]) => name);
   const missingContact = ([['full name', data.fullName], ['location', data.location], ['email', data.email]] as const)
     .filter(([, v]) => !clean(v)).map(([k]) => k);
+  const bullets = data.experience.flatMap(r => r.bullets.map(clean).filter(Boolean));
+  const quantified = bullets.filter(b => /\d/.test(b)).length;
+  const hasMetric = METRIC.test(text);
   const checks: Check[] = [
     { id: 'layout', label: 'Single-column linear layout', ok: true, detail: 'No tables, columns, text boxes or graphics in the document.' },
-    { id: 'sections', label: 'Standard sections filled', ok: emptySections.length === 0,
+    { id: 'sections', label: 'Standard section headings', ok: emptySections.length === 0,
       detail: emptySections.length ? `Add: ${emptySections.join(', ')}.` : 'Summary, competencies, skills, experience and education are present.' },
-    { id: 'contact', label: 'Name, location and email in plain text', ok: missingContact.length === 0,
+    { id: 'contact', label: 'Plain-text contact header', ok: missingContact.length === 0,
       detail: missingContact.length ? `Add your ${missingContact.join(', ')}.` : 'Contact details are readable text, not an image.' },
-    { id: 'metrics', label: 'Measurable results present', ok: METRIC.test(text),
-      detail: METRIC.test(text) ? 'At least one result is quantified.' : 'Add a real number to a result you achieved (for example "cut release time by 40%").' },
-    { id: 'length', label: 'Length of 350 to 950 words', ok: words >= 350 && words <= 950,
+    { id: 'metrics', label: 'Quantified impact metrics', ok: hasMetric,
+      detail: `${bullets.length ? `${quantified} of ${bullets.length} achievements include a number. ` : ''}${hasMetric
+        ? 'At least one result is quantified.' : 'Add a real number to a result you achieved (for example "cut release time by 40%").'}` },
+    { id: 'length', label: 'Optimal length (350–950 words)', ok: words >= 350 && words <= 950,
       detail: `${words.toLocaleString()} words${words < 350 ? ': add detail to your strongest roles.' : words > 950 ? ': shorten older or less relevant roles.' : '.'}` },
   ];
   return { groups, matched, total: unique.length, percent: Math.round((100 * matched) / unique.length), checks, wordCount: words };

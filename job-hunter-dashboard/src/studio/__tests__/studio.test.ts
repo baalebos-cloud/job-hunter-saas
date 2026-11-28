@@ -144,3 +144,30 @@ test('a space between bold and regular text survives (extractors read "Frontend:
   assert.deepEqual(runs.map(r => r.text), ['Frontend: ', 'React, Tailwind']);
   assert.ok(layout.measure(runs[0].text, 10, 'bold') > layout.measure('Frontend:', 10, 'bold'), 'the trailing space has width');
 });
+
+test('A4 and US Letter pages use the exact point sizes, and the header type sizes match the spec', async () => {
+  const { TYPE } = await import('../types');
+  assert.deepEqual({ name: TYPE.name, headline: TYPE.headline, contact: TYPE.contact, heading: TYPE.heading }, { name: 17, headline: 10, contact: 9.5, heading: 11 });
+  for (const [paper, size] of [['A4', [595.28, 841.89]], ['Letter', [612, 792]]] as const) {
+    const doc = await PDFDocument.load(await generateResumePdf(sampleResume(), { paper }));
+    const { width, height } = doc.getPage(0).getSize();
+    assert.deepEqual([Math.round(width * 100) / 100, Math.round(height * 100) / 100], [...size], paper);
+  }
+});
+
+test('a header that wraps onto two lines moves to the next page as a whole', async () => {
+  const { Layout } = await import('../pdfEngine');
+  const { StandardFonts } = await import('pdf-lib');
+  const doc = await PDFDocument.create();
+  const fonts = { regular: await doc.embedFont(StandardFonts.Helvetica), bold: await doc.embedFont(StandardFonts.HelveticaBold),
+    italic: await doc.embedFont(StandardFonts.HelveticaOblique), unicode: false };
+  const L = new Layout(doc, fonts, 'A4');
+  const header = [{ text: 'Principal Site Reliability Engineer, Platform Infrastructure | A Very Long Company Name Limited · Lagos, Nigeria', style: 'bold' as const }];
+  const lineH = 10.2 * 1.32;
+  assert.ok(L.measureLeftRight(header, 'Jan 2022 – Present') > lineH * 1.5, 'the header really wraps');
+  L.y = 46 + lineH * 1.5;            // room for one line only above the bottom margin
+  L.drawLeftRight(header, 'Jan 2022 – Present');
+  assert.equal(doc.getPageCount(), 2, 'moved to a new page');
+  const top = 841.89 - 46;
+  assert.ok(Math.abs(L.y - (top - 2 * lineH)) < 0.01, 'both lines are on the new page');
+});
