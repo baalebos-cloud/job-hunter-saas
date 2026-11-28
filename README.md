@@ -20,7 +20,7 @@ Most resumes fail ATS screening before a human ever reads them. job-hunter-saas 
 
 ### Backend
 - **Python3** — FastAPI, Pydantic, SQLAlchemy
-- **LLM** — Groq API (`llama-3.3-70b-versatile`) via OpenAI-compatible client
+- **LLM** — Groq API (`GROQ_MODEL`, default `openai/gpt-oss-20b`) via OpenAI-compatible client, with optional OpenRouter/OpenAI backups (`OPENROUTER_MODEL`, `OPENAI_MODEL`)
 - **Document processing** — pdfplumber (PDF), python-docx (DOCX)
 - **PDF generation** — ReportLab (ATS-compliant single-column layout)
 - **Database** — SQLAlchemy ORM + SQLite (dev) / PostgreSQL (prod)

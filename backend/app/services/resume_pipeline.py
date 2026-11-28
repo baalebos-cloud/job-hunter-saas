@@ -21,7 +21,7 @@ class PipelineFailure(Exception):
 def provider_diagnostics(exc):
     """Allowlisted metadata only; provider messages can contain candidate data."""
     allowed = {
-        'code': {'json_validate_failed', 'invalid_api_key', 'model_not_found', 'rate_limit_exceeded', 'context_length_exceeded', 'invalid_request_error'},
+        'code': {'json_validate_failed', 'invalid_api_key', 'model_not_found', 'model_decommissioned', 'rate_limit_exceeded', 'context_length_exceeded', 'invalid_request_error'},
         'type': {'invalid_request_error', 'authentication_error', 'rate_limit_error'},
         'param': {'response_format', 'response_format.json_schema', 'model', 'reasoning_effort', 'max_completion_tokens', 'temperature'},
     }

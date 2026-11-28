@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     GROQ_MAX_COMPLETION_TOKENS: int = Field(default=8192, ge=1024, le=32768)
     OPENROUTER_API_KEY: str = Field(default="", env="OPENROUTER_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
+    # Backup models, used when the primary provider is rate limited or refuses a request.
+    # Provider catalogues change; these can be updated in the environment without a deploy.
+    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
+    OPENAI_MODEL: str = "gpt-4o-mini"
 
     # SMTP_SSL sender used by backend.app.utils.email (implicit TLS).
     RESEND_API_KEY: str = ""

@@ -1,6 +1,9 @@
+import logging
 import re
 from openai import OpenAI
 from backend.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def generate_message(
@@ -48,21 +51,33 @@ Return ONLY the message text. No subject line. No labels. No explanation."""
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            # The configured Groq model (llama-3.3-70b-versatile was retired by Groq on 16 Aug 2026).
+            model=settings.GROQ_MODEL,
             messages=[
                 {"role": "system", "content": "You are an expert career coach. Write professional, personalized outreach messages."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
             temperature=0.7,
+            **_length_options(settings.GROQ_MODEL),
         )
-        message = response.choices[0].message.content.strip()
+        message = (response.choices[0].message.content or '').strip()
+        if not message:
+            raise ValueError('empty outreach message')
         # Clean any markdown that slipped through
         message = re.sub(r'\*\*|__', '', message)
         return message
     except Exception as e:
-        print(f"[Outreach] Groq error: {e}")
+        # Type only: provider errors can echo the resume text.
+        logger.warning('outreach_generation_failed error_type=%s', type(e).__name__)
         return _fallback_message(candidate_name, job_title, company)
+
+
+def _length_options(model: str) -> dict:
+    """GPT-OSS models reason before answering and the budget covers both, so keep
+    reasoning low and leave room for the ~150-word message."""
+    if model.startswith('openai/gpt-oss'):
+        return {'extra_body': {'reasoning_effort': 'low', 'max_completion_tokens': 1200}}
+    return {'max_tokens': 300}
 
 
 def _fallback_message(candidate_name: str, job_title: str, company: str) -> str:

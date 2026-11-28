@@ -6,7 +6,8 @@ import re
 import time
 import pdfplumber
 from docx import Document
-from openai import OpenAI, BadRequestError, RateLimitError
+from openai import (OpenAI, AuthenticationError, BadRequestError, NotFoundError, PermissionDeniedError,
+                    RateLimitError)
 from pydantic import ValidationError
 from backend.app.utils.resume_contracts import ExtractedResume, ResumeRewrite, Requirements
 from backend.app.core.config import settings
@@ -54,9 +55,9 @@ def provider_chain():
                                      timeout=60, max_retries=1), settings.GROQ_MODEL))
     if settings.OPENROUTER_API_KEY:
         chain.append(('openrouter', OpenAI(api_key=settings.OPENROUTER_API_KEY, base_url='https://openrouter.ai/api/v1',
-                                           timeout=60, max_retries=1), 'anthropic/claude-3-haiku'))
+                                           timeout=60, max_retries=1), settings.OPENROUTER_MODEL))
     if settings.OPENAI_API_KEY:
-        chain.append(('openai', OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=1), 'gpt-4o-mini'))
+        chain.append(('openai', OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=1), settings.OPENAI_MODEL))
     return chain
 
 
@@ -90,9 +91,15 @@ def _retry_after(exc) -> float | None:
     return None
 
 
+# A provider that refuses the request itself (retired or unknown model, rejected
+# options, revoked key) cannot succeed on retry; the next provider is tried at once.
+PROVIDER_REFUSALS = (BadRequestError, NotFoundError, AuthenticationError, PermissionDeniedError)
+
+
 def _json(prompt, contract=None, client_model=None):
-    """Structured completion with rate-limit resilience: a short wait is retried
-    once on the same provider, then each other configured provider is tried."""
+    """Structured completion with provider resilience: a short rate-limit wait is
+    retried once on the same provider; a longer limit or a refusal moves on to each
+    other configured provider."""
     explicit = client_model is not None
     primary = client_model if explicit else get_client()
     candidates = [('primary', *primary)]
@@ -113,8 +120,14 @@ def _json(prompt, contract=None, client_model=None):
                     time.sleep(wait + 0.5)
                     continue
                 break
+            except PROVIDER_REFUSALS as exc:
+                # Metadata only: provider messages can echo candidate data.
+                last = exc
+                logger.error('resume_ai_provider_refused provider=%s model=%s status=%s code=%s', name, model,
+                             getattr(exc, 'status_code', None), getattr(exc, 'code', None))
+                break
         if index == 0 and not explicit:
-            # Only now build the other providers; skip the one that just refused.
+            # Only now build the other providers; skip the one that just failed.
             candidates += [c for c in provider_chain() if c[2] != model]
         index += 1
         if index < len(candidates):
@@ -124,9 +137,9 @@ def _json(prompt, contract=None, client_model=None):
 
 def _json_once(prompt, contract=None, client_model=None):
     client, model = client_model if client_model is not None else get_client()
-    # Claude 3 Haiku (OpenRouter fallback) accepts at most 4096 output tokens.
-    options = {'max_tokens': 4096 if 'claude-3-haiku' in model else 6000}
-    if settings.GROQ_API_KEY and model in ('openai/gpt-oss-20b', 'openai/gpt-oss-120b'):
+    options = {'max_tokens': 6000}
+    on_openrouter = 'openrouter.ai' in str(getattr(client, 'base_url', ''))
+    if settings.GROQ_API_KEY and not on_openrouter and model in ('openai/gpt-oss-20b', 'openai/gpt-oss-120b'):
         # Groq GPT-OSS completion budgets also cover reasoning. Use JSON mode
         # and low effort so structured extraction has room for the full history.
         # extra_body is compatible with the repository's pinned OpenAI SDK.
