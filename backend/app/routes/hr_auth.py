@@ -114,7 +114,7 @@ def _send_hr_verification_email(to_email: str, token: str, full_name: str, compa
         <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">
           Hi <strong>{full_name}</strong>, thanks for registering as HR for <strong>{company_name}</strong>.<br/><br/>
           Please verify your email first. After verification, our team will review your account
-          and approve it within <strong>24–48 hours</strong>.
+          and email you as soon as a decision is made.
         </p>
         <div style="text-align:center;margin:32px 0;">
           <a href="{verify_url}" style="display:inline-block;background:#3b82f6;color:#fff;font-weight:800;
@@ -300,7 +300,7 @@ def hr_signup(
 
     return {
         "message": "HR account created. Please check your email to verify your address. "
-                   "Your account will be reviewed and approved within 24–48 hours.",
+                   "We’ll review your company and email you as soon as a decision is made.",
         "status":  "pending_verification",
         "email":   new_user.email,
     }
@@ -328,7 +328,7 @@ def hr_verify_email(token: str, db: Session = Depends(get_db)):
 
     return {
         "message": "Email verified! Your HR account is now pending admin approval. "
-                   "You'll receive an email once approved (24–48 hours).",
+                   "You'll receive an email once your company is approved.",
         "status":  "pending_approval",
     }
 
